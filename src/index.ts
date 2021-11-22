@@ -1,85 +1,126 @@
-import { IFetchComponent } from '@well-known-components/http-server'
-import PQueue from 'p-queue'
-import { downloadEntityAndContentFiles, Entity, getDeployedEntities } from './snapshot-fetcher'
-import { Server, Timestamp } from './types'
+import { fetchPointerChanges, getGlobalSnapshot } from './client'
+import { downloadFileWithRetries } from './downloader'
+import { processDeploymentsInFile } from './processor'
+import { RemoteEntityDeployment, SnapshotsFetcherComponents } from './types'
+import { sleep } from './utils'
 
 /**
+ * Gets a stream of all the entities deployed to a server.
+ * Includes all the entities that are already present in the server.
+ * Accepts a fromTimestamp option to filter out previous deployments.
+ *
  * @public
  */
-export type SnapshotsFetcherComponents = {
-  fetcher: IFetchComponent
-}
+export async function* getDeployedEntitiesStream(
+  components: SnapshotsFetcherComponents,
+  options: {
+    contentServer: string
+    fromTimestamp?: number
+    contentFolder: string
+    waitTime: number
+  }
+): AsyncIterable<RemoteEntityDeployment> {
+  // the minimum timestamp we are looking for
+  const genesisTimestamp = options.fromTimestamp || 0
 
-/**
- * @public
- */
-export type EntityDeployment = {
-  entityId: string
-  entityType: string
-  content: Array<{ key: string; hash: string }>
-  auditInfo: any
-}
+  // the greatest timestamp we processed
+  let greatestProcessedTimestamp = 0
 
-/**
- * @public
- */
-export type DownloadEntitiesOptions = {
-  catalystServers: string[]
-  deployAction: (entity: EntityDeployment) => Promise<any>
-  concurrency: number
-  jobTimeout: number
-  isEntityPresentLocally: (entityId: string) => Promise<boolean>
-  contentFolder: string
-  components: SnapshotsFetcherComponents
-  /**
-   * Entity types to fetch
-   */
-  entityTypes: string[]
-}
+  // 1. get the hash of the latest snapshot in the remote server, retry 10 times
+  const { hash, lastIncludedDeploymentTimestamp } = await getGlobalSnapshot(
+    components,
+    options.contentServer,
+    10 /* retries */
+  )
 
-/**
- * @public
- */
-export async function downloadEntities(options: DownloadEntitiesOptions): Promise<Map<Server, Timestamp>> {
-  const serverMapLRU = new Map<string, number /* timestamp */>()
-  const lastTimestampsMap = new Map()
+  // 2. download the snapshot file if it contains deployments
+  //    in the range we are interested (>= genesisTimestamp)
+  if (lastIncludedDeploymentTimestamp > genesisTimestamp) {
+    // 2.1. download the shapshot file if needed
+    const snapshotFilename = await downloadFileWithRetries(
+      hash,
+      options.contentFolder,
+      [options.contentServer],
+      new Map()
+    )
 
-  const downloadJobQueue = new PQueue({
-    concurrency: options.concurrency,
-    autoStart: true,
-    timeout: options.jobTimeout,
-  })
-
-  for await (const { entityId, servers } of getDeployedEntities(
-    options.entityTypes,
-    options.catalystServers,
-    options.components.fetcher,
-    lastTimestampsMap
-  )) {
-    if (await options.isEntityPresentLocally(entityId)) continue
-
-    function scheduleJob() {
-      downloadJobQueue.add(async () => {
-        try {
-          const entityData = await downloadEntityAndContentFiles(
-            options.components,
-            entityId,
-            servers,
-            serverMapLRU,
-            options.contentFolder
-          )
-          await options.deployAction(entityData)
-        } catch {
-          // TODO: Cancel job when fails forever
-          scheduleJob()
-        }
-      })
+    // 2.2. open the snapshot file and process line by line
+    const deploymentsInFile = processDeploymentsInFile(snapshotFilename)
+    for await (const deployment of deploymentsInFile) {
+      // selectively ignore deployments by localTimestamp
+      if (deployment.localTimestamp >= genesisTimestamp) {
+        yield deployment
+      }
+      // update greatest processed timestamp
+      if (deployment.localTimestamp > greatestProcessedTimestamp) {
+        greatestProcessedTimestamp = deployment.localTimestamp
+      }
     }
-
-    scheduleJob()
   }
 
-  await downloadJobQueue.onIdle()
+  // 3. fetch the /pointer-changes of the remote server using the last timestamp from the previous step
+  do {
+    // 3.1. download pointer changes and yield
+    const pointerChanges = fetchPointerChanges(components, options.contentServer, greatestProcessedTimestamp)
+    for await (const deployment of pointerChanges) {
+      // selectively ignore deployments by localTimestamp
+      if (deployment.localTimestamp >= genesisTimestamp) {
+        yield deployment
+      }
+      // update greatest processed timestamp
+      if (deployment.localTimestamp > greatestProcessedTimestamp) {
+        greatestProcessedTimestamp = deployment.localTimestamp
+      }
+    }
 
-  return lastTimestampsMap
+    // 3.2 repeat (3) if waitTime > 0
+    await sleep(options.waitTime)
+  } while (options.waitTime > 0)
 }
+
+// /**
+//  * @public
+//  */
+// export async function downloadEntities(options: DownloadEntitiesOptions): Promise<Map<Server, Timestamp>> {
+//   const serverMapLRU = new Map<string, number /* timestamp */>()
+//   const lastTimestampsMap = new Map()
+
+//   const downloadJobQueue = new PQueue({
+//     concurrency: options.concurrency,
+//     autoStart: true,
+//     timeout: options.jobTimeout,
+//   })
+
+//   for await (const { entityId, servers } of getDeployedEntities(
+//     options.components,
+//     options.entityTypes,
+//     options.catalystServers,
+//     lastTimestampsMap
+//   )) {
+//     if (await options.isEntityPresentLocally(entityId)) continue
+
+//     function scheduleJob() {
+//       downloadJobQueue.add(async () => {
+//         try {
+//           const entityData = await downloadEntityAndContentFiles(
+//             options.components,
+//             entityId,
+//             servers,
+//             serverMapLRU,
+//             options.contentFolder
+//           )
+//           await options.deployAction(entityData)
+//         } catch {
+//           // TODO: Cancel job when fails forever
+//           scheduleJob()
+//         }
+//       })
+//     }
+
+//     scheduleJob()
+//   }
+
+//   await downloadJobQueue.onIdle()
+
+//   return lastTimestampsMap
+// }

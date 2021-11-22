@@ -1,28 +1,56 @@
-import { IFetchComponent } from '@well-known-components/http-server'
-import { SnapshotData } from './types'
+import { RemoteEntityDeployment, SnapshotsFetcherComponents } from './types'
 import { fetchJson, saveToDisk } from './utils'
 
-export async function getCatalystSnapshot(
-  server: string,
-  entityType: string,
-  fetcher: IFetchComponent
-): Promise<{ snapshotData: SnapshotData; timestamp: number }> {
-  const snapshot = await fetchJson(`${server}/content/snapshot/${entityType}`, fetcher)
-  const hash: string = snapshot['hash']
-  const timestamp: number = snapshot['lastIncludedDeploymentTimestamp']
-  if (!hash || !timestamp) {
-    throw new Error(`Invalid response from server: ${JSON.stringify(snapshot)}`)
-  }
-  const snapshotData: SnapshotData = await fetchJson(`${server}/content/contents/${hash}`, fetcher)
-  return { snapshotData, timestamp }
+export async function getGlobalSnapshot(components: SnapshotsFetcherComponents, server: string, retries: number) {
+  // TODO: validate response
+  return await components.downloadQueue.scheduleJobWithRetries(
+    () => fetchJson(`${server}/content/snapshot`, components.fetcher),
+    retries
+  )
 }
 
-export async function saveContentFileToDisk(server: string, hash: string, dest: string) {
-  const url = new URL(`/content/contents/${hash}`, server)
+export async function* fetchJsonPaginated<T>(
+  components: Pick<SnapshotsFetcherComponents, 'fetcher'>,
+  url: string,
+  selector: (responseBody: any) => T[]
+): AsyncIterable<T> {
+  // Perform the different queries
+  let currentUrl = url
+  while (currentUrl) {
+    const res = await components.fetcher.fetch(currentUrl)
+    if (!res.ok) {
+      throw new Error(
+        'Error while requesting deployments to the url ' +
+          currentUrl +
+          '. Status code was: ' +
+          res.status +
+          ' Response text was: ' +
+          JSON.stringify(await res.text())
+      )
+    }
+    const partialHistory: any = await res.json()
+    for (const elem of selector(partialHistory)) {
+      yield elem
+    }
+    const nextRelative: string | void = partialHistory.pagination.next
+    if (!nextRelative) break
+    currentUrl = new URL(nextRelative, currentUrl).toString()
+  }
+}
 
-  // if (Math.random() > 0.8) throw new Error('SYNTHETIC NETWORK ERROR')
+export function fetchPointerChanges(
+  components: Pick<SnapshotsFetcherComponents, 'fetcher'>,
+  server: string,
+  fromTimestamp: number
+): AsyncIterable<RemoteEntityDeployment> {
+  const url = new URL(`/content/pointer-changes?from=${encodeURIComponent(fromTimestamp)}`, server).toString()
+  return fetchJsonPaginated(components, url, ($) => $.deltas)
+}
 
-  await saveToDisk(url.toString(), dest)
-  // TODO: Check Hash or throw
+export async function saveContentFileToDisk(server: string, hash: string, destinationFilename: string) {
+  const url = new URL(`/content/contents/${hash}`, server).toString()
+
+  await saveToDisk(url, destinationFilename)
+  // TODO: Check Hash validity or throw
   return
 }
