@@ -1,5 +1,4 @@
 import { IBaseComponent } from '@well-known-components/interfaces'
-import future from 'fp-future'
 import PQueue from 'p-queue'
 
 /**
@@ -32,28 +31,27 @@ export function createJobQueue(options: createJobQueue.Options): IJobQueue & IBa
       if (!(retries | 0)) {
         throw new Error('At least one retry is required')
       }
-      const resultFuture = future<T>()
-      let retry = retries | 0
+      return new Promise<T>((resolve, reject) => {
+        let retry = retries | 0
 
-      function schedule() {
-        realQueue.add(async () => {
-          retry--
+        function schedule() {
+          realQueue.add(async () => {
+            retry--
 
-          try {
-            resultFuture.resolve(await fn())
-          } catch (e: any) {
-            if (!retry) {
-              resultFuture.reject(e)
-            } else {
-              schedule()
+            try {
+              resolve(await fn())
+            } catch (e: any) {
+              if (!retry) {
+                reject(e)
+              } else {
+                schedule()
+              }
             }
-          }
-        })
-      }
+          })
+        }
 
-      schedule()
-
-      return resultFuture
+        schedule()
+      })
     },
     async stop() {
       // wait until the jobs are finished at stop()
