@@ -6,39 +6,16 @@
 
 import { IFetchComponent } from '@well-known-components/http-server';
 
-// Warning: (ae-forgotten-export) The symbol "Server" needs to be exported by the entry point index.d.ts
-// Warning: (ae-forgotten-export) The symbol "Timestamp" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "SnapshotsFetcherComponents" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "RemoteEntityDeployment" needs to be exported by the entry point index.d.ts
 //
-// @public (undocumented)
-export function downloadEntities(options: DownloadEntitiesOptions): Promise<Map<Server, Timestamp>>;
-
-// @public (undocumented)
-export type DownloadEntitiesOptions = {
-    catalystServers: string[];
-    deployAction: (entity: EntityDeployment) => Promise<any>;
-    concurrency: number;
-    jobTimeout: number;
-    isEntityPresentLocally: (entityId: string) => Promise<boolean>;
+// @public
+export function getDeployedEntitiesStream(components: SnapshotsFetcherComponents, options: {
+    contentServer: string;
+    fromTimestamp?: number;
     contentFolder: string;
-    components: SnapshotsFetcherComponents;
-    entityTypes: string[];
-};
-
-// @public (undocumented)
-export type EntityDeployment = {
-    entityId: string;
-    entityType: string;
-    content: Array<{
-        key: string;
-        hash: string;
-    }>;
-    auditInfo: any;
-};
-
-// @public (undocumented)
-export type SnapshotsFetcherComponents = {
-    fetcher: IFetchComponent;
-};
+    waitTime: number;
+}): AsyncIterable<RemoteEntityDeployment>;
 
 // (No @packageDocumentation comment for this package)
 
