@@ -4,6 +4,8 @@ import { processDeploymentsInFile } from './processor'
 import { RemoteEntityDeployment, SnapshotsFetcherComponents } from './types'
 import { sleep } from './utils'
 
+export { downloadEntityAndContentFiles } from './entities'
+
 /**
  * Gets a stream of all the entities deployed to a server.
  * Includes all the entities that are already present in the server.
@@ -77,50 +79,3 @@ export async function* getDeployedEntitiesStream(
     await sleep(options.waitTime)
   } while (options.waitTime > 0)
 }
-
-// /**
-//  * @public
-//  */
-// export async function downloadEntities(options: DownloadEntitiesOptions): Promise<Map<Server, Timestamp>> {
-//   const serverMapLRU = new Map<string, number /* timestamp */>()
-//   const lastTimestampsMap = new Map()
-
-//   const downloadJobQueue = new PQueue({
-//     concurrency: options.concurrency,
-//     autoStart: true,
-//     timeout: options.jobTimeout,
-//   })
-
-//   for await (const { entityId, servers } of getDeployedEntities(
-//     options.components,
-//     options.entityTypes,
-//     options.catalystServers,
-//     lastTimestampsMap
-//   )) {
-//     if (await options.isEntityPresentLocally(entityId)) continue
-
-//     function scheduleJob() {
-//       downloadJobQueue.add(async () => {
-//         try {
-//           const entityData = await downloadEntityAndContentFiles(
-//             options.components,
-//             entityId,
-//             servers,
-//             serverMapLRU,
-//             options.contentFolder
-//           )
-//           await options.deployAction(entityData)
-//         } catch {
-//           // TODO: Cancel job when fails forever
-//           scheduleJob()
-//         }
-//       })
-//     }
-
-//     scheduleJob()
-//   }
-
-//   await downloadJobQueue.onIdle()
-
-//   return lastTimestampsMap
-// }

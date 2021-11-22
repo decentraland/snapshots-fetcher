@@ -20,13 +20,17 @@ export async function getEntityById(
   return response.deployments[0]
 }
 
+/**
+ * Downloads an entity and its dependency files to a folder in the disk.
+ * @public
+ */
 export async function downloadEntityAndContentFiles(
   components: Pick<SnapshotsFetcherComponents, 'fetcher'>,
   entityId: EntityHash,
   presentInServers: string[],
   serverMapLRU: Map<Server, number>,
   targetFolder: string
-) {
+): Promise<EntityDeployment> {
   // download entity metadata + audit info
   const serverToUse = pickLeastRecentlyUsedServer(presentInServers, serverMapLRU)
   const entityMetadata = await getEntityById(components, entityId, serverToUse)
