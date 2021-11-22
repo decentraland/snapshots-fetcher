@@ -12,7 +12,7 @@ import { IFetchComponent } from '@well-known-components/http-server';
 // Warning: (ae-forgotten-export) The symbol "EntityDeployment" needs to be exported by the entry point index.d.ts
 //
 // @public
-export function downloadEntityAndContentFiles(components: Pick<SnapshotsFetcherComponents, 'fetcher'>, entityId: EntityHash, presentInServers: string[], serverMapLRU: Map<Server, number>, targetFolder: string): Promise<EntityDeployment>;
+export function downloadEntityAndContentFiles(components: Pick<SnapshotsFetcherComponents, 'fetcher'>, entityId: EntityHash, presentInServers: string[], serverMapLRU: Map<Server, number>, targetFolder: string, maxRetries: number, waitTimeBetweenRetries: number): Promise<EntityDeployment>;
 
 // Warning: (ae-forgotten-export) The symbol "RemoteEntityDeployment" needs to be exported by the entry point index.d.ts
 //
@@ -22,6 +22,7 @@ export function getDeployedEntitiesStream(components: SnapshotsFetcherComponents
     fromTimestamp?: number;
     contentFolder: string;
     waitTime: number;
+    retries: number;
 }): AsyncIterable<RemoteEntityDeployment>;
 
 // (No @packageDocumentation comment for this package)
