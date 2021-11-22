@@ -32,25 +32,21 @@ export function createJobQueue(options: createJobQueue.Options): IJobQueue & IBa
         throw new Error('At least one retry is required')
       }
       return new Promise<T>((resolve, reject) => {
-        let retry = retries | 0
-
-        function schedule() {
+        function schedule(retries: number) {
           realQueue.add(async () => {
-            retry--
-
             try {
               resolve(await fn())
             } catch (e: any) {
-              if (!retry) {
+              if (retries <= 0) {
                 reject(e)
               } else {
-                schedule()
+                schedule(retries - 1)
               }
             }
           })
         }
 
-        schedule()
+        schedule(retries)
       })
     },
     async stop() {
