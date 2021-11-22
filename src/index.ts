@@ -6,6 +6,10 @@ import { sleep } from './utils'
 
 export { downloadEntityAndContentFiles } from './entities'
 
+if (parseInt(process.version.split('.')[0]) < 16) {
+  const { name } = require('../package.json')
+  throw new Error(`In order to work properly, the ${name} needs Node 16 or newer`)
+}
 /**
  * Gets a stream of all the entities deployed to a server.
  * Includes all the entities that are already present in the server.

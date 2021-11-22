@@ -22,6 +22,10 @@
     "fp-future": "^1.0.1",
     "p-queue": "^6.6.2"
   },
+  "engines": {
+    "node": ">16.0.0"
+  },
+  "engineStrict": true,
   "devDependencies": {
     "node-fetch": "^2.6.6",
     "ts-node": "^10.4.0",
