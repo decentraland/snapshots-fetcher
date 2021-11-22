@@ -75,6 +75,7 @@ test('getDeployedEntitiesStream', ({ components, stubComponents }) => {
         contentServer: await components.getBaseUrl(),
         contentFolder,
         waitTime: 0,
+        retries: 10,
       }
     )
 
@@ -96,6 +97,80 @@ test('getDeployedEntitiesStream', ({ components, stubComponents }) => {
       { entityType: 'profile', entityId: 'Qm000011', localTimestamp: 11, authChain: [] },
       { entityType: 'profile', entityId: 'Qm000012', localTimestamp: 12, authChain: [] },
       { entityType: 'profile', entityId: 'Qm000013', localTimestamp: 13, authChain: [] },
+    ])
+  })
+})
+
+test("getDeployedEntitiesStream does not download snapshot if it doesn't include relevant deployments. keeps polling after finishing without using pagination", ({
+  components,
+}) => {
+  const contentFolder = resolve('downloads')
+  const downloadedSnapshotFile = 'deployments-snapshot'
+  it('prepares the endpoints', () => {
+    // serve the snapshots
+    components.router.get('/content/snapshot', async () => ({
+      body: {
+        hash: downloadedSnapshotFile,
+        lastIncludedDeploymentTimestamp: 100,
+      },
+    }))
+
+    components.router.get('/content/pointer-changes', async (ctx) => {
+      if (!ctx.url.searchParams.has('from')) throw new Error('pointer-changes called without ?from')
+
+      if (ctx.url.searchParams.get('from') == '150') {
+        return {
+          body: {
+            deltas: [
+              { entityType: 'profile', entityId: 'Qm000150', localTimestamp: 150, authChain: [] },
+              { entityType: 'profile', entityId: 'Qm000151', localTimestamp: 151, authChain: [] },
+            ],
+            pagination: {},
+          },
+        }
+      }
+
+      if (ctx.url.searchParams.get('from') == '151') {
+        return {
+          body: {
+            deltas: [
+              { entityType: 'profile', entityId: 'Qm000152', localTimestamp: 152, authChain: [] },
+              { entityType: 'profile', entityId: 'Qm000153', localTimestamp: 153, authChain: [] },
+            ],
+            pagination: {},
+          },
+        }
+      }
+
+      return {
+        status: 503,
+      }
+    })
+  })
+
+  it('fetches the stream', async () => {
+    const r = []
+    const stream = getDeployedEntitiesStream(
+      { fetcher: components.fetcher, downloadQueue: components.downloadQueue },
+      {
+        fromTimestamp: 150,
+        contentServer: await components.getBaseUrl(),
+        contentFolder,
+        waitTime: 1,
+        retries: 10,
+      }
+    )
+
+    for await (const deployment of stream) {
+      r.push(deployment)
+      if (r.length == 4) break
+    }
+
+    expect(r).toEqual([
+      { entityType: 'profile', entityId: 'Qm000150', localTimestamp: 150, authChain: [] },
+      { entityType: 'profile', entityId: 'Qm000151', localTimestamp: 151, authChain: [] },
+      { entityType: 'profile', entityId: 'Qm000152', localTimestamp: 152, authChain: [] },
+      { entityType: 'profile', entityId: 'Qm000153', localTimestamp: 153, authChain: [] },
     ])
   })
 })

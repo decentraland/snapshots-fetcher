@@ -1,7 +1,7 @@
 import { RemoteEntityDeployment } from './types'
 import { createInterface } from 'readline'
 import { createReadStream } from 'fs'
-import { checkFileExists } from './utils'
+import { checkFileExists, coerceEntityDeployment } from './utils'
 
 async function* processLineByLine(file: string) {
   if (!(await checkFileExists(file))) {
@@ -25,8 +25,10 @@ export async function* processDeploymentsInFile(file: string): AsyncIterable<Rem
   for await (const line of processLineByLine(file)) {
     const theLine = line.trim()
     if (theLine.startsWith('{') && theLine.endsWith('}')) {
-      // TODO validate schema of the parsed JSON
-      yield JSON.parse(theLine)
+      const deployment = coerceEntityDeployment(JSON.parse(theLine))
+      if (deployment) {
+        yield deployment
+      }
     }
   }
 }

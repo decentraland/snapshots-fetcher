@@ -4,14 +4,14 @@ import { saveContentFileToDisk } from './client'
 import { checkFileExists, pickLeastRecentlyUsedServer, sleep } from './utils'
 
 const downloadFileJobsMap = new Map<Path, ReturnType<typeof downloadFileWithRetries>>()
-const MAX_DOWNLOAD_RETRIES = process.env.CI ? 3 : 10
-const MAX_DOWNLOAD_RETRIES_WAIT_TIME = process.env.CI ? 100 : 3000
 
 async function downloadJob(
   hashToDownload: string,
   finalFileName: string,
   presentInServers: string[],
-  serverMapLRU: Map<string, number>
+  serverMapLRU: Map<string, number>,
+  maxRetries: number,
+  waitTimeBetweenRetries: number
 ): Promise<string> {
   // cancel early if the file is already downloaded
   if (await checkFileExists(finalFileName)) return finalFileName
@@ -26,9 +26,9 @@ async function downloadJob(
 
       return finalFileName
     } catch (e: any) {
-      console.log(`Retrying download of hash ${hashToDownload} ${retries}/${MAX_DOWNLOAD_RETRIES}`)
-      if (retries < MAX_DOWNLOAD_RETRIES) {
-        await sleep(MAX_DOWNLOAD_RETRIES_WAIT_TIME)
+      console.log(`Retrying download of hash ${hashToDownload} ${retries}/${maxRetries}. Reason: ${e}`)
+      if (retries < maxRetries) {
+        await sleep(waitTimeBetweenRetries)
         continue
       } else {
         throw e
@@ -45,7 +45,9 @@ export async function downloadFileWithRetries(
   hashToDownload: string,
   targetFolder: string,
   presentInServers: string[],
-  serverMapLRU: Map<string, number>
+  serverMapLRU: Map<string, number>,
+  maxRetries: number,
+  waitTimeBetweenRetries: number
 ): Promise<string> {
   const finalFileName = path.resolve(targetFolder, hashToDownload)
 
@@ -54,7 +56,14 @@ export async function downloadFileWithRetries(
   }
 
   try {
-    const downloadWithRetriesJob = downloadJob(hashToDownload, finalFileName, presentInServers, serverMapLRU)
+    const downloadWithRetriesJob = downloadJob(
+      hashToDownload,
+      finalFileName,
+      presentInServers,
+      serverMapLRU,
+      maxRetries,
+      waitTimeBetweenRetries
+    )
     downloadFileJobsMap.set(finalFileName, downloadWithRetriesJob)
 
     return await downloadWithRetriesJob
@@ -64,13 +73,7 @@ export async function downloadFileWithRetries(
 }
 
 async function downloadContentFile(hash: string, finalFileName: string, serverToUse: string) {
-  // TODO: save to tmp folder and then move to final destination, for this lib:
-  //       always assume that it a file exists in its final destination it is ready to be used
-
   if (!(await checkFileExists(finalFileName))) {
-    // const tmpFile = generateTmpFileName()
-    // await saveContentFileToDisk(serverToUse, hash, tmpFile)
-    // await mv(tmpFile, finalFileName)
     await saveContentFileToDisk(serverToUse, hash, finalFileName)
   }
 }

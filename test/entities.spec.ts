@@ -1,9 +1,8 @@
-import { getDeployedEntitiesStream } from '../src'
 import { test } from './components'
 import { createReadStream, unlinkSync } from 'fs'
 import { resolve } from 'path'
-import { sleep } from '../src/utils'
-import { downloadEntityAndContentFiles } from '../src/entities'
+import { assertHash } from '../src/utils'
+import { downloadEntityAndContentFiles } from '../src'
 
 test('entities', ({ components, stubComponents }) => {
   const contentFolder = resolve('downloads')
@@ -41,13 +40,20 @@ test('entities', ({ components, stubComponents }) => {
   })
 
   it('downloads an entity', async () => {
+    await assertHash(
+      'test/fixtures/QmXx5dDq7nnPuCCP43Ngc7iq4kkqDfC5PEJGawUHYLGxUn',
+      'QmXx5dDq7nnPuCCP43Ngc7iq4kkqDfC5PEJGawUHYLGxUn'
+    )
+
     const usedServers = new Map()
     const entity = await downloadEntityAndContentFiles(
       { fetcher: components.fetcher },
       'QmXx5dDq7nnPuCCP43Ngc7iq4kkqDfC5PEJGawUHYLGxUn',
       [await components.getBaseUrl()],
       usedServers,
-      contentFolder
+      contentFolder,
+      10,
+      1
     )
 
     expect(entity).toHaveProperty('entityId')

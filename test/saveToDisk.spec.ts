@@ -2,8 +2,11 @@ import { test } from './components'
 import { readFileSync, unlinkSync, promises as fsPromises, constants } from 'fs'
 import { resolve } from 'path'
 import { Readable } from 'stream'
-import { checkFileExists, saveToDisk, sleep } from '../src/utils'
+import { checkFileExists, saveToDisk } from '../src/utils'
 import { downloadFileWithRetries } from '../src/downloader'
+
+const maxRetries = 10
+const waitTimeBetweenRetries = 100
 
 test('saveToDisk', ({ components, stubComponents }) => {
   const contentFolder = resolve('downloads')
@@ -11,6 +14,35 @@ test('saveToDisk', ({ components, stubComponents }) => {
 
   it('prepares the endpoints', () => {
     components.router.get(`/working`, async () => {
+      return {
+        body: content.toString(),
+      }
+    })
+    components.router.get(`/working-redirected-302`, async () => {
+      return {
+        status: 302,
+        headers: {
+          location: '/working',
+        },
+      }
+    })
+    components.router.get(`/working-redirected-301`, async () => {
+      return {
+        status: 301,
+        headers: {
+          location: '/working',
+        },
+      }
+    })
+    components.router.get(`/forever-redirecting-301`, async () => {
+      return {
+        status: 301,
+        headers: {
+          location: '/forever-redirecting-301',
+        },
+      }
+    })
+    components.router.get(`/QmInValidHash`, async () => {
       return {
         body: content.toString(),
       }
@@ -73,6 +105,37 @@ test('saveToDisk', ({ components, stubComponents }) => {
     await fsPromises.access(filename, constants.R_OK)
     await fsPromises.access(filename, constants.W_OK)
     await expect(() => fsPromises.access(filename, constants.X_OK)).rejects.toThrow('EACCES')
+  })
+
+  it('downloads a file to the content folder, follows 302 redirects', async () => {
+    const filename = resolve(contentFolder, 'working')
+    try {
+      unlinkSync(filename)
+    } catch {}
+
+    await saveToDisk((await components.getBaseUrl()) + '/working-redirected-302', filename)
+
+    // check file exists and has correct content
+    expect(readFileSync(filename)).toEqual(content)
+  })
+
+  it('downloads a file to the content folder, follows 301 redirects', async () => {
+    const filename = resolve(contentFolder, 'working')
+    try {
+      unlinkSync(filename)
+    } catch {}
+
+    await saveToDisk((await components.getBaseUrl()) + '/working-redirected-301', filename)
+
+    // check file exists and has correct content
+    expect(readFileSync(filename)).toEqual(content)
+  })
+
+  it('fails on eternal redirection loop', async () => {
+    const filename = resolve(contentFolder, 'working')
+    await expect(saveToDisk((await components.getBaseUrl()) + '/forever-redirecting-301', filename)).rejects.toThrow(
+      'Too much redirects'
+    )
   })
 
   it('fails to download an aborted stream', async () => {
@@ -158,20 +221,64 @@ test('saveToDisk', ({ components, stubComponents }) => {
 
   it('always failing endpoint converges and fails', async () => {
     await expect(async () => {
-      await downloadFileWithRetries('alwaysFails', contentFolder, [await components.getBaseUrl()], new Map())
+      await downloadFileWithRetries(
+        'alwaysFails',
+        contentFolder,
+        [await components.getBaseUrl()],
+        new Map(),
+        maxRetries,
+        waitTimeBetweenRetries
+      )
     }).rejects.toThrow('Invalid response')
   })
 
   it('concurrent download reuses job', async () => {
-    const a = downloadFileWithRetries('failsSecondTime', contentFolder, [await components.getBaseUrl()], new Map())
-    const b = downloadFileWithRetries('failsSecondTime', contentFolder, [await components.getBaseUrl()], new Map())
+    const a = downloadFileWithRetries(
+      'failsSecondTime',
+      contentFolder,
+      [await components.getBaseUrl()],
+      new Map(),
+      maxRetries,
+      waitTimeBetweenRetries
+    )
+    const b = downloadFileWithRetries(
+      'failsSecondTime',
+      contentFolder,
+      [await components.getBaseUrl()],
+      new Map(),
+      maxRetries,
+      waitTimeBetweenRetries
+    )
 
     expect(await a).toEqual(await b)
   })
 
   it('already downloaded files must return without actually downloading the file', async () => {
-    const a = downloadFileWithRetries('failsSecondTime', contentFolder, [await components.getBaseUrl()], new Map())
+    const a = downloadFileWithRetries(
+      'failsSecondTime',
+      contentFolder,
+      [await components.getBaseUrl()],
+      new Map(),
+      maxRetries,
+      waitTimeBetweenRetries
+    )
 
     await a
+  })
+
+  it('fails to download a file with an invalid hash', async () => {
+    const filename = resolve(contentFolder, 'QmInValidHash')
+    try {
+      unlinkSync(filename)
+    } catch {}
+
+    // check file exists and has correct content
+    expect(await checkFileExists(filename)).toEqual(false)
+
+    await expect(
+      async () => await saveToDisk((await components.getBaseUrl()) + '/QmInValidHash', filename, 'QmInValidHash')
+    ).rejects.toThrow('hashes do not match')
+    // check file exists and has correct content
+    expect(await checkFileExists(filename)).toEqual(false)
   })
 })

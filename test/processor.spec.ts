@@ -1,5 +1,5 @@
 import { getDeployedEntitiesStream } from '../src'
-import { processDeploymentsInFile } from '../src/processor'
+import { processDeploymentsInFile } from '../src/file-processor'
 
 describe('processor', () => {
   it('emits every deployment ignoring empty lines', async () => {

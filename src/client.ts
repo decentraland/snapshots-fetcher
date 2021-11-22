@@ -1,4 +1,4 @@
-import { RemoteEntityDeployment, SnapshotsFetcherComponents } from './types'
+import { EntityDeployment, RemoteEntityDeployment, SnapshotsFetcherComponents } from './types'
 import { fetchJson, saveToDisk } from './utils'
 
 export async function getGlobalSnapshot(components: SnapshotsFetcherComponents, server: string, retries: number) {
@@ -50,7 +50,21 @@ export function fetchPointerChanges(
 export async function saveContentFileToDisk(server: string, hash: string, destinationFilename: string) {
   const url = new URL(`/content/contents/${hash}`, server).toString()
 
-  await saveToDisk(url, destinationFilename)
-  // TODO: Check Hash validity or throw
-  return
+  return await saveToDisk(url, destinationFilename, hash)
+}
+
+export async function getEntityById(
+  components: Pick<SnapshotsFetcherComponents, 'fetcher'>,
+  entityId: string,
+  server: string
+): Promise<EntityDeployment> {
+  const url = new URL(`/content/deployments/?entityId=${encodeURIComponent(entityId)}&fields=auditInfo,content`, server)
+
+  const response = await fetchJson(url.toString(), components.fetcher)
+
+  if (!response.deployments[0]) {
+    throw new Error(`The entity ${entityId} could not be found in server ${server}`)
+  }
+
+  return response.deployments[0]
 }
