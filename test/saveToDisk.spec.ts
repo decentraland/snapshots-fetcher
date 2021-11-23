@@ -55,7 +55,8 @@ test('saveToDisk', ({ components, stubComponents }) => {
     })
 
     let wasCalled = false
-    components.router.get(`/content/contents/failsSecondTime`, async () => {
+    // this endpoint works the first time and fails the 1+Nth time
+    components.router.get(`/content/contents/bafkreigwey5vc6q25ilofdu2vjvcag72eqj46lzipi6mredsfpe42ls2ri`, async () => {
       if (wasCalled) {
         return {
           status: 503,
@@ -65,7 +66,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
       wasCalled = true
       return {
         status: 200,
-        body: 'hi there',
+        body: 'some file',
       }
     })
 
@@ -234,7 +235,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
 
   it('concurrent download reuses job', async () => {
     const a = downloadFileWithRetries(
-      'failsSecondTime',
+      'bafkreigwey5vc6q25ilofdu2vjvcag72eqj46lzipi6mredsfpe42ls2ri',
       contentFolder,
       [await components.getBaseUrl()],
       new Map(),
@@ -242,7 +243,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
       waitTimeBetweenRetries
     )
     const b = downloadFileWithRetries(
-      'failsSecondTime',
+      'bafkreigwey5vc6q25ilofdu2vjvcag72eqj46lzipi6mredsfpe42ls2ri',
       contentFolder,
       [await components.getBaseUrl()],
       new Map(),
@@ -255,7 +256,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
 
   it('already downloaded files must return without actually downloading the file', async () => {
     const a = downloadFileWithRetries(
-      'failsSecondTime',
+      'bafkreigwey5vc6q25ilofdu2vjvcag72eqj46lzipi6mredsfpe42ls2ri',
       contentFolder,
       [await components.getBaseUrl()],
       new Map(),
