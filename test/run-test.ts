@@ -1,4 +1,3 @@
-import { downloadEntities } from '../src'
 import * as path from 'path'
 import { checkFileExists } from '../src/utils'
 import { createFetchComponent } from './test-component'

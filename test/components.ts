@@ -11,6 +11,7 @@ import {
   TestServerComponents,
   wireTestServerComponents,
 } from './functions-for-wkc-test-helpers'
+import { createLogComponent } from '@well-known-components/logger'
 
 // Record of components
 export type TestComponents = SnapshotsFetcherComponents & TestServerComponents<SnapshotsFetcherComponents>
@@ -34,11 +35,13 @@ export const test = createRunner<TestComponents>({
       concurrency: 1,
       timeout: 100000,
     })
+    const logger = createLogComponent()
 
     const testServerComponents = await initTestServerComponents()
 
     return {
       ...testServerComponents,
+      logger,
       downloadQueue,
       fetcher,
     }

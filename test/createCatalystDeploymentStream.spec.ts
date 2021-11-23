@@ -1,20 +1,28 @@
-import { getDeployedEntitiesStream } from '../src'
+import { createCatalystDeploymentStream, getDeployedEntitiesStream } from '../src'
 import { test } from './components'
 import { createReadStream, unlinkSync } from 'fs'
 import { resolve } from 'path'
 import { sleep } from '../src/utils'
+import future from 'fp-future'
 
-test('getDeployedEntitiesStream', ({ components, stubComponents }) => {
+test('createCatalystDeploymentStream', ({ components, stubComponents }) => {
   const contentFolder = resolve('downloads')
   const downloadedSnapshotFile = 'deployments-snapshot'
+
+  let snapshotHits = 0
+  let shouldFailOnNextPointerChanges = false
+
   it('prepares the endpoints', () => {
     // serve the snapshots
-    components.router.get('/content/snapshot', async () => ({
-      body: {
-        hash: downloadedSnapshotFile,
-        lastIncludedDeploymentTimestamp: 8,
-      },
-    }))
+    components.router.get('/content/snapshot', async () => {
+      snapshotHits++
+      return {
+        body: {
+          hash: downloadedSnapshotFile,
+          lastIncludedDeploymentTimestamp: 8,
+        },
+      }
+    })
 
     // serve the snapshot file
     let downloadAttempts = 0
@@ -31,6 +39,11 @@ test('getDeployedEntitiesStream', ({ components, stubComponents }) => {
     })
 
     components.router.get('/content/pointer-changes', async (ctx) => {
+      if (shouldFailOnNextPointerChanges) {
+        shouldFailOnNextPointerChanges = false
+        throw new Error('Failing to simulate recovery')
+      }
+
       if (!ctx.url.searchParams.has('from')) throw new Error('pointer-changes called without ?from')
 
       if (ctx.url.searchParams.get('from') == '9') {
@@ -44,6 +57,12 @@ test('getDeployedEntitiesStream', ({ components, stubComponents }) => {
               next: '?from=11&entityId=Qm000011',
             },
           },
+        }
+      }
+
+      if (ctx.url.searchParams.get('from') == '13') {
+        return {
+          body: { deltas: [] },
         }
       }
 
@@ -69,19 +88,42 @@ test('getDeployedEntitiesStream', ({ components, stubComponents }) => {
 
   it('fetches a stream', async () => {
     const r = []
-    const stream = getDeployedEntitiesStream(
-      { fetcher: components.fetcher, downloadQueue: components.downloadQueue },
+    const stream = createCatalystDeploymentStream(
+      { fetcher: components.fetcher, downloadQueue: components.downloadQueue, logger: components.logger },
       {
         contentServer: await components.getBaseUrl(),
         contentFolder,
-        waitTime: 0,
-        retries: 10,
+        pointerChangesWaitTime: 0,
+        requestRetryWaitTime: 0,
+        requestMaxRetries: 10,
+        reconnectTime: 50,
+        fromTimestamp: 0,
       }
     )
 
-    for await (const deployment of stream) {
+    const finishedFuture = future<void>()
+
+    expect(stream.isStopped()).toEqual(true)
+
+    stream.onDeployment(async (deployment) => {
       r.push(deployment)
-    }
+
+      if (r.length == 13) {
+        console.dir(r)
+        shouldFailOnNextPointerChanges = true
+        stream.stop()
+        finishedFuture.resolve()
+      }
+    })
+
+    await stream.start()
+    expect(stream.isStopped()).toEqual(false)
+    await finishedFuture
+
+    expect({ snapshotHits }).toEqual({ snapshotHits: 1 })
+
+    expect(stream.getRetryCount()).toEqual(1)
+    expect(stream.isStopped()).toEqual(true)
 
     expect(r).toEqual([
       { entityType: 'profile', entityId: 'Qm000001', localTimestamp: 1, authChain: [] },
@@ -97,80 +139,6 @@ test('getDeployedEntitiesStream', ({ components, stubComponents }) => {
       { entityType: 'profile', entityId: 'Qm000011', localTimestamp: 11, authChain: [] },
       { entityType: 'profile', entityId: 'Qm000012', localTimestamp: 12, authChain: [] },
       { entityType: 'profile', entityId: 'Qm000013', localTimestamp: 13, authChain: [] },
-    ])
-  })
-})
-
-test("getDeployedEntitiesStream does not download snapshot if it doesn't include relevant deployments. keeps polling after finishing without using pagination", ({
-  components,
-}) => {
-  const contentFolder = resolve('downloads')
-  const downloadedSnapshotFile = 'deployments-snapshot'
-  it('prepares the endpoints', () => {
-    // serve the snapshots
-    components.router.get('/content/snapshot', async () => ({
-      body: {
-        hash: downloadedSnapshotFile,
-        lastIncludedDeploymentTimestamp: 100,
-      },
-    }))
-
-    components.router.get('/content/pointer-changes', async (ctx) => {
-      if (!ctx.url.searchParams.has('from')) throw new Error('pointer-changes called without ?from')
-
-      if (ctx.url.searchParams.get('from') == '150') {
-        return {
-          body: {
-            deltas: [
-              { entityType: 'profile', entityId: 'Qm000150', localTimestamp: 150, authChain: [] },
-              { entityType: 'profile', entityId: 'Qm000151', localTimestamp: 151, authChain: [] },
-            ],
-            pagination: {},
-          },
-        }
-      }
-
-      if (ctx.url.searchParams.get('from') == '151') {
-        return {
-          body: {
-            deltas: [
-              { entityType: 'profile', entityId: 'Qm000152', localTimestamp: 152, authChain: [] },
-              { entityType: 'profile', entityId: 'Qm000153', localTimestamp: 153, authChain: [] },
-            ],
-            pagination: {},
-          },
-        }
-      }
-
-      return {
-        status: 503,
-      }
-    })
-  })
-
-  it('fetches the stream', async () => {
-    const r = []
-    const stream = getDeployedEntitiesStream(
-      { fetcher: components.fetcher, downloadQueue: components.downloadQueue },
-      {
-        fromTimestamp: 150,
-        contentServer: await components.getBaseUrl(),
-        contentFolder,
-        waitTime: 1,
-        retries: 10,
-      }
-    )
-
-    for await (const deployment of stream) {
-      r.push(deployment)
-      if (r.length == 4) break
-    }
-
-    expect(r).toEqual([
-      { entityType: 'profile', entityId: 'Qm000150', localTimestamp: 150, authChain: [] },
-      { entityType: 'profile', entityId: 'Qm000151', localTimestamp: 151, authChain: [] },
-      { entityType: 'profile', entityId: 'Qm000152', localTimestamp: 152, authChain: [] },
-      { entityType: 'profile', entityId: 'Qm000153', localTimestamp: 153, authChain: [] },
     ])
   })
 })

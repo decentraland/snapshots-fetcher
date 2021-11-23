@@ -1,12 +1,24 @@
+import { IBaseComponent } from '@well-known-components/interfaces'
 import { fetchPointerChanges, getEntityById, getGlobalSnapshot } from './client'
 import { downloadFileWithRetries } from './downloader'
+import { createExponentialFallofRetry } from './exponential-fallof-retry'
 import { processDeploymentsInFile } from './file-processor'
-import { EntityDeployment, EntityHash, RemoteEntityDeployment, Server, SnapshotsFetcherComponents } from './types'
+import {
+  CatalystDeploymentStreamComponent,
+  CatalystDeploymentStreamOptions,
+  DeployedEntityStreamOptions,
+  DeploymentHandler,
+  EntityDeployment,
+  EntityHash,
+  RemoteEntityDeployment,
+  Server,
+  SnapshotsFetcherComponents,
+} from './types'
 import { coerceEntityDeployment, pickLeastRecentlyUsedServer, sleep } from './utils'
 
 if (parseInt(process.version.split('.')[0]) < 16) {
   const { name } = require('../package.json')
-  throw new Error(`In order to work properly, the ${name} needs Node 16 or newer`)
+  throw new Error(`In order to work, the package ${name} needs to run in Node v16 or newer to handle streams properly.`)
 }
 
 /**
@@ -65,13 +77,7 @@ export async function downloadEntityAndContentFiles(
  */
 export async function* getDeployedEntitiesStream(
   components: SnapshotsFetcherComponents,
-  options: {
-    contentServer: string
-    fromTimestamp?: number
-    contentFolder: string
-    waitTime: number
-    retries: number
-  }
+  options: DeployedEntityStreamOptions
 ): AsyncIterable<RemoteEntityDeployment> {
   // the minimum timestamp we are looking for
   const genesisTimestamp = options.fromTimestamp || 0
@@ -83,7 +89,7 @@ export async function* getDeployedEntitiesStream(
   const { hash, lastIncludedDeploymentTimestamp } = await getGlobalSnapshot(
     components,
     options.contentServer,
-    options.retries
+    options.requestMaxRetries
   )
 
   // 2. download the snapshot file if it contains deployments
@@ -95,8 +101,8 @@ export async function* getDeployedEntitiesStream(
       options.contentFolder,
       [options.contentServer],
       new Map(),
-      options.retries,
-      options.waitTime
+      options.requestMaxRetries,
+      options.requestRetryWaitTime
     )
 
     // 2.2. open the snapshot file and process line by line
@@ -133,6 +139,53 @@ export async function* getDeployedEntitiesStream(
     }
 
     // 3.2 repeat (3) if waitTime > 0
-    await sleep(options.waitTime)
-  } while (options.waitTime > 0)
+    await sleep(options.pointerChangesWaitTime)
+  } while (options.pointerChangesWaitTime > 0)
+}
+
+export function createCatalystDeploymentStream(
+  components: SnapshotsFetcherComponents,
+  options: CatalystDeploymentStreamOptions
+): IBaseComponent & CatalystDeploymentStreamComponent {
+  let logs = components.logger.getLogger(`CatalystDeploymentStream(${options.contentServer})`)
+  let greatestProcessedTimestamp = options.fromTimestamp || 0
+
+  const handlers: DeploymentHandler[] = []
+
+  const exponentialFallofRetryComponent = createExponentialFallofRetry(logs, {
+    action,
+    retryTime: options.reconnectTime,
+    retryTimeExponent: 1.1,
+  })
+
+  async function action() {
+    const deployments = getDeployedEntitiesStream(components, {
+      ...options,
+      fromTimestamp: greatestProcessedTimestamp,
+    })
+
+    for await (const deployment of deployments) {
+      // if the stream is closed then we should not process more deployments
+      if (exponentialFallofRetryComponent.isStopped()) {
+        logs.debug('Canceling running stream')
+        return
+      }
+
+      for (const cb of handlers) {
+        await cb(deployment, options.contentServer)
+      }
+
+      // update greatest processed timestamp
+      if (deployment.localTimestamp > greatestProcessedTimestamp) {
+        greatestProcessedTimestamp = deployment.localTimestamp
+      }
+    }
+  }
+
+  return {
+    ...exponentialFallofRetryComponent,
+    onDeployment(cb: DeploymentHandler) {
+      handlers.push(cb)
+    },
+  }
 }

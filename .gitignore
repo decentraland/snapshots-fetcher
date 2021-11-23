@@ -4,3 +4,4 @@ downloads/**/*
 !downloads/.gitkeep
 temp
 coverage
+**/.DS_Store

@@ -1,23 +1,27 @@
 import { IFetchComponent } from '@well-known-components/http-server'
+import { IBaseComponent, ILoggerComponent } from '@well-known-components/interfaces'
+import { ExponentialFallofRetryComponent } from './exponential-fallof-retry'
 import { IJobQueue } from './job-queue-port'
 
-export type SnapshotData = [EntityHash, Pointers][]
-export type Pointer = string
-export type Pointers = Pointer[]
+/**
+ * @public
+ */
 export type EntityHash = string
+
+/**
+ * @public
+ */
 export type Server = string
+
+/**
+ * @public
+ */
 export type Path = string
-export type Timestamp = number
 
 /**
  * @public
  */
 export type ContentMapping = { file: string; hash: string }
-
-/**
- * @public
- */
-export type Entity = { id: string; content: undefined | ContentMapping[] }
 
 /**
  * Components needed by the DeploymentsFetcher to work
@@ -26,6 +30,7 @@ export type Entity = { id: string; content: undefined | ContentMapping[] }
 export type SnapshotsFetcherComponents = {
   fetcher: IFetchComponent
   downloadQueue: IJobQueue
+  logger: ILoggerComponent
 }
 
 /**
@@ -34,7 +39,7 @@ export type SnapshotsFetcherComponents = {
 export type EntityDeployment = {
   entityId: string
   entityType: string
-  content: Array<{ key: string; hash: string }>
+  content: Array<ContentMapping>
   auditInfo: any
 }
 
@@ -53,6 +58,41 @@ export type DownloadEntitiesOptions = {
    * Entity types to fetch
    */
   entityTypes: string[]
+}
+
+/**
+ * @public
+ */
+export type DeployedEntityStreamOptions = {
+  contentServer: string
+  fromTimestamp?: number
+  contentFolder: string
+
+  // configure pointer-changes polling
+  pointerChangesWaitTime: number
+
+  // retry http requests
+  requestRetryWaitTime: number
+  requestMaxRetries: number
+}
+
+/**
+ * @public
+ */
+export type CatalystDeploymentStreamComponent = ExponentialFallofRetryComponent & {
+  onDeployment(cb: DeploymentHandler): void
+}
+
+/**
+ * @public
+ */
+export type DeploymentHandler = (deployment: RemoteEntityDeployment, server: string) => Promise<void>
+
+/**
+ * @public
+ */
+export type CatalystDeploymentStreamOptions = DeployedEntityStreamOptions & {
+  reconnectTime: number
 }
 
 /**

@@ -29,6 +29,7 @@ export async function checkFileExists(file: string): Promise<boolean> {
 }
 
 export async function sleep(time: number): Promise<void> {
+  if (time <= 0) return
   return new Promise<void>((resolve) => setTimeout(resolve, time))
 }
 
