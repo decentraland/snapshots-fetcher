@@ -158,7 +158,7 @@ export function createCatalystDeploymentStream(
   const exponentialFallofRetryComponent = createExponentialFallofRetry(logs, {
     action,
     retryTime: options.reconnectTime,
-    retryTimeExponent: 1.1,
+    retryTimeExponent: options.reconnectRetryTimeExponent ?? 1.1,
   })
 
   async function action() {
@@ -189,6 +189,9 @@ export function createCatalystDeploymentStream(
     ...exponentialFallofRetryComponent,
     onDeployment(cb: DeploymentHandler) {
       handlers.push(cb)
+    },
+    getGreatesProcessedTimestamp() {
+      return greatestProcessedTimestamp
     },
   }
 }

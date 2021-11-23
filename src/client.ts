@@ -46,7 +46,10 @@ export function fetchPointerChanges(
   server: string,
   fromTimestamp: number
 ): AsyncIterable<RemoteEntityDeployment> {
-  const url = new URL(`/content/pointer-changes?from=${encodeURIComponent(fromTimestamp)}`, server).toString()
+  const url = new URL(
+    `/content/pointer-changes?sortingOrder=ASC&sortingField=localTimestamp&from=${encodeURIComponent(fromTimestamp)}`,
+    server
+  ).toString()
   return fetchJsonPaginated(components, url, ($) => $.deltas)
 }
 

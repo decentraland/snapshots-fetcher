@@ -81,6 +81,7 @@ export type DeployedEntityStreamOptions = {
  */
 export type CatalystDeploymentStreamComponent = ExponentialFallofRetryComponent & {
   onDeployment(cb: DeploymentHandler): void
+  getGreatesProcessedTimestamp(): number
 }
 
 /**
@@ -93,6 +94,10 @@ export type DeploymentHandler = (deployment: RemoteEntityDeployment, server: str
  */
 export type CatalystDeploymentStreamOptions = DeployedEntityStreamOptions & {
   reconnectTime: number
+  /**
+   * 1.1 by default
+   */
+  reconnectRetryTimeExponent?: number
 }
 
 /**

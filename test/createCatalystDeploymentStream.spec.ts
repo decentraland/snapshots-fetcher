@@ -39,6 +39,11 @@ test('createCatalystDeploymentStream', ({ components, stubComponents }) => {
     })
 
     components.router.get('/content/pointer-changes', async (ctx) => {
+      if (ctx.url.searchParams.get('sortingOrder') != 'ASC')
+        throw new Error('/pointer-changes MUST be ordered by localTimestamp ASC')
+      if (ctx.url.searchParams.get('sortingField') != 'localTimestamp')
+        throw new Error('/pointer-changes MUST be ordered by localTimestamp ASC')
+
       if (shouldFailOnNextPointerChanges) {
         shouldFailOnNextPointerChanges = false
         throw new Error('Failing to simulate recovery')
@@ -54,7 +59,7 @@ test('createCatalystDeploymentStream', ({ components, stubComponents }) => {
               { entityType: 'profile', entityId: 'Qm000011', localTimestamp: 11, authChain: [] },
             ],
             pagination: {
-              next: '?from=11&entityId=Qm000011',
+              next: '?from=11&entityId=Qm000011&sortingOrder=ASC&sortingField=localTimestamp',
             },
           },
         }
@@ -109,7 +114,6 @@ test('createCatalystDeploymentStream', ({ components, stubComponents }) => {
       r.push(deployment)
 
       if (r.length == 13) {
-        console.dir(r)
         shouldFailOnNextPointerChanges = true
         stream.stop()
         finishedFuture.resolve()
@@ -140,5 +144,7 @@ test('createCatalystDeploymentStream', ({ components, stubComponents }) => {
       { entityType: 'profile', entityId: 'Qm000012', localTimestamp: 12, authChain: [] },
       { entityType: 'profile', entityId: 'Qm000013', localTimestamp: 13, authChain: [] },
     ])
+
+    expect(stream.getGreatesProcessedTimestamp()).toEqual(13)
   })
 })
