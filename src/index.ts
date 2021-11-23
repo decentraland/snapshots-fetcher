@@ -95,7 +95,7 @@ export async function* getDeployedEntitiesStream(
   // 2. download the snapshot file if it contains deployments
   //    in the range we are interested (>= genesisTimestamp)
   if (lastIncludedDeploymentTimestamp > genesisTimestamp) {
-    // 2.1. download the shapshot file if needed
+    // 2.1. download the snapshot file if needed
     const snapshotFilename = await downloadFileWithRetries(
       hash,
       options.contentFolder,
