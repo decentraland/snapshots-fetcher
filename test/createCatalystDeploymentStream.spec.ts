@@ -7,7 +7,7 @@ import future from 'fp-future'
 
 test('createCatalystDeploymentStream', ({ components, stubComponents }) => {
   const contentFolder = resolve('downloads')
-  const downloadedSnapshotFile = 'deployments-snapshot'
+  const downloadedSnapshotFile = 'bafkreic2h5lbt3bjljanxmlybase65zmv6lbq3r6ervr6vpmqlb432kgzm'
 
   let snapshotHits = 0
   let shouldFailOnNextPointerChanges = false
@@ -34,7 +34,7 @@ test('createCatalystDeploymentStream', ({ components, stubComponents }) => {
       }
 
       return {
-        body: createReadStream('test/fixtures/deployments'),
+        body: createReadStream('test/fixtures/bafkreic2h5lbt3bjljanxmlybase65zmv6lbq3r6ervr6vpmqlb432kgzm'),
       }
     })
 

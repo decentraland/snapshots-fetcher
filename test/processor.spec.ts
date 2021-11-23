@@ -4,7 +4,7 @@ import { processDeploymentsInFile } from '../src/file-processor'
 describe('processor', () => {
   it('emits every deployment ignoring empty lines', async () => {
     const r = []
-    const stream = processDeploymentsInFile('test/fixtures/deployments')
+    const stream = processDeploymentsInFile('test/fixtures/bafkreic2h5lbt3bjljanxmlybase65zmv6lbq3r6ervr6vpmqlb432kgzm')
 
     for await (const deployment of stream) {
       r.push(deployment)
@@ -25,7 +25,9 @@ describe('processor', () => {
 
   it('fails on unexistent file', async () => {
     await expect(async () => {
-      const stream = processDeploymentsInFile('test/fixtures/deployments' + Math.random())
+      const stream = processDeploymentsInFile(
+        'test/fixtures/bafkreic2h5lbt3bjljanxmlybase65zmv6lbq3r6ervr6vpmqlb432kgzm' + Math.random()
+      )
       for await (const c of stream) {
         // noop
       }

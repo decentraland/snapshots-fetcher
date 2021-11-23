@@ -94,6 +94,8 @@ export async function assertHash(filename: string, hash: string) {
         `Download error: hashes do not match(expected:${hash} != calculated:${baHash}) for file ${filename}`
       )
     }
+  } else {
+    throw new Error(`Unknown hashing algorithm for hash: ${hash}`)
   }
 }
 

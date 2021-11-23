@@ -6,7 +6,7 @@ import { sleep } from '../src/utils'
 
 test('getDeployedEntitiesStream', ({ components, stubComponents }) => {
   const contentFolder = resolve('downloads')
-  const downloadedSnapshotFile = 'deployments-snapshot'
+  const downloadedSnapshotFile = 'bafkreic2h5lbt3bjljanxmlybase65zmv6lbq3r6ervr6vpmqlb432kgzm'
   it('prepares the endpoints', () => {
     // serve the snapshots
     components.router.get('/content/snapshot', async () => ({
@@ -26,7 +26,7 @@ test('getDeployedEntitiesStream', ({ components, stubComponents }) => {
       }
 
       return {
-        body: createReadStream('test/fixtures/deployments'),
+        body: createReadStream('test/fixtures/bafkreic2h5lbt3bjljanxmlybase65zmv6lbq3r6ervr6vpmqlb432kgzm'),
       }
     })
 
