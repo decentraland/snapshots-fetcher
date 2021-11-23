@@ -4,9 +4,17 @@
 
 ```ts
 
+import { IBaseComponent } from '@well-known-components/interfaces';
 import { IFetchComponent } from '@well-known-components/http-server';
+import { ILoggerComponent } from '@well-known-components/interfaces';
 
 // Warning: (ae-forgotten-export) The symbol "SnapshotsFetcherComponents" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "CatalystDeploymentStreamOptions" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "CatalystDeploymentStreamComponent" needs to be exported by the entry point index.d.ts
+//
+// @public (undocumented)
+export function createCatalystDeploymentStream(components: SnapshotsFetcherComponents, options: CatalystDeploymentStreamOptions): IBaseComponent & CatalystDeploymentStreamComponent;
+
 // Warning: (ae-forgotten-export) The symbol "EntityHash" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "Server" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "EntityDeployment" needs to be exported by the entry point index.d.ts
@@ -14,16 +22,11 @@ import { IFetchComponent } from '@well-known-components/http-server';
 // @public
 export function downloadEntityAndContentFiles(components: Pick<SnapshotsFetcherComponents, 'fetcher'>, entityId: EntityHash, presentInServers: string[], serverMapLRU: Map<Server, number>, targetFolder: string, maxRetries: number, waitTimeBetweenRetries: number): Promise<EntityDeployment>;
 
+// Warning: (ae-forgotten-export) The symbol "DeployedEntityStreamOptions" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "RemoteEntityDeployment" needs to be exported by the entry point index.d.ts
 //
 // @public
-export function getDeployedEntitiesStream(components: SnapshotsFetcherComponents, options: {
-    contentServer: string;
-    fromTimestamp?: number;
-    contentFolder: string;
-    waitTime: number;
-    retries: number;
-}): AsyncIterable<RemoteEntityDeployment>;
+export function getDeployedEntitiesStream(components: SnapshotsFetcherComponents, options: DeployedEntityStreamOptions): AsyncIterable<RemoteEntityDeployment>;
 
 // (No @packageDocumentation comment for this package)
 

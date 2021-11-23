@@ -143,6 +143,9 @@ export async function* getDeployedEntitiesStream(
   } while (options.pointerChangesWaitTime > 0)
 }
 
+/**
+ * @public
+ */
 export function createCatalystDeploymentStream(
   components: SnapshotsFetcherComponents,
   options: CatalystDeploymentStreamOptions
