@@ -16,7 +16,7 @@
     "@well-known-components/interfaces": "^1.1.0",
     "@well-known-components/metrics": "^1.1.2",
     "cids": "^1.1.9",
-    "ipfs-unixfs-importer": "^7.0.3",
+    "ipfs-unixfs-importer": "^9.0.6",
     "multihashes": "^4.0.3",
     "p-queue": "^6.6.2"
   },
