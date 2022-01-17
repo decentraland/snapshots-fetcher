@@ -30,7 +30,7 @@
     "@well-known-components/http-server": "^1.1.1",
     "@well-known-components/logger": "^1.1.0",
     "@well-known-components/test-helpers": "^1.2.1",
-    "node-fetch": "^2.6.6",
+    "node-fetch": "^3.1.1",
     "ts-node": "^10.4.0",
     "typescript": "^4.4.4"
   },
