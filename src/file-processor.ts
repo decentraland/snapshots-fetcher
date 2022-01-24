@@ -19,7 +19,7 @@ export async function* processDeploymentsInFile(
   file: string,
   components: Pick<SnapshotsFetcherComponents, 'storage'>
 ): AsyncIterable<RemoteEntityDeployment> {
-  if (!(await components.storage.exist([file]))) {
+  if (!(await components.storage.exist([file])).get(file)) {
     throw new Error(`The file ${file} does not exist`)
   }
 

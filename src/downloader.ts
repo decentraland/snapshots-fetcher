@@ -15,7 +15,7 @@ async function downloadJob(
   waitTimeBetweenRetries: number
 ): Promise<string> {
   // cancel early if the file is already downloaded
-  if (await components.storage.exist([finalFileName])) return finalFileName
+  if ((await components.storage.exist([finalFileName])).get(finalFileName)) return finalFileName
 
   let retries = 0
 
@@ -82,7 +82,7 @@ async function downloadContentFile(
   finalFileName: string,
   serverToUse: string
 ) {
-  if (!(await components.storage.exist([finalFileName]))) {
+  if (!(await components.storage.exist([finalFileName])).get(finalFileName)) {
     await saveContentFileToDisk(components, serverToUse, hash, finalFileName)
   }
 }
