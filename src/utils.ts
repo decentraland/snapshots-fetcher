@@ -205,11 +205,6 @@ export async function saveToDisk(
       }
     }
 
-    // delete target file if exists
-    if (await checkFileExists(destinationFilename)) {
-      await fs.promises.unlink(destinationFilename)
-    }
-
     // move downloaded file to target folder
     const tmpFile = path.parse(tmpFileName)
     await components.storage.storeExistingContentItem(tmpFile.base, tmpFile.dir, originalFile.base)

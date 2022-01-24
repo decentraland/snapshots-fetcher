@@ -132,10 +132,6 @@ export type EntityDeployment = {
 }
 
 export interface ContentStorage {
-  delete(ids: string[]): Promise<void>
   exist(ids: string[]): Promise<Map<string, boolean>>
-  stats(id: string): Promise<{ size: number } | undefined>
-  store(id: string, content: Uint8Array | Readable): Promise<void>
-  size(id: string): Promise<number | undefined>
   storeExistingContentItem(id: string, currentFilePath: string, newName: string): Promise<void>
 }
