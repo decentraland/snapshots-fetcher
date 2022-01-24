@@ -4,7 +4,7 @@ import { resolve } from 'path'
 import { Readable } from 'stream'
 import { gzipSync } from 'zlib'
 import { checkFileExists, saveToDisk } from '../src/utils'
-import { downloadFileWithRetries, TEMP_FOLDER_NAME } from '../src/downloader'
+import { downloadFileWithRetries } from '../src/downloader'
 import { metricsDefinitions } from '../src/metrics'
 import { createTestMetricsComponent } from '@well-known-components/metrics'
 
@@ -104,7 +104,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
   })
 
   it('downloads a file to the content folder', async () => {
-    const filename = resolve(contentFolder, TEMP_FOLDER_NAME, 'working')
+    const filename = resolve(contentFolder, 'working')
     try {
       unlinkSync(filename)
     } catch {}
@@ -120,19 +120,19 @@ test('saveToDisk', ({ components, stubComponents }) => {
   })
 
   it('downloads a file to the content folder, follows 302 redirects', async () => {
-    const filename = resolve(contentFolder, TEMP_FOLDER_NAME, 'working')
+    const filename = resolve(contentFolder, 'working')
     try {
       unlinkSync(filename)
     } catch {}
 
-    await saveToDisk({ metrics, storage }, (await components.getBaseUrl()) + '/working-redirected-302', filename)
+    await saveToDisk({ metrics }, (await components.getBaseUrl()) + '/working-redirected-302', filename)
 
     // check file exists and has correct content
     expect(readFileSync(filename)).toEqual(content)
   })
 
   it('downloads a file to the content folder, follows 301 redirects', async () => {
-    const filename = resolve(contentFolder, TEMP_FOLDER_NAME, 'working')
+    const filename = resolve(contentFolder, 'working')
     try {
       unlinkSync(filename)
     } catch {}
@@ -144,7 +144,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
   })
 
   it('fails on eternal redirection loop', async () => {
-    const filename = resolve(contentFolder, TEMP_FOLDER_NAME, 'working')
+    const filename = resolve(contentFolder, 'working')
     await expect(
       saveToDisk({ metrics }, (await components.getBaseUrl()) + '/forever-redirecting-301', filename)
     ).rejects.toThrow('Too much redirects')
