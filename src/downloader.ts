@@ -19,7 +19,7 @@ async function downloadJob(
 
   let retries = 0
 
-  while (true) {
+  for (;;) {
     retries++
     const serverToUse = pickLeastRecentlyUsedServer(presentInServers, serverMapLRU)
     try {
