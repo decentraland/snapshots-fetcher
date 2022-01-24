@@ -1,12 +1,12 @@
 import { Path, SnapshotsFetcherComponents } from './types'
 import * as path from 'path'
 import { saveContentFileToDisk } from './client'
-import { checkFileExists, pickLeastRecentlyUsedServer, sleep } from './utils'
+import { pickLeastRecentlyUsedServer, sleep } from './utils'
 
 const downloadFileJobsMap = new Map<Path, ReturnType<typeof downloadFileWithRetries>>()
 
 async function downloadJob(
-  components: Pick<SnapshotsFetcherComponents, 'metrics'>,
+  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage'>,
   hashToDownload: string,
   finalFileName: string,
   presentInServers: string[],
@@ -15,11 +15,11 @@ async function downloadJob(
   waitTimeBetweenRetries: number
 ): Promise<string> {
   // cancel early if the file is already downloaded
-  if (await checkFileExists(finalFileName)) return finalFileName
+  if (await components.storage.exist([finalFileName])) return finalFileName
 
   let retries = 0
 
-  for (;;) {
+  while (true) {
     retries++
     const serverToUse = pickLeastRecentlyUsedServer(presentInServers, serverMapLRU)
     try {
@@ -44,7 +44,7 @@ async function downloadJob(
  * being downloaded
  */
 export async function downloadFileWithRetries(
-  components: Pick<SnapshotsFetcherComponents, 'metrics'>,
+  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage'>,
   hashToDownload: string,
   targetFolder: string,
   presentInServers: string[],
@@ -77,12 +77,12 @@ export async function downloadFileWithRetries(
 }
 
 async function downloadContentFile(
-  components: Pick<SnapshotsFetcherComponents, 'metrics'>,
+  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage'>,
   hash: string,
   finalFileName: string,
   serverToUse: string
 ) {
-  if (!(await checkFileExists(finalFileName))) {
+  if (!(await components.storage.exist([finalFileName]))) {
     await saveContentFileToDisk(components, serverToUse, hash, finalFileName)
   }
 }

@@ -6,10 +6,7 @@ export async function getGlobalSnapshot(components: SnapshotsFetcherComponents, 
   const url = new URL(`${server}/snapshot`).toString()
 
   // TODO: validate response
-  return await components.downloadQueue.scheduleJobWithRetries(
-    () => fetchJson(url, components.fetcher),
-    retries
-  )
+  return await components.downloadQueue.scheduleJobWithRetries(() => fetchJson(url, components.fetcher), retries)
 }
 
 export async function* fetchJsonPaginated<T>(
@@ -52,7 +49,7 @@ export function fetchPointerChanges(
 }
 
 export async function saveContentFileToDisk(
-  components: Pick<SnapshotsFetcherComponents, 'metrics'>,
+  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage'>,
   server: string,
   hash: string,
   destinationFilename: string

@@ -8,9 +8,12 @@ import * as zlib from 'zlib'
 import * as multihashes from 'multihashes'
 import { importer } from 'ipfs-unixfs-importer'
 import CID from 'cids'
+import path from 'path'
 import { IFetchComponent } from '@well-known-components/http-server'
 import { RemoteEntityDeployment, Server, SnapshotsFetcherComponents } from './types'
 import { ContentServerMetricLabels } from './metrics'
+
+export const TEMP_FOLDER_NAME = '_tmp'
 
 const streamPipeline = promisify(pipeline)
 
@@ -102,7 +105,7 @@ export async function assertHash(filename: string, hash: string) {
 }
 
 export async function saveToDisk(
-  components: Pick<SnapshotsFetcherComponents, 'metrics'>,
+  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage'>,
   originalUrlString: string,
   destinationFilename: string,
   checkHash?: string
@@ -203,7 +206,9 @@ export async function saveToDisk(
     }
 
     // move downloaded file to target folder
-    await fs.promises.rename(tmpFileName, destinationFilename)
+    const originalFile = path.parse(destinationFilename)
+    const tmpFile = path.parse(tmpFileName)
+    await components.storage.storeExistingContentItem(tmpFile.base, tmpFile.dir, originalFile.base)
   } finally {
     // Delete the file async.
     if (await checkFileExists(tmpFileName)) {

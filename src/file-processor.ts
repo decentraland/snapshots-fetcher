@@ -1,7 +1,7 @@
-import { RemoteEntityDeployment } from './types'
+import { RemoteEntityDeployment, SnapshotsFetcherComponents } from './types'
 import { createInterface } from 'readline'
 import { createReadStream } from 'fs'
-import { checkFileExists, coerceEntityDeployment } from './utils'
+import { coerceEntityDeployment } from './utils'
 
 async function* processLineByLine(input: NodeJS.ReadableStream) {
   yield* createInterface({
@@ -15,8 +15,11 @@ async function* processLineByLine(input: NodeJS.ReadableStream) {
  * Parses every line and yields RemoteEntityDeployment.
  * @public
  */
-export async function* processDeploymentsInFile(file: string): AsyncIterable<RemoteEntityDeployment> {
-  if (!(await checkFileExists(file))) {
+export async function* processDeploymentsInFile(
+  file: string,
+  components: Pick<SnapshotsFetcherComponents, 'storage'>
+): AsyncIterable<RemoteEntityDeployment> {
+  if (!(await components.storage.exist([file]))) {
     throw new Error(`The file ${file} does not exist`)
   }
 

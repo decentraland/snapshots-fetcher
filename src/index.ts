@@ -14,7 +14,7 @@ import {
   Server,
   SnapshotsFetcherComponents,
 } from './types'
-import { coerceEntityDeployment, contentServerMetricLabels, pickLeastRecentlyUsedServer, sleep } from './utils'
+import { coerceEntityDeployment, contentServerMetricLabels, sleep } from './utils'
 import * as fs from 'fs'
 
 export { metricsDefinitions } from './metrics'
@@ -31,7 +31,7 @@ if (parseInt(process.version.split('.')[0]) < 16) {
  * @public
  */
 export async function downloadEntityAndContentFiles(
-  components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'metrics'>,
+  components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'metrics' | 'storage'>,
   entityId: EntityHash,
   presentInServers: string[],
   serverMapLRU: Map<Server, number>,
@@ -114,7 +114,7 @@ export async function* getDeployedEntitiesStream(
     )
 
     // 2.2. open the snapshot file and process line by line
-    const deploymentsInFile = processDeploymentsInFile(snapshotFilename)
+    const deploymentsInFile = processDeploymentsInFile(snapshotFilename, components)
     for await (const rawDeployment of deploymentsInFile) {
       const deployment = coerceEntityDeployment(rawDeployment)
       if (!deployment) continue
