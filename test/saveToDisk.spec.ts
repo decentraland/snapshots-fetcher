@@ -109,7 +109,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
       unlinkSync(filename)
     } catch {}
 
-    await saveToDisk({ metrics }, (await components.getBaseUrl()) + '/working', filename)
+    await saveToDisk({ metrics, storage: components.storage }, (await components.getBaseUrl()) + '/working', filename)
 
     // check file exists and has correct content
     expect(readFileSync(filename)).toEqual(content)
@@ -125,7 +125,11 @@ test('saveToDisk', ({ components, stubComponents }) => {
       unlinkSync(filename)
     } catch {}
 
-    await saveToDisk({ metrics }, (await components.getBaseUrl()) + '/working-redirected-302', filename)
+    await saveToDisk(
+      { metrics, storage: components.storage },
+      (await components.getBaseUrl()) + '/working-redirected-302',
+      filename
+    )
 
     // check file exists and has correct content
     expect(readFileSync(filename)).toEqual(content)
@@ -137,7 +141,11 @@ test('saveToDisk', ({ components, stubComponents }) => {
       unlinkSync(filename)
     } catch {}
 
-    await saveToDisk({ metrics }, (await components.getBaseUrl()) + '/working-redirected-301', filename)
+    await saveToDisk(
+      { metrics, storage: components.storage },
+      (await components.getBaseUrl()) + '/working-redirected-301',
+      filename
+    )
 
     // check file exists and has correct content
     expect(readFileSync(filename)).toEqual(content)
@@ -146,7 +154,11 @@ test('saveToDisk', ({ components, stubComponents }) => {
   it('fails on eternal redirection loop', async () => {
     const filename = resolve(contentFolder, 'working')
     await expect(
-      saveToDisk({ metrics }, (await components.getBaseUrl()) + '/forever-redirecting-301', filename)
+      saveToDisk(
+        { metrics, storage: components.storage },
+        (await components.getBaseUrl()) + '/forever-redirecting-301',
+        filename
+      )
     ).rejects.toThrow('Too much redirects')
   })
 
@@ -160,7 +172,8 @@ test('saveToDisk', ({ components, stubComponents }) => {
     expect(await checkFileExists(filename)).toEqual(false)
 
     await expect(
-      async () => await saveToDisk({ metrics }, (await components.getBaseUrl()) + '/fails', filename)
+      async () =>
+        await saveToDisk({ metrics, storage: components.storage }, (await components.getBaseUrl()) + '/fails', filename)
     ).rejects.toThrow('aborted')
     // check file exists and has correct content
     expect(await checkFileExists(filename)).toEqual(false)
@@ -176,7 +189,12 @@ test('saveToDisk', ({ components, stubComponents }) => {
     expect(await checkFileExists(filename)).toEqual(false)
 
     await expect(
-      async () => await saveToDisk({ metrics }, (await components.getBaseUrl()) + '/fails404', filename)
+      async () =>
+        await saveToDisk(
+          { metrics, storage: components.storage },
+          (await components.getBaseUrl()) + '/fails404',
+          filename
+        )
     ).rejects.toThrow('status: 404')
     // check file exists and has correct content
     expect(await checkFileExists(filename)).toEqual(false)
@@ -192,7 +210,12 @@ test('saveToDisk', ({ components, stubComponents }) => {
     expect(await checkFileExists(filename)).toEqual(false)
 
     await expect(
-      async () => await saveToDisk({ metrics }, 'http://0.0.0.0:65433/please-dont-listen-on-this-port', filename)
+      async () =>
+        await saveToDisk(
+          { metrics, storage: components.storage },
+          'http://0.0.0.0:65433/please-dont-listen-on-this-port',
+          filename
+        )
     ).rejects.toThrow('ECONNREFUSED')
 
     // check file exists and has correct content
@@ -210,7 +233,11 @@ test('saveToDisk', ({ components, stubComponents }) => {
 
     await expect(
       async () =>
-        await saveToDisk({ metrics }, (await components.getBaseUrl()).replace('http:', 'https:') + '/working', filename)
+        await saveToDisk(
+          { metrics, storage: components.storage },
+          (await components.getBaseUrl()).replace('http:', 'https:') + '/working',
+          filename
+        )
     ).rejects.toThrow()
 
     // check file exists and has correct content
@@ -226,7 +253,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     // check file exists and has correct content
     expect(await checkFileExists(filename)).toEqual(false)
 
-    await saveToDisk({ metrics }, 'https://decentraland.org', filename)
+    await saveToDisk({ metrics, storage: components.storage }, 'https://decentraland.org', filename)
 
     // check file exists and has correct content
     expect(await checkFileExists(filename)).toEqual(true)
@@ -235,7 +262,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
   it('always failing endpoint converges and fails', async () => {
     await expect(async () => {
       await downloadFileWithRetries(
-        { metrics },
+        { metrics, storage: components.storage },
         'alwaysFails',
         contentFolder,
         [await components.getBaseUrl()],
@@ -248,7 +275,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
 
   it('concurrent download reuses job', async () => {
     const a = downloadFileWithRetries(
-      { metrics },
+      { metrics, storage: components.storage },
       'bafkreigwey5vc6q25ilofdu2vjvcag72eqj46lzipi6mredsfpe42ls2ri',
       contentFolder,
       [await components.getBaseUrl()],
@@ -257,7 +284,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
       waitTimeBetweenRetries
     )
     const b = downloadFileWithRetries(
-      { metrics },
+      { metrics, storage: components.storage },
       'bafkreigwey5vc6q25ilofdu2vjvcag72eqj46lzipi6mredsfpe42ls2ri',
       contentFolder,
       [await components.getBaseUrl()],
@@ -271,7 +298,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
 
   it('already downloaded files must return without actually downloading the file', async () => {
     const a = downloadFileWithRetries(
-      { metrics },
+      { metrics, storage: components.storage },
       'bafkreigwey5vc6q25ilofdu2vjvcag72eqj46lzipi6mredsfpe42ls2ri',
       contentFolder,
       [await components.getBaseUrl()],
@@ -294,7 +321,12 @@ test('saveToDisk', ({ components, stubComponents }) => {
 
     await expect(
       async () =>
-        await saveToDisk({ metrics }, (await components.getBaseUrl()) + '/QmInValidHash', filename, 'QmInValidHash')
+        await saveToDisk(
+          { metrics, storage: components.storage },
+          (await components.getBaseUrl()) + '/QmInValidHash',
+          filename,
+          'QmInValidHash'
+        )
     ).rejects.toThrow('hashes do not match')
     // check file exists and has correct content
     expect(await checkFileExists(filename)).toEqual(false)

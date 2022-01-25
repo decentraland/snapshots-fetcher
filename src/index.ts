@@ -14,7 +14,7 @@ import {
   Server,
   SnapshotsFetcherComponents,
 } from './types'
-import { coerceEntityDeployment, contentServerMetricLabels, sleep } from './utils'
+import { coerceEntityDeployment, contentServerMetricLabels, sleep, streamToBuffer } from './utils'
 import * as fs from 'fs'
 
 export { metricsDefinitions } from './metrics'
@@ -52,11 +52,11 @@ export async function downloadEntityAndContentFiles(
 
   const content = await components.storage.retrieve(entityId)
 
-  const contentStream = content ? (await content.asStream()).read() : ''
+  const contentStream = content ? await (await streamToBuffer(await content.asStream())).toString() : ''
 
   const entityMetadata: {
     content?: Array<ContentMapping>
-  } = JSON.parse(contentStream).toString()
+  } = JSON.parse(contentStream)
 
   if (entityMetadata.content) {
     await Promise.all(

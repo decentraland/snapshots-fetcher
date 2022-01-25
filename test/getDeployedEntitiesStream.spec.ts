@@ -75,6 +75,7 @@ test('getDeployedEntitiesStream', ({ components, stubComponents }) => {
         downloadQueue: components.downloadQueue,
         logs: components.logs,
         metrics: components.metrics,
+        storage: components.storage,
       },
       {
         contentServer: await components.getBaseUrl(),
@@ -162,6 +163,7 @@ test("getDeployedEntitiesStream does not download snapshot if it doesn't include
         downloadQueue: components.downloadQueue,
         logs: components.logs,
         metrics: components.metrics,
+        storage: components.storage,
       },
       {
         fromTimestamp: 150,

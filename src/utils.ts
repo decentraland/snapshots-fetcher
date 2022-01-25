@@ -1,5 +1,5 @@
 import * as fs from 'fs'
-import { pipeline } from 'stream'
+import { pipeline, Readable } from 'stream'
 import { promisify } from 'util'
 import * as http from 'http'
 import * as https from 'https'
@@ -241,4 +241,13 @@ export function contentServerMetricLabels(contentServer: string): ContentServerM
   return {
     remote_server: url.origin,
   }
+}
+
+export function streamToBuffer(stream: Readable): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const buffers: any[] = []
+    stream.on('error', reject)
+    stream.on('data', (data) => buffers.push(data))
+    stream.on('end', () => resolve(Buffer.concat(buffers)))
+  })
 }

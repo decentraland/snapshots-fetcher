@@ -4,7 +4,16 @@ import { processDeploymentsInFile } from '../src/file-processor'
 describe('processor', () => {
   it('emits every deployment ignoring empty lines', async () => {
     const r = []
-    const stream = processDeploymentsInFile('test/fixtures/bafkreic2h5lbt3bjljanxmlybase65zmv6lbq3r6ervr6vpmqlb432kgzm')
+    const stream = processDeploymentsInFile(
+      'test/fixtures/bafkreic2h5lbt3bjljanxmlybase65zmv6lbq3r6ervr6vpmqlb432kgzm',
+      {
+        storage: {
+          exist: jest.fn(),
+          storeExistingContentItem: jest.fn(),
+          retrieve: jest.fn(),
+        },
+      }
+    )
 
     for await (const deployment of stream) {
       r.push(deployment)
@@ -26,7 +35,14 @@ describe('processor', () => {
   it('fails on unexistent file', async () => {
     await expect(async () => {
       const stream = processDeploymentsInFile(
-        'test/fixtures/bafkreic2h5lbt3bjljanxmlybase65zmv6lbq3r6ervr6vpmqlb432kgzm' + Math.random()
+        'test/fixtures/bafkreic2h5lbt3bjljanxmlybase65zmv6lbq3r6ervr6vpmqlb432kgzm' + Math.random(),
+        {
+          storage: {
+            exist: jest.fn(),
+            storeExistingContentItem: jest.fn(),
+            retrieve: jest.fn(),
+          },
+        }
       )
       for await (const c of stream) {
         // noop

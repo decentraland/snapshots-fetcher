@@ -40,6 +40,11 @@ export const test = createRunner<TestComponents>({
     const logs = createLogComponent()
     const metrics = createTestMetricsComponent(metricsDefinitions)
     const testServerComponents = await initTestServerComponents()
+    const storage = {
+      exist: jest.fn(),
+      storeExistingContentItem: jest.fn(),
+      retrieve: jest.fn(),
+    }
 
     return {
       ...testServerComponents,
@@ -47,6 +52,7 @@ export const test = createRunner<TestComponents>({
       logs,
       downloadQueue,
       fetcher,
+      storage,
     }
   },
 })
