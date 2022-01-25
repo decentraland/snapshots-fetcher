@@ -74,7 +74,7 @@ export type DownloadEntitiesOptions = {
 export type DeployedEntityStreamOptions = {
   contentServer: string
   fromTimestamp?: number
-  contentFolder: string
+  tmpDownloadFolder: string
 
   // configure pointer-changes polling
   pointerChangesWaitTime: number
@@ -131,7 +131,16 @@ export type EntityDeployment = {
   auditInfo: { authChain: any[] }
 }
 
+export type ContentEncoding = 'gzip'
+
 export interface ContentStorage {
   exist(ids: string[]): Promise<Map<string, boolean>>
   storeExistingContentItem(currentFilePath: string, id: string): Promise<void>
+  retrieve(id: string): Promise<ContentItem | undefined>
+}
+
+export interface ContentItem {
+  contentEncoding(): Promise<ContentEncoding | null>
+  getLength(): number | undefined
+  asStream(): Promise<Readable>
 }

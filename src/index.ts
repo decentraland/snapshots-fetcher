@@ -50,9 +50,13 @@ export async function downloadEntityAndContentFiles(
     waitTimeBetweenRetries
   )
 
+  const content = await components.storage.retrieve(entityId)
+
+  const contentStream = content ? (await content.asStream()).read() : ''
+
   const entityMetadata: {
     content?: Array<ContentMapping>
-  } = JSON.parse((await fs.promises.readFile(entityFileName)).toString())
+  } = JSON.parse(contentStream).toString()
 
   if (entityMetadata.content) {
     await Promise.all(
@@ -106,7 +110,7 @@ export async function* getDeployedEntitiesStream(
     const snapshotFilename = await downloadFileWithRetries(
       components,
       hash,
-      options.contentFolder,
+      options.tmpDownloadFolder,
       [options.contentServer],
       new Map(),
       options.requestMaxRetries,

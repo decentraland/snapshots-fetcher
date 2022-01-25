@@ -15,7 +15,7 @@ async function downloadJob(
   waitTimeBetweenRetries: number
 ): Promise<string> {
   // cancel early if the file is already downloaded
-  if ((await components.storage.exist([finalFileName])).get(finalFileName)) return finalFileName
+  if ((await components.storage.exist([hashToDownload])).get(hashToDownload)) return finalFileName
 
   let retries = 0
 
@@ -46,13 +46,13 @@ async function downloadJob(
 export async function downloadFileWithRetries(
   components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage'>,
   hashToDownload: string,
-  targetFolder: string,
+  targetTempFolder: string,
   presentInServers: string[],
   serverMapLRU: Map<string, number>,
   maxRetries: number,
   waitTimeBetweenRetries: number
 ): Promise<string> {
-  const finalFileName = path.resolve(targetFolder, hashToDownload)
+  const finalFileName = path.resolve(targetTempFolder, hashToDownload)
 
   if (downloadFileJobsMap.has(finalFileName)) {
     return downloadFileJobsMap.get(finalFileName)!

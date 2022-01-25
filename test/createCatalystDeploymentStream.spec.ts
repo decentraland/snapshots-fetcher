@@ -119,7 +119,7 @@ test('createCatalystDeploymentStream', ({ components, stubComponents }) => {
       },
       {
         contentServer: await components.getBaseUrl(),
-        contentFolder,
+        tmpDownloadFolder: contentFolder,
         pointerChangesWaitTime: 0,
         requestRetryWaitTime: 0,
         requestMaxRetries: 10,

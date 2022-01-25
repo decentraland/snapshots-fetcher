@@ -78,7 +78,7 @@ test('getDeployedEntitiesStream', ({ components, stubComponents }) => {
       },
       {
         contentServer: await components.getBaseUrl(),
-        contentFolder,
+        tmpDownloadFolder: contentFolder,
         pointerChangesWaitTime: 0,
         requestRetryWaitTime: 0,
         requestMaxRetries: 10,
@@ -166,7 +166,7 @@ test("getDeployedEntitiesStream does not download snapshot if it doesn't include
       {
         fromTimestamp: 150,
         contentServer: await components.getBaseUrl(),
-        contentFolder,
+        tmpDownloadFolder: contentFolder,
         pointerChangesWaitTime: 1,
         requestRetryWaitTime: 1,
         requestMaxRetries: 10,
