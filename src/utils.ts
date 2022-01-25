@@ -13,8 +13,6 @@ import { IFetchComponent } from '@well-known-components/http-server'
 import { RemoteEntityDeployment, Server, SnapshotsFetcherComponents } from './types'
 import { ContentServerMetricLabels } from './metrics'
 
-export const TEMP_FOLDER_NAME = '_tmp'
-
 const streamPipeline = promisify(pipeline)
 
 export async function fetchJson(url: string, fetcher: IFetchComponent): Promise<any> {
@@ -111,14 +109,9 @@ export async function saveToDisk(
   checkHash?: string
 ): Promise<{}> {
   let tmpFileName: string
-  const originalFile = path.parse(destinationFilename)
 
   do {
-    tmpFileName = path.resolve(
-      originalFile.dir,
-      TEMP_FOLDER_NAME,
-      originalFile.base + crypto.randomBytes(16).toString('hex')
-    )
+    tmpFileName = destinationFilename + crypto.randomBytes(16).toString('hex')
     // this is impossible
   } while (await checkFileExists(tmpFileName))
 
@@ -206,8 +199,8 @@ export async function saveToDisk(
     }
 
     // move downloaded file to target folder
-    const tmpFile = path.parse(tmpFileName)
-    await components.storage.storeExistingContentItem(tmpFile.base, tmpFile.dir, originalFile.base)
+    const originalFile = path.parse(destinationFilename)
+    await components.storage.storeExistingContentItem(tmpFileName, originalFile.base)
   } finally {
     // Delete the file async.
     if (await checkFileExists(tmpFileName)) {

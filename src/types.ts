@@ -133,5 +133,5 @@ export type EntityDeployment = {
 
 export interface ContentStorage {
   exist(ids: string[]): Promise<Map<string, boolean>>
-  storeExistingContentItem(id: string, currentFilePath: string, newName: string): Promise<void>
+  storeExistingContentItem(currentFilePath: string, id: string): Promise<void>
 }
