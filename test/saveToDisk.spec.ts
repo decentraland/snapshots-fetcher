@@ -113,7 +113,8 @@ test('saveToDisk', ({ components, stubComponents }) => {
       { metrics, storage: components.storage },
       (await components.getBaseUrl()) + '/working',
       filename,
-      'working'
+      'working',
+      false
     )
 
     // check file exists and has correct content
@@ -132,7 +133,8 @@ test('saveToDisk', ({ components, stubComponents }) => {
       { metrics, storage: components.storage },
       (await components.getBaseUrl()) + '/working-redirected-302',
       filename,
-      'working'
+      'working',
+      false
     )
 
     const fileContent = await streamToBuffer(await (await components.storage.retrieve('working')).asStream())
@@ -151,7 +153,8 @@ test('saveToDisk', ({ components, stubComponents }) => {
       { metrics, storage: components.storage },
       (await components.getBaseUrl()) + '/working-redirected-301',
       filename,
-      'working'
+      'working',
+      false
     )
 
     const fileContent = await streamToBuffer(await (await components.storage.retrieve('working')).asStream())
@@ -167,7 +170,8 @@ test('saveToDisk', ({ components, stubComponents }) => {
         { metrics, storage: components.storage },
         (await components.getBaseUrl()) + '/forever-redirecting-301',
         filename,
-        'working'
+        'working',
+        false
       )
     ).rejects.toThrow('Too much redirects')
   })
@@ -187,7 +191,8 @@ test('saveToDisk', ({ components, stubComponents }) => {
           { metrics, storage: components.storage },
           (await components.getBaseUrl()) + '/fails',
           filename,
-          'fails'
+          'fails',
+          false
         )
     ).rejects.toThrow('aborted')
     // check file exists and has correct content
@@ -209,7 +214,8 @@ test('saveToDisk', ({ components, stubComponents }) => {
           { metrics, storage: components.storage },
           (await components.getBaseUrl()) + '/fails404',
           filename,
-          'fails404'
+          'fails404',
+          false
         )
     ).rejects.toThrow('status: 404')
     // check file exists and has correct content
@@ -231,7 +237,8 @@ test('saveToDisk', ({ components, stubComponents }) => {
           { metrics, storage: components.storage },
           'http://0.0.0.0:65433/please-dont-listen-on-this-port',
           filename,
-          'failsECONNREFUSED'
+          'failsECONNREFUSED',
+          false
         )
     ).rejects.toThrow('ECONNREFUSED')
 
@@ -254,7 +261,8 @@ test('saveToDisk', ({ components, stubComponents }) => {
           { metrics, storage: components.storage },
           (await components.getBaseUrl()).replace('http:', 'https:') + '/working',
           filename,
-          'failsTLS'
+          'failsTLS',
+          false
         )
     ).rejects.toThrow()
 
@@ -275,7 +283,8 @@ test('saveToDisk', ({ components, stubComponents }) => {
       { metrics, storage: components.storage },
       'https://decentraland.org',
       filename,
-      'decentraland.org'
+      'decentraland.org',
+      false
     )
 
     // console.log(

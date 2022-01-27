@@ -1,4 +1,3 @@
-import { getDeployedEntitiesStream } from '../src'
 import { processDeploymentsInFile } from '../src/file-processor'
 import { createStorageComponent } from './test-component'
 

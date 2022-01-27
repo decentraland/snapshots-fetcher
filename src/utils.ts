@@ -106,8 +106,8 @@ export async function saveContentFileToDisk(
   components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage'>,
   originalUrlString: string,
   destinationFilename: string,
-  //! TODO Make hash not optional
-  hash: string
+  hash: string,
+  checkHash: boolean = true
 ): Promise<void> {
   let tmpFileName: string
 
@@ -127,7 +127,7 @@ export async function saveContentFileToDisk(
     await fs.promises.chmod(tmpFileName, 0o644)
 
     // check hash if present. delete file and fail in case of mismatch
-    if (hash) {
+    if (checkHash) {
       try {
         await assertHash(tmpFileName, hash)
       } catch (e) {

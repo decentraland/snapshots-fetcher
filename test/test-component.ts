@@ -28,11 +28,17 @@ export async function createStorageComponent(): Promise<ContentStorage> {
     fs.set(id, content)
   }
 
-  const retrieve = async (id: string): Promise<ContentItem> => ({
-    asStream: async (): Promise<Readable> => {
-      return Readable.from(fs.get(id))
-    },
-  })
+  const retrieve = async (id: string): Promise<ContentItem> => {
+    if (!fs.get(id)) {
+      return undefined
+    }
+
+    return {
+      asStream: async (): Promise<Readable> => {
+        return Readable.from(fs.get(id))
+      },
+    }
+  }
 
   const rootFixturesDir = 'test/fixtures'
 
