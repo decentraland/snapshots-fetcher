@@ -52,7 +52,13 @@ export async function downloadEntityAndContentFiles(
 
   const content = await components.storage.retrieve(entityId)
 
-  const contentStream = content ? await (await streamToBuffer(await content.asStream())).toString() : ''
+  let contentStream = ''
+
+  if (content) {
+    const stream = await content.asStream()
+    const buffer = await streamToBuffer(stream)
+    contentStream = await buffer.toString()
+  }
 
   const entityMetadata: {
     content?: Array<ContentMapping>
