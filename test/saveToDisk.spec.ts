@@ -287,11 +287,6 @@ test('saveToDisk', ({ components, stubComponents }) => {
       false
     )
 
-    console.log(
-      "await components.storage.exist('decentraland.org')",
-      await components.storage.exist('decentraland.org')
-    )
-
     // check file exists and has correct content
     expect(await components.storage.exist('decentraland.org')).toEqual(true)
   })
