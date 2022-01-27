@@ -21,7 +21,6 @@ export async function* processDeploymentsInFile(
 ): AsyncIterable<RemoteEntityDeployment> {
   const fileContent = await components.storage.retrieve(file)
 
-  console.log('fileContent', file, fileContent)
 
   if (!fileContent) {
     throw new Error(`The file ${file} does not exist`)
