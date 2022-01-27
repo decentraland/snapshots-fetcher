@@ -13,9 +13,9 @@ async function downloadJob(
   serverMapLRU: Map<string, number>,
   maxRetries: number,
   waitTimeBetweenRetries: number
-): Promise<string> {
+): Promise<void> {
   // cancel early if the file is already downloaded
-  if ((await components.storage.exist([hashToDownload])).get(hashToDownload)) return finalFileName
+  if (await components.storage.exist(hashToDownload)) return
 
   let retries = 0
 
@@ -27,7 +27,7 @@ async function downloadJob(
       await downloadContentFile(components, hashToDownload, finalFileName, serverToUse)
       components.metrics.observe('dcl_content_download_job_succeed_retries', {}, retries)
 
-      return finalFileName
+      return
     } catch (e: any) {
       if (retries < maxRetries) {
         await sleep(waitTimeBetweenRetries)
@@ -51,7 +51,7 @@ export async function downloadFileWithRetries(
   serverMapLRU: Map<string, number>,
   maxRetries: number,
   waitTimeBetweenRetries: number
-): Promise<string> {
+): Promise<void> {
   const finalFileName = path.resolve(targetTempFolder, hashToDownload)
 
   if (downloadFileJobsMap.has(finalFileName)) {
@@ -70,7 +70,7 @@ export async function downloadFileWithRetries(
     )
     downloadFileJobsMap.set(finalFileName, downloadWithRetriesJob)
 
-    return await downloadWithRetriesJob
+    await downloadWithRetriesJob
   } finally {
     downloadFileJobsMap.delete(finalFileName)
   }
@@ -81,8 +81,8 @@ async function downloadContentFile(
   hash: string,
   finalFileName: string,
   serverToUse: string
-) {
-  if (!(await components.storage.exist(finalFileName)).get(finalFileName)) {
-    await saveContentFileToDisk(components, serverToUse, hash, finalFileName)
+): Promise<void> {
+  if (!(await components.storage.exist(finalFileName))) {
+    return saveContentFileToDisk(components, serverToUse, hash, finalFileName)
   }
 }

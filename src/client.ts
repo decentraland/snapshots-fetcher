@@ -56,5 +56,5 @@ export async function saveContentFileToDisk(
 ) {
   const url = new URL(`${server}/contents/${hash}`).toString()
 
-  return await saveContentFile(components, url, destinationFilename, hash)
+  return saveContentFile(components, url, destinationFilename, hash)
 }

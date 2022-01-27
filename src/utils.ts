@@ -108,7 +108,7 @@ export async function saveContentFileToDisk(
   destinationFilename: string,
   //! TODO Make hash not optional
   hash: string
-): Promise<{}> {
+): Promise<void> {
   let tmpFileName: string
 
   do {
@@ -150,8 +150,6 @@ export async function saveContentFileToDisk(
       await fs.promises.unlink(tmpFileName)
     }
   }
-
-  return {}
 }
 
 function downloadFile(
