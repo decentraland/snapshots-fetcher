@@ -4,7 +4,7 @@
 import { createRunner } from '@well-known-components/test-helpers'
 import { createJobQueue } from '../src/job-queue-port'
 import { SnapshotsFetcherComponents } from '../src/types'
-import { createFetchComponent } from './test-component'
+import { createFetchComponent, createStorageComponent } from './test-component'
 
 import {
   initTestServerComponents,
@@ -40,11 +40,7 @@ export const test = createRunner<TestComponents>({
     const logs = createLogComponent()
     const metrics = createTestMetricsComponent(metricsDefinitions)
     const testServerComponents = await initTestServerComponents()
-    const storage = {
-      exist: jest.fn(),
-      storeExistingContentItem: jest.fn(),
-      retrieve: jest.fn(),
-    }
+    const storage = await createStorageComponent()
 
     return {
       ...testServerComponents,

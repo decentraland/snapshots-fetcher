@@ -6,8 +6,7 @@
   "typings": "dist/index.d.ts",
   "scripts": {
     "build": "make build",
-    "start": "ts-node test/run-test.ts",
-    "test": "npm run build && npm run start"
+    "test": "npm run build && jest --runInBand --forceExit --detectOpenHandles --coverage"
   },
   "keywords": [],
   "author": "Decentraland Contributors",

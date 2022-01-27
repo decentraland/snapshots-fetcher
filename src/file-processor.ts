@@ -19,11 +19,13 @@ export async function* processDeploymentsInFile(
   file: string,
   components: Pick<SnapshotsFetcherComponents, 'storage'>
 ): AsyncIterable<RemoteEntityDeployment> {
-  if (!(await components.storage.exist([file])).get(file)) {
+  const fileContent = await components.storage.retrieve(file)
+
+  if (!fileContent) {
     throw new Error(`The file ${file} does not exist`)
   }
 
-  const stream = createReadStream(file)
+  const stream = await fileContent!.asStream()
 
   try {
     yield* processDeploymentsInStream(stream)

@@ -40,7 +40,7 @@ export async function downloadEntityAndContentFiles(
   waitTimeBetweenRetries: number
 ): Promise<unknown> {
   // download entity file
-  const entityFileName = await downloadFileWithRetries(
+  await downloadFileWithRetries(
     components,
     entityId,
     targetFolder,
@@ -107,7 +107,7 @@ export async function* getDeployedEntitiesStream(
   //    in the range we are interested (>= genesisTimestamp)
   if (hash && lastIncludedDeploymentTimestamp && lastIncludedDeploymentTimestamp > genesisTimestamp) {
     // 2.1. download the snapshot file if needed
-    const snapshotFilename = await downloadFileWithRetries(
+    await downloadFileWithRetries(
       components,
       hash,
       options.tmpDownloadFolder,
@@ -118,7 +118,7 @@ export async function* getDeployedEntitiesStream(
     )
 
     // 2.2. open the snapshot file and process line by line
-    const deploymentsInFile = processDeploymentsInFile(snapshotFilename, components)
+    const deploymentsInFile = processDeploymentsInFile(hash, components)
     for await (const rawDeployment of deploymentsInFile) {
       const deployment = coerceEntityDeployment(rawDeployment)
       if (!deployment) continue
