@@ -38,7 +38,7 @@ export const metricsDefinitions: IMetricsComponent<"dcl_content_download_bytes_t
 
 // Warnings were encountered during analysis:
 //
-// src/index.ts:173:46 - (ae-forgotten-export) The symbol "IDeployerComponent" needs to be exported by the entry point index.d.ts
+// src/index.ts:179:46 - (ae-forgotten-export) The symbol "IDeployerComponent" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 
