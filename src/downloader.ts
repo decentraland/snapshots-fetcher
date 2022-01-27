@@ -71,6 +71,7 @@ export async function downloadFileWithRetries(
     downloadFileJobsMap.set(finalFileName, downloadWithRetriesJob)
 
     await downloadWithRetriesJob
+    return
   } finally {
     downloadFileJobsMap.delete(finalFileName)
   }
