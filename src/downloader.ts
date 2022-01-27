@@ -82,7 +82,7 @@ async function downloadContentFile(
   finalFileName: string,
   serverToUse: string
 ) {
-  if (!(await components.storage.exist([finalFileName])).get(finalFileName)) {
+  if (!(await components.storage.exist(finalFileName)).get(finalFileName)) {
     await saveContentFileToDisk(components, serverToUse, hash, finalFileName)
   }
 }

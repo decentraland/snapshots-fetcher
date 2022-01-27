@@ -102,11 +102,12 @@ export async function assertHash(filename: string, hash: string) {
   }
 }
 
-export async function saveToDisk(
+export async function saveContentFileToDisk(
   components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage'>,
   originalUrlString: string,
   destinationFilename: string,
-  checkHash?: string
+  //! TODO Make hash not optional
+  hash: string
 ): Promise<{}> {
   let tmpFileName: string
 
@@ -120,72 +121,15 @@ export async function saveToDisk(
   }
 
   try {
-    await new Promise<void>((resolve, reject) => {
-      const MAX_REDIRECTS = 10
-
-      function requestWithRedirects(redirectedUrl: string, redirects: number) {
-        const url = new URL(redirectedUrl, originalUrlString)
-        const httpModule = url.protocol === 'https:' ? https : http
-        if (redirects > MAX_REDIRECTS) {
-          reject(new Error('Too much redirects'))
-          return
-        }
-
-        Object.assign(metricsLabels, contentServerMetricLabels(url.toString()))
-
-        const { end: endTimeMeasurement } = components.metrics.startTimer(
-          'dcl_content_download_duration_seconds',
-          metricsLabels
-        )
-
-        httpModule
-          .get(url.toString(), { headers: { 'accept-encoding': 'gzip' } }, (response) => {
-            if ((response.statusCode == 302 || response.statusCode == 301) && response.headers.location) {
-              // handle redirection
-              requestWithRedirects(response.headers.location!, redirects + 1)
-              return
-            } else if (!response.statusCode || response.statusCode > 300) {
-              reject(new Error('Invalid response from ' + url + ' status: ' + response.statusCode))
-              return
-            } else {
-              const file = fs.createWriteStream(tmpFileName, { emitClose: true })
-
-              const isGzip = response.headers['content-encoding'] == 'gzip'
-
-              const pipe = isGzip ? streamPipeline(response, zlib.createGunzip(), file) : streamPipeline(response, file)
-
-              pipe
-                .then(() => {
-                  file.close() // close() is async, call cb after close completes.
-                  components.metrics.increment('dcl_content_download_bytes_total', metricsLabels, file.bytesWritten)
-                  endTimeMeasurement()
-                  resolve()
-                })
-                .catch((err) => {
-                  file.close()
-                  reject(err)
-                  components.metrics.increment('dcl_content_download_errors_total', metricsLabels)
-                  endTimeMeasurement()
-                })
-            }
-          })
-          .on('error', function (err) {
-            reject(err)
-            components.metrics.increment('dcl_content_download_errors_total', metricsLabels)
-            endTimeMeasurement()
-          })
-      }
-
-      requestWithRedirects(originalUrlString, 0)
-    })
+    await downloadFile(originalUrlString, metricsLabels, components, tmpFileName)
 
     // make files not executable
     await fs.promises.chmod(tmpFileName, 0o644)
 
     // check hash if present. delete file and fail in case of mismatch
-    if (checkHash) {
+    if (hash) {
       try {
-        await assertHash(tmpFileName, checkHash)
+        await assertHash(tmpFileName, hash)
       } catch (e) {
         components.metrics.increment('dcl_content_download_hash_errors_total', metricsLabels)
         // delete the downloaded file if failed
@@ -199,8 +143,7 @@ export async function saveToDisk(
     }
 
     // move downloaded file to target folder
-    const originalFile = path.parse(destinationFilename)
-    await components.storage.storeExistingContentItem(tmpFileName, originalFile.base)
+    await components.storage.storeStream(hash, fs.createReadStream(tmpFileName))
   } finally {
     // Delete the file async.
     if (await checkFileExists(tmpFileName)) {
@@ -209,6 +152,72 @@ export async function saveToDisk(
   }
 
   return {}
+}
+
+function downloadFile(
+  originalUrlString: string,
+  metricsLabels: ContentServerMetricLabels,
+  components: Pick<SnapshotsFetcherComponents, 'metrics'>,
+  tmpFileName: string
+) {
+  return new Promise<void>((resolve, reject) => {
+    const MAX_REDIRECTS = 10
+
+    function requestWithRedirects(redirectedUrl: string, redirects: number) {
+      const url = new URL(redirectedUrl, originalUrlString)
+      const httpModule = url.protocol === 'https:' ? https : http
+      if (redirects > MAX_REDIRECTS) {
+        reject(new Error('Too much redirects'))
+        return
+      }
+
+      Object.assign(metricsLabels, contentServerMetricLabels(url.toString()))
+
+      const { end: endTimeMeasurement } = components.metrics.startTimer(
+        'dcl_content_download_duration_seconds',
+        metricsLabels
+      )
+
+      httpModule
+        .get(url.toString(), { headers: { 'accept-encoding': 'gzip' } }, (response) => {
+          if ((response.statusCode == 302 || response.statusCode == 301) && response.headers.location) {
+            // handle redirection
+            requestWithRedirects(response.headers.location!, redirects + 1)
+            return
+          } else if (!response.statusCode || response.statusCode > 300) {
+            reject(new Error('Invalid response from ' + url + ' status: ' + response.statusCode))
+            return
+          } else {
+            const file = fs.createWriteStream(tmpFileName, { emitClose: true })
+
+            const isGzip = response.headers['content-encoding'] == 'gzip'
+
+            const pipe = isGzip ? streamPipeline(response, zlib.createGunzip(), file) : streamPipeline(response, file)
+
+            pipe
+              .then(() => {
+                file.close() // close() is async, call cb after close completes.
+                components.metrics.increment('dcl_content_download_bytes_total', metricsLabels, file.bytesWritten)
+                endTimeMeasurement()
+                resolve()
+              })
+              .catch((err) => {
+                file.close()
+                reject(err)
+                components.metrics.increment('dcl_content_download_errors_total', metricsLabels)
+                endTimeMeasurement()
+              })
+          }
+        })
+        .on('error', function (err) {
+          reject(err)
+          components.metrics.increment('dcl_content_download_errors_total', metricsLabels)
+          endTimeMeasurement()
+        })
+    }
+
+    requestWithRedirects(originalUrlString, 0)
+  })
 }
 
 export function coerceEntityDeployment(value: any): RemoteEntityDeployment | null {

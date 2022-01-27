@@ -1,6 +1,6 @@
 import { metricsDefinitions } from './metrics'
 import { RemoteEntityDeployment, SnapshotsFetcherComponents } from './types'
-import { contentServerMetricLabels, fetchJson, saveToDisk } from './utils'
+import { contentServerMetricLabels, fetchJson, saveContentFileToDisk as saveContentFile } from './utils'
 
 export async function getGlobalSnapshot(components: SnapshotsFetcherComponents, server: string, retries: number) {
   const url = new URL(`${server}/snapshot`).toString()
@@ -56,5 +56,5 @@ export async function saveContentFileToDisk(
 ) {
   const url = new URL(`${server}/contents/${hash}`).toString()
 
-  return await saveToDisk(components, url, destinationFilename, hash)
+  return await saveContentFile(components, url, destinationFilename, hash)
 }

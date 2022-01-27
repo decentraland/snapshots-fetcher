@@ -3,7 +3,7 @@ import { readFileSync, unlinkSync, promises as fsPromises, constants } from 'fs'
 import { resolve } from 'path'
 import { Readable } from 'stream'
 import { gzipSync } from 'zlib'
-import { checkFileExists, saveToDisk, streamToBuffer } from '../src/utils'
+import { checkFileExists, saveContentFileToDisk, streamToBuffer } from '../src/utils'
 import { downloadFileWithRetries } from '../src/downloader'
 import { metricsDefinitions } from '../src/metrics'
 import { createTestMetricsComponent } from '@well-known-components/metrics'
@@ -109,7 +109,11 @@ test('saveToDisk', ({ components, stubComponents }) => {
       unlinkSync(filename)
     } catch {}
 
-    await saveToDisk({ metrics, storage: components.storage }, (await components.getBaseUrl()) + '/working', filename)
+    await saveContentFileToDisk(
+      { metrics, storage: components.storage },
+      (await components.getBaseUrl()) + '/working',
+      filename
+    )
 
     // check file exists and has correct content
     const fileContent = await streamToBuffer(await (await components.storage.retrieve('working')).asStream())
@@ -123,7 +127,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
       unlinkSync(filename)
     } catch {}
 
-    await saveToDisk(
+    await saveContentFileToDisk(
       { metrics, storage: components.storage },
       (await components.getBaseUrl()) + '/working-redirected-302',
       filename
@@ -141,7 +145,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
       unlinkSync(filename)
     } catch {}
 
-    await saveToDisk(
+    await saveContentFileToDisk(
       { metrics, storage: components.storage },
       (await components.getBaseUrl()) + '/working-redirected-301',
       filename
@@ -156,7 +160,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
   it('fails on eternal redirection loop', async () => {
     const filename = resolve(contentFolder, 'working')
     await expect(
-      saveToDisk(
+      saveContentFileToDisk(
         { metrics, storage: components.storage },
         (await components.getBaseUrl()) + '/forever-redirecting-301',
         filename
@@ -175,7 +179,11 @@ test('saveToDisk', ({ components, stubComponents }) => {
 
     await expect(
       async () =>
-        await saveToDisk({ metrics, storage: components.storage }, (await components.getBaseUrl()) + '/fails', filename)
+        await saveContentFileToDisk(
+          { metrics, storage: components.storage },
+          (await components.getBaseUrl()) + '/fails',
+          filename
+        )
     ).rejects.toThrow('aborted')
     // check file exists and has correct content
     expect(await checkFileExists(filename)).toEqual(false)
@@ -192,7 +200,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
 
     await expect(
       async () =>
-        await saveToDisk(
+        await saveContentFileToDisk(
           { metrics, storage: components.storage },
           (await components.getBaseUrl()) + '/fails404',
           filename
@@ -213,7 +221,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
 
     await expect(
       async () =>
-        await saveToDisk(
+        await saveContentFileToDisk(
           { metrics, storage: components.storage },
           'http://0.0.0.0:65433/please-dont-listen-on-this-port',
           filename
@@ -235,7 +243,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
 
     await expect(
       async () =>
-        await saveToDisk(
+        await saveContentFileToDisk(
           { metrics, storage: components.storage },
           (await components.getBaseUrl()).replace('http:', 'https:') + '/working',
           filename
@@ -255,7 +263,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     // check file exists and has correct content
     expect(await checkFileExists(filename)).toEqual(false)
 
-    await saveToDisk({ metrics, storage: components.storage }, 'https://decentraland.org', filename)
+    await saveContentFileToDisk({ metrics, storage: components.storage }, 'https://decentraland.org', filename)
 
     // console.log(
     //   "await components.storage.exist(['decentraland.org'])",
@@ -328,7 +336,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
 
     await expect(
       async () =>
-        await saveToDisk(
+        await saveContentFileToDisk(
           { metrics, storage: components.storage },
           (await components.getBaseUrl()) + '/QmInValidHash',
           filename,

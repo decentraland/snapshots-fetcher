@@ -134,13 +134,11 @@ export type EntityDeployment = {
 export type ContentEncoding = 'gzip'
 
 export interface ContentStorage {
-  exist(ids: string[]): Promise<Map<string, boolean>>
-  storeExistingContentItem(currentFilePath: string, id: string): Promise<void>
+  exist(ids: string): Promise<boolean>
+  storeStream(id: string, fileStream: Readable): Promise<void>
   retrieve(id: string): Promise<ContentItem | undefined>
 }
 
 export interface ContentItem {
-  contentEncoding(): Promise<ContentEncoding | null>
-  getLength(): number | undefined
   asStream(): Promise<Readable>
 }

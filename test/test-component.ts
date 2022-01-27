@@ -5,6 +5,7 @@ import { Readable } from 'stream'
 import { readFileSync } from 'fs'
 import { readdir, stat } from 'fs/promises'
 import { resolve } from 'path'
+import { streamToBuffer } from '../src/utils'
 
 export function createFetchComponent() {
   const fetch: IFetchComponent = {
@@ -17,25 +18,19 @@ export function createFetchComponent() {
 }
 
 export async function createStorageComponent(): Promise<ContentStorage> {
-  const fs = new Map()
+  const fs = new Map<string, Buffer>()
 
-  const exist = async (ids: string[]) => {
-    return new Map(ids.map((id) => [id, fs.get(id)!!]))
+  const exist = async (id: string) => {
+    return !!fs.get(id)
   }
-  const storeExistingContentItem = async (currentFilePath: string, id: string) => {
-    const content = readFileSync(currentFilePath, { encoding: 'utf-8' })
+  const storeStream = async (id: string, fileStream: Readable) => {
+    const content = await streamToBuffer(fileStream)
     fs.set(id, content)
   }
 
   const retrieve = async (id: string): Promise<ContentItem> => ({
-    contentEncoding: async () => undefined,
-    getLength: () => id.length,
     asStream: async (): Promise<Readable> => {
-      const s = new Readable()
-      s.push(fs.get(id))
-      s.push(null)
-
-      return s
+      return Readable.from(fs.get(id))
     },
   })
 
@@ -55,7 +50,7 @@ export async function createStorageComponent(): Promise<ContentStorage> {
 
   return {
     exist,
-    storeExistingContentItem,
+    storeStream,
     retrieve,
   }
 }
