@@ -5,13 +5,10 @@ import * as http from 'http'
 import * as https from 'https'
 import * as crypto from 'crypto'
 import * as zlib from 'zlib'
-import * as multihashes from 'multihashes'
-import { importer } from 'ipfs-unixfs-importer'
-import CID from 'cids'
-import path from 'path'
 import { IFetchComponent } from '@well-known-components/http-server'
 import { RemoteEntityDeployment, Server, SnapshotsFetcherComponents } from './types'
 import { ContentServerMetricLabels } from './metrics'
+import { hashV0, hashV1 } from '@dcl/hashing'
 
 const streamPipeline = promisify(pipeline)
 
@@ -38,45 +35,11 @@ export async function sleep(time: number): Promise<void> {
   return new Promise<void>((resolve) => setTimeout(resolve, time))
 }
 
-/**
- * Calculates a Qm prefixed hash for Decentraland (NOT CIDv0) from a readable stream
- */
-export async function hashStreamV0(stream: AsyncGenerator<Uint8Array>) {
-  const hash = crypto.createHash('sha256')
-  for await (const chunk of stream) {
-    hash.update(chunk)
-  }
-  let lastDigest = multihashes.encode(hash.digest(), 'sha2-256')
-  return new CID(0, 'dag-pb', lastDigest).toBaseEncodedString()
-}
-
-/**
- * Calculates a CIDv1 from a readable stream
- */
-export async function hashStreamV1(content: AsyncGenerator<Uint8Array>) {
-  const block = {
-    get: (cid: any) => Promise.reject(new Error(`unexpected block API get for ${cid}`)),
-    put: () => Promise.reject(new Error('unexpected block API put')),
-  } as any
-
-  let lastCid
-
-  for await (const { cid } of importer([{ content }], block, {
-    cidVersion: 1,
-    onlyHash: true,
-    rawLeaves: true,
-  })) {
-    lastCid = cid
-  }
-
-  return `${lastCid}`
-}
-
 export async function assertHash(filename: string, hash: string) {
   if (hash.startsWith('Qm')) {
     const file = fs.createReadStream(filename)
     try {
-      const qmHash = await hashStreamV0(file as any)
+      const qmHash = await hashV0(file as any)
       if (qmHash != hash) {
         throw new Error(
           `Download error: hashes do not match(expected:${hash} != calculated:${qmHash}) for file ${filename}`
@@ -88,7 +51,7 @@ export async function assertHash(filename: string, hash: string) {
   } else if (hash.startsWith('ba')) {
     const file = fs.createReadStream(filename)
     try {
-      const baHash = await hashStreamV1(file as any)
+      const baHash = await hashV1(file as any)
       if (baHash != hash) {
         throw new Error(
           `Download error: hashes do not match(expected:${hash} != calculated:${baHash}) for file ${filename}`

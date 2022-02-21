@@ -12,11 +12,9 @@
   "author": "Decentraland Contributors",
   "license": "Apache-2.0",
   "dependencies": {
+    "@dcl/hashing": "^1.0.0",
     "@well-known-components/interfaces": "^1.1.0",
     "@well-known-components/metrics": "^1.1.2",
-    "cids": "^1.1.9",
-    "ipfs-unixfs-importer": "^7.0.3",
-    "multihashes": "^4.0.3",
     "p-queue": "^6.6.2"
   },
   "engines": {
@@ -24,14 +22,14 @@
   },
   "engineStrict": true,
   "devDependencies": {
-    "@microsoft/api-extractor": "^7.18.19",
+    "@microsoft/api-extractor": "^7.19.4",
     "@well-known-components/env-config-provider": "^1.1.1",
     "@well-known-components/http-server": "^1.1.1",
     "@well-known-components/logger": "^1.1.0",
     "@well-known-components/test-helpers": "^1.2.1",
-    "node-fetch": "^2.6.6",
-    "ts-node": "^10.4.0",
-    "typescript": "^4.4.4"
+    "node-fetch": "^2.6.7",
+    "ts-node": "^10.5.0",
+    "typescript": "^4.5.5"
   },
   "files": [
     "dist"
