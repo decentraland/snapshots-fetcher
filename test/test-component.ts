@@ -34,7 +34,6 @@ export async function createStorageComponent(): Promise<ContentStorage> {
     const buffer = fs.get(id)
 
     if (!buffer) {
-      debugger
       return undefined
     }
 

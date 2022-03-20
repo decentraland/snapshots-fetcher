@@ -71,6 +71,9 @@ test('getDeployedEntitiesStream', ({ components, stubComponents }) => {
   it('fetches a stream', async () => {
     const { storage } = stubComponents
 
+    storage.storeStream.callThrough()
+    storage.retrieve.callThrough()
+
     const r = []
     const stream = getDeployedEntitiesStream(
       {
@@ -117,8 +120,9 @@ test('getDeployedEntitiesStream', ({ components, stubComponents }) => {
 
   it('fetches a stream without deleting the downloaded file', async () => {
     const { storage } = stubComponents
-    await storage.delete(['*'])
-    storage.delete.reset()
+
+    storage.storeStream.callThrough()
+    storage.retrieve.callThrough()
 
     const r = []
     const stream = getDeployedEntitiesStream(
@@ -135,6 +139,7 @@ test('getDeployedEntitiesStream', ({ components, stubComponents }) => {
         pointerChangesWaitTime: 0,
         requestRetryWaitTime: 0,
         requestMaxRetries: 10,
+        deleteSnapshotAfterUsage: false,
       }
     )
 
