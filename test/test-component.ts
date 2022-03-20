@@ -20,22 +20,27 @@ export function createFetchComponent() {
 export async function createStorageComponent(): Promise<ContentStorage> {
   const fs = new Map<string, Buffer>()
 
-  const exist = async (id: string) => {
+  async function exist(id: string) {
     return !!fs.get(id)
   }
-  const storeStream = async (id: string, fileStream: Readable) => {
+
+  async function storeStream(id: string, fileStream: Readable) {
+    console.log(`> Storing file ${id}`)
     const content = await streamToBuffer(fileStream)
     fs.set(id, content)
   }
 
-  const retrieve = async (id: string): Promise<ContentItem> => {
-    if (!fs.get(id)) {
+  async function retrieve(id: string): Promise<ContentItem> {
+    const buffer = fs.get(id)
+
+    if (!buffer) {
+      debugger
       return undefined
     }
 
     return {
-      asStream: async (): Promise<Readable> => {
-        return Readable.from(fs.get(id))
+      async asStream(): Promise<Readable> {
+        return Readable.from(buffer)
       },
     }
   }
@@ -44,19 +49,30 @@ export async function createStorageComponent(): Promise<ContentStorage> {
 
   const files = await readdir(rootFixturesDir)
 
-  await Promise.all(
-    files.map(async (file) => {
-      const fileName = resolve(rootFixturesDir, file)
-      const stats = await stat(fileName)
-      if (stats.isFile()) {
-        fs.set(file, readFileSync(fileName))
-      }
-    })
-  )
+  async function reset() {
+    return Promise.all(
+      files.map(async (file) => {
+        const fileName = resolve(rootFixturesDir, file)
+        const stats = await stat(fileName)
+        if (stats.isFile()) {
+          fs.set(file, readFileSync(fileName))
+        }
+      })
+    )
+  }
 
-  return {
+  await reset()
+
+  const ret: ContentStorage = {
     exist,
     storeStream,
     retrieve,
+    async delete(ids: string[]) {
+      // noop
+    },
   }
+
+  return Object.assign(ret, {
+    fs,
+  })
 }

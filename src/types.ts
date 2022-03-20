@@ -76,12 +76,20 @@ export type DeployedEntityStreamOptions = {
   fromTimestamp?: number
   tmpDownloadFolder: string
 
-  // configure pointer-changes polling
+  // - Configures pointer-changes polling
+  // - When pointerChangesWaitTime == 0, the polling is disabled and the stream
+  //   ends right after finishing the first iteration
   pointerChangesWaitTime: number
 
   // retry http requests
   requestRetryWaitTime: number
   requestMaxRetries: number
+
+  /**
+   * Delete downloaded snapshot files after usage
+   * Default: true
+   */
+  deleteSnapshotAfterUsage?: boolean
 }
 
 /**
@@ -134,9 +142,10 @@ export type EntityDeployment = {
 export type ContentEncoding = 'gzip'
 
 export interface ContentStorage {
-  exist(ids: string): Promise<boolean>
-  storeStream(id: string, fileStream: Readable): Promise<void>
-  retrieve(id: string): Promise<ContentItem | undefined>
+  exist(fileIds: string): Promise<boolean>
+  storeStream(fileId: string, fileStream: Readable): Promise<void>
+  delete(fileIds: string[]): Promise<void>
+  retrieve(fileId: string): Promise<ContentItem | undefined>
 }
 
 export interface ContentItem {

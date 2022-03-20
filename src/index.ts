@@ -15,7 +15,6 @@ import {
   SnapshotsFetcherComponents,
 } from './types'
 import { coerceEntityDeployment, contentServerMetricLabels, sleep, streamToBuffer } from './utils'
-import * as fs from 'fs'
 
 export { metricsDefinitions } from './metrics'
 
@@ -94,6 +93,7 @@ export async function* getDeployedEntitiesStream(
   components: SnapshotsFetcherComponents,
   options: DeployedEntityStreamOptions
 ): AsyncIterable<RemoteEntityDeployment> {
+  const logs = components.logs.getLogger(`getDeployedEntitiesStream(${options.contentServer})`)
   // the minimum timestamp we are looking for
   const genesisTimestamp = options.fromTimestamp || 0
 
@@ -112,30 +112,40 @@ export async function* getDeployedEntitiesStream(
   // 2. download the snapshot file if it contains deployments
   //    in the range we are interested (>= genesisTimestamp)
   if (hash && lastIncludedDeploymentTimestamp && lastIncludedDeploymentTimestamp > genesisTimestamp) {
-    // 2.1. download the snapshot file if needed
-    await downloadFileWithRetries(
-      components,
-      hash,
-      options.tmpDownloadFolder,
-      [options.contentServer],
-      new Map(),
-      options.requestMaxRetries,
-      options.requestRetryWaitTime
-    )
+    try {
+      // 2.1. download the snapshot file if needed
+      await downloadFileWithRetries(
+        components,
+        hash,
+        options.tmpDownloadFolder,
+        [options.contentServer],
+        new Map(),
+        options.requestMaxRetries,
+        options.requestRetryWaitTime
+      )
 
-    // 2.2. open the snapshot file and process line by line
-    const deploymentsInFile = processDeploymentsInFile(hash, components)
-    for await (const rawDeployment of deploymentsInFile) {
-      const deployment = coerceEntityDeployment(rawDeployment)
-      if (!deployment) continue
-      // selectively ignore deployments by localTimestamp
-      if (deployment.localTimestamp >= genesisTimestamp) {
-        components.metrics.increment('dcl_entities_deployments_processed_total', metricLabels)
-        yield deployment
+      // 2.2. open the snapshot file and process line by line
+      const deploymentsInFile = processDeploymentsInFile(hash, components)
+      for await (const rawDeployment of deploymentsInFile) {
+        const deployment = coerceEntityDeployment(rawDeployment)
+        if (!deployment) continue
+        // selectively ignore deployments by localTimestamp
+        if (deployment.localTimestamp >= genesisTimestamp) {
+          components.metrics.increment('dcl_entities_deployments_processed_total', metricLabels)
+          yield deployment
+        }
+        // update greatest processed timestamp
+        if (deployment.localTimestamp > greatestProcessedTimestamp) {
+          greatestProcessedTimestamp = deployment.localTimestamp
+        }
       }
-      // update greatest processed timestamp
-      if (deployment.localTimestamp > greatestProcessedTimestamp) {
-        greatestProcessedTimestamp = deployment.localTimestamp
+    } finally {
+      if (options.deleteSnapshotAfterUsage !== false) {
+        try {
+          await components.storage.delete([hash])
+        } catch (err: any) {
+          logs.error(err)
+        }
       }
     }
   }
@@ -179,7 +189,7 @@ export function createCatalystDeploymentStream(
   components: SnapshotsFetcherComponents & { deployer: IDeployerComponent },
   options: CatalystDeploymentStreamOptions
 ): IJobWithLifecycle & CatalystDeploymentStreamComponent {
-  let logs = components.logs.getLogger(`CatalystDeploymentStream(${options.contentServer})`)
+  const logs = components.logs.getLogger(`CatalystDeploymentStream(${options.contentServer})`)
   let greatestProcessedTimestamp = options.fromTimestamp || 0
 
   const metricsLabels = contentServerMetricLabels(options.contentServer)

@@ -3,6 +3,7 @@ import { test } from './components'
 import { createReadStream, unlinkSync } from 'fs'
 import { resolve } from 'path'
 import { sleep } from '../src/utils'
+import Sinon from 'sinon'
 
 test('getDeployedEntitiesStream', ({ components, stubComponents }) => {
   const contentFolder = resolve('downloads')
@@ -68,6 +69,8 @@ test('getDeployedEntitiesStream', ({ components, stubComponents }) => {
   })
 
   it('fetches a stream', async () => {
+    const { storage } = stubComponents
+
     const r = []
     const stream = getDeployedEntitiesStream(
       {
@@ -86,9 +89,14 @@ test('getDeployedEntitiesStream', ({ components, stubComponents }) => {
       }
     )
 
+    Sinon.assert.callCount(storage.delete, 0)
+
     for await (const deployment of stream) {
       r.push(deployment)
     }
+
+    // the downloaded file must be deleted
+    Sinon.assert.calledOnce(storage.delete)
 
     expect(r).toEqual([
       { entityType: 'profile', entityId: 'Qm000001', localTimestamp: 1, authChain: [] },
@@ -105,6 +113,41 @@ test('getDeployedEntitiesStream', ({ components, stubComponents }) => {
       { entityType: 'profile', entityId: 'Qm000012', localTimestamp: 12, authChain: [] },
       { entityType: 'profile', entityId: 'Qm000013', localTimestamp: 13, authChain: [] },
     ])
+  })
+
+  it('fetches a stream without deleting the downloaded file', async () => {
+    const { storage } = stubComponents
+    await storage.delete(['*'])
+    storage.delete.reset()
+
+    const r = []
+    const stream = getDeployedEntitiesStream(
+      {
+        fetcher: components.fetcher,
+        downloadQueue: components.downloadQueue,
+        logs: components.logs,
+        metrics: components.metrics,
+        storage: components.storage,
+      },
+      {
+        contentServer: await components.getBaseUrl(),
+        tmpDownloadFolder: contentFolder,
+        pointerChangesWaitTime: 0,
+        requestRetryWaitTime: 0,
+        requestMaxRetries: 10,
+      }
+    )
+
+    Sinon.assert.callCount(storage.delete, 0)
+
+    for await (const deployment of stream) {
+      r.push(deployment)
+    }
+
+    // the downloaded file must not be deleted
+    Sinon.assert.callCount(storage.delete, 0)
+
+    expect(r.length).toBeGreaterThan(0)
   })
 })
 
