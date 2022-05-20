@@ -10,7 +10,6 @@ async function downloadJob(
   hashToDownload: string,
   finalFileName: string,
   presentInServers: string[],
-  serverMapLRU: Map<string, number>,
   maxRetries: number,
   waitTimeBetweenRetries: number
 ): Promise<void> {
@@ -21,7 +20,7 @@ async function downloadJob(
 
   for (;;) {
     retries++
-    const serverToUse = pickLeastRecentlyUsedServer(presentInServers, serverMapLRU)
+    const serverToUse = pickLeastRecentlyUsedServer(presentInServers)
     try {
       components.metrics.observe('dcl_available_servers_histogram', {}, presentInServers.length)
       await downloadContentFile(components, hashToDownload, finalFileName, serverToUse)
@@ -48,7 +47,7 @@ export async function downloadFileWithRetries(
   hashToDownload: string,
   targetTempFolder: string,
   presentInServers: string[],
-  serverMapLRU: Map<string, number>,
+  _serverMapLRU: Map<string, number>,
   maxRetries: number,
   waitTimeBetweenRetries: number
 ): Promise<void> {
@@ -64,7 +63,6 @@ export async function downloadFileWithRetries(
       hashToDownload,
       finalFileName,
       presentInServers,
-      serverMapLRU,
       maxRetries,
       waitTimeBetweenRetries
     )

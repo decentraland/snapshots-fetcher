@@ -1,5 +1,6 @@
+import { DeploymentWithAuthChain } from '@dcl/schemas'
 import { metricsDefinitions } from './metrics'
-import { RemoteEntityDeployment, SnapshotsFetcherComponents } from './types'
+import { SnapshotsFetcherComponents } from './types'
 import { contentServerMetricLabels, fetchJson, saveContentFileToDisk as saveContentFile } from './utils'
 
 export async function getGlobalSnapshot(components: SnapshotsFetcherComponents, server: string, retries: number) {
@@ -41,7 +42,7 @@ export function fetchPointerChanges(
   components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'metrics'>,
   server: string,
   fromTimestamp: number
-): AsyncIterable<RemoteEntityDeployment> {
+): AsyncIterable<DeploymentWithAuthChain> {
   const url = new URL(
     `${server}/pointer-changes?sortingOrder=ASC&sortingField=local_timestamp&from=${encodeURIComponent(fromTimestamp)}`
   ).toString()

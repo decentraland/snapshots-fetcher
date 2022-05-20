@@ -13,6 +13,7 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@dcl/hashing": "^1.0.0",
+    "@dcl/schemas": "^4.10.0",
     "@well-known-components/interfaces": "^1.1.0",
     "@well-known-components/metrics": "^1.1.2",
     "p-queue": "^6.6.2"

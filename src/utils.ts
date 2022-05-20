@@ -6,9 +6,10 @@ import * as https from 'https'
 import * as crypto from 'crypto'
 import * as zlib from 'zlib'
 import { IFetchComponent } from '@well-known-components/http-server'
-import { RemoteEntityDeployment, Server, SnapshotsFetcherComponents } from './types'
+import { Server, SnapshotsFetcherComponents } from './types'
 import { ContentServerMetricLabels } from './metrics'
 import { hashV0, hashV1 } from '@dcl/hashing'
+import { DeploymentWithAuthChain } from '@dcl/schemas'
 
 const streamPipeline = promisify(pipeline)
 
@@ -181,29 +182,25 @@ function downloadFile(
   })
 }
 
-export function coerceEntityDeployment(value: any): RemoteEntityDeployment | null {
-  if (
-    value &&
-    typeof value == 'object' &&
-    typeof value.entityId == 'string' &&
-    typeof value.entityType == 'string' &&
-    typeof value.localTimestamp == 'number' &&
-    Array.isArray(value.authChain)
-  ) {
+export function coerceEntityDeployment(value: any): DeploymentWithAuthChain | null {
+  if (DeploymentWithAuthChain.validate(value)) {
     return value
   }
 
-  console.error('ERROR: Invalid entity deployment', value)
+  console.error('ERROR: Invalid entity deployment', value, DeploymentWithAuthChain.validate.errors)
+
   return null
 }
 
-export function pickLeastRecentlyUsedServer(
-  serversToPickFrom: Server[],
-  _serverMap: Map<string, number /* timestamp */>
-): string {
-  let mostSuitableOption = serversToPickFrom[Math.floor(Math.random() * serversToPickFrom.length)]
-  // TODO: implement load balancing strategy
-  return mostSuitableOption
+export function pickLeastRecentlyUsedServer(serversToPickFrom: Server[]): string {
+  // Here is the thing. We could perfectly use round-robin to download content files
+  // and/or spend precious CPU cycles in a fancy load balancing algorithm.
+  // But we are dealing with thousands of "load balancing events". And Math.random()
+  // has a **normal distribution**, which has in practice (and big numbers) the same
+  // effect, load balancing.
+  //
+  // Math is lovely.
+  return serversToPickFrom[Math.floor(Math.random() * serversToPickFrom.length)]
 }
 
 export function contentServerMetricLabels(contentServer: string): ContentServerMetricLabels {

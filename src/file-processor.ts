@@ -1,7 +1,7 @@
-import { RemoteEntityDeployment, SnapshotsFetcherComponents } from './types'
+import { SnapshotsFetcherComponents } from './types'
 import { createInterface } from 'readline'
-import { createReadStream } from 'fs'
 import { coerceEntityDeployment } from './utils'
+import { DeploymentWithAuthChain } from '@dcl/schemas'
 
 async function* processLineByLine(input: NodeJS.ReadableStream) {
   yield* createInterface({
@@ -18,9 +18,8 @@ async function* processLineByLine(input: NodeJS.ReadableStream) {
 export async function* processDeploymentsInFile(
   file: string,
   components: Pick<SnapshotsFetcherComponents, 'storage'>
-): AsyncIterable<RemoteEntityDeployment> {
+): AsyncIterable<DeploymentWithAuthChain> {
   const fileContent = await components.storage.retrieve(file)
-
 
   if (!fileContent) {
     throw new Error(`The file ${file} does not exist`)
@@ -42,7 +41,7 @@ export async function* processDeploymentsInFile(
  */
 export async function* processDeploymentsInStream(
   stream: NodeJS.ReadableStream
-): AsyncIterable<RemoteEntityDeployment> {
+): AsyncIterable<DeploymentWithAuthChain> {
   for await (const line of processLineByLine(stream)) {
     const theLine = line.trim()
     if (theLine.startsWith('{') && theLine.endsWith('}')) {

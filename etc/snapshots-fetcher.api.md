@@ -6,6 +6,7 @@
 
 /// <reference types="node" />
 
+import { DeploymentWithAuthChain } from '@dcl/schemas';
 import { IFetchComponent } from '@well-known-components/http-server';
 import { ILoggerComponent } from '@well-known-components/interfaces';
 import { IMetricsComponent } from '@well-known-components/interfaces';
@@ -25,13 +26,12 @@ export function createCatalystDeploymentStream(components: SnapshotsFetcherCompo
 // Warning: (ae-forgotten-export) The symbol "Server" needs to be exported by the entry point index.d.ts
 //
 // @public
-export function downloadEntityAndContentFiles(components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'metrics' | 'storage'>, entityId: EntityHash, presentInServers: string[], serverMapLRU: Map<Server, number>, targetFolder: string, maxRetries: number, waitTimeBetweenRetries: number): Promise<unknown>;
+export function downloadEntityAndContentFiles(components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'metrics' | 'storage'>, entityId: EntityHash, presentInServers: string[], _serverMapLRU: Map<Server, number>, targetFolder: string, maxRetries: number, waitTimeBetweenRetries: number): Promise<unknown>;
 
 // Warning: (ae-forgotten-export) The symbol "DeployedEntityStreamOptions" needs to be exported by the entry point index.d.ts
-// Warning: (ae-forgotten-export) The symbol "RemoteEntityDeployment" needs to be exported by the entry point index.d.ts
 //
 // @public
-export function getDeployedEntitiesStream(components: SnapshotsFetcherComponents, options: DeployedEntityStreamOptions): AsyncIterable<RemoteEntityDeployment>;
+export function getDeployedEntitiesStream(components: SnapshotsFetcherComponents, options: DeployedEntityStreamOptions): AsyncIterable<DeploymentWithAuthChain>;
 
 // @public (undocumented)
 export const metricsDefinitions: IMetricsComponent<"dcl_content_download_bytes_total" | "dcl_content_download_duration_seconds" | "dcl_content_download_errors_total" | "dcl_content_download_hash_errors_total" | "dcl_entities_deployments_processed_total" | "dcl_catalysts_pointer_changes_response_time_seconds" | "dcl_deployments_stream_reconnection_count" | "dcl_deployments_stream_failure_count" | "dcl_content_download_job_succeed_retries" | "dcl_available_servers_histogram">;

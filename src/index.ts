@@ -1,3 +1,4 @@
+import { DeploymentWithAuthChain } from '@dcl/schemas'
 import { fetchPointerChanges, getGlobalSnapshot } from './client'
 import { downloadFileWithRetries } from './downloader'
 import { createExponentialFallofRetry } from './exponential-fallof-retry'
@@ -10,7 +11,6 @@ import {
   DeployedEntityStreamOptions,
   EntityHash,
   IDeployerComponent,
-  RemoteEntityDeployment,
   Server,
   SnapshotsFetcherComponents,
 } from './types'
@@ -33,7 +33,7 @@ export async function downloadEntityAndContentFiles(
   components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'metrics' | 'storage'>,
   entityId: EntityHash,
   presentInServers: string[],
-  serverMapLRU: Map<Server, number>,
+  _serverMapLRU: Map<Server, number>,
   targetFolder: string,
   maxRetries: number,
   waitTimeBetweenRetries: number
@@ -44,7 +44,7 @@ export async function downloadEntityAndContentFiles(
     entityId,
     targetFolder,
     presentInServers,
-    serverMapLRU,
+    _serverMapLRU,
     maxRetries,
     waitTimeBetweenRetries
   )
@@ -71,7 +71,7 @@ export async function downloadEntityAndContentFiles(
           content.hash,
           targetFolder,
           presentInServers,
-          serverMapLRU,
+          _serverMapLRU,
           maxRetries,
           waitTimeBetweenRetries
         )
@@ -92,7 +92,7 @@ export async function downloadEntityAndContentFiles(
 export async function* getDeployedEntitiesStream(
   components: SnapshotsFetcherComponents,
   options: DeployedEntityStreamOptions
-): AsyncIterable<RemoteEntityDeployment> {
+): AsyncIterable<DeploymentWithAuthChain> {
   const logs = components.logs.getLogger(`getDeployedEntitiesStream(${options.contentServer})`)
   // the minimum timestamp we are looking for
   const genesisTimestamp = options.fromTimestamp || 0

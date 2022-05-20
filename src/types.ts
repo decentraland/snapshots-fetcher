@@ -4,6 +4,7 @@ import { ExponentialFallofRetryComponent } from './exponential-fallof-retry'
 import { IJobQueue } from './job-queue-port'
 import { metricsDefinitions } from './metrics'
 import { Readable } from 'stream'
+import { DeploymentWithAuthChain } from '@dcl/schemas'
 
 /**
  * @public
@@ -43,7 +44,7 @@ export type SnapshotsFetcherComponents = {
  * @public
  */
 export type IDeployerComponent = {
-  deployEntity(entity: RemoteEntityDeployment, contentServers: string[]): Promise<void>
+  deployEntity(entity: DeploymentWithAuthChain, contentServers: string[]): Promise<void>
   /**
    * onIdle returns a promise that should be resolved once every deployEntity(...) job has
    * finished and there are no more queued jobs.
@@ -102,7 +103,7 @@ export type CatalystDeploymentStreamComponent = ExponentialFallofRetryComponent 
 /**
  * @public
  */
-export type DeploymentHandler = (deployment: RemoteEntityDeployment, server: string) => Promise<void>
+export type DeploymentHandler = (deployment: DeploymentWithAuthChain, server: string) => Promise<void>
 
 /**
  * @public
@@ -117,16 +118,6 @@ export type CatalystDeploymentStreamOptions = DeployedEntityStreamOptions & {
    * defaults to one day
    */
   maxReconnectionTime?: number
-}
-
-/**
- * @public
- */
-export type RemoteEntityDeployment = {
-  entityType: string
-  entityId: string
-  localTimestamp: number
-  authChain: any[]
 }
 
 /**
