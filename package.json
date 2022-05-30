@@ -16,7 +16,8 @@
     "@dcl/schemas": "^4.10.0",
     "@well-known-components/interfaces": "^1.1.0",
     "@well-known-components/metrics": "^1.1.2",
-    "p-queue": "^6.6.2"
+    "p-queue": "^6.6.2",
+    "undici": "^5.3.0"
   },
   "engines": {
     "node": ">16.0.0"
@@ -28,7 +29,6 @@
     "@well-known-components/http-server": "^1.1.1",
     "@well-known-components/logger": "^1.1.0",
     "@well-known-components/test-helpers": "^1.2.1",
-    "node-fetch": "^2.6.7",
     "ts-node": "^10.5.0",
     "typescript": "^4.5.5"
   },

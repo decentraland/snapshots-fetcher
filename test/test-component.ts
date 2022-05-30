@@ -1,5 +1,5 @@
 import { IFetchComponent } from '@well-known-components/http-server'
-import * as nodeFetch from 'node-fetch'
+import { fetch as undiciFetch } from 'undici'
 import { ContentItem, ContentStorage } from '../src/types'
 import { Readable } from 'stream'
 import { readFileSync } from 'fs'
@@ -9,8 +9,8 @@ import { streamToBuffer } from '../src/utils'
 
 export function createFetchComponent() {
   const fetch: IFetchComponent = {
-    async fetch(url: nodeFetch.RequestInfo, init?: nodeFetch.RequestInit): Promise<nodeFetch.Response> {
-      return nodeFetch.default(url, init)
+    async fetch(url, init?) {
+      return undiciFetch(url, init) as any
     },
   }
 
