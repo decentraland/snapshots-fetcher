@@ -3,8 +3,8 @@ import { ILoggerComponent, IMetricsComponent } from '@well-known-components/inte
 import { ExponentialFallofRetryComponent } from './exponential-fallof-retry'
 import { IJobQueue } from './job-queue-port'
 import { metricsDefinitions } from './metrics'
-import { Readable } from 'stream'
 import { DeploymentWithAuthChain } from '@dcl/schemas'
+import { IContentStorageComponent } from '@dcl/catalyst-storage'
 
 /**
  * @public
@@ -35,7 +35,7 @@ export type SnapshotsFetcherComponents = {
   fetcher: IFetchComponent
   downloadQueue: IJobQueue
   logs: ILoggerComponent
-  storage: ContentStorage
+  storage: IContentStorageComponent
 }
 
 /**
@@ -57,7 +57,6 @@ export type IDeployerComponent = {
  */
 export type DownloadEntitiesOptions = {
   catalystServers: string[]
-  deployAction: (entity: EntityDeployment) => Promise<any>
   concurrency: number
   jobTimeout: number
   isEntityPresentLocally: (entityId: string) => Promise<boolean>
@@ -118,27 +117,4 @@ export type CatalystDeploymentStreamOptions = DeployedEntityStreamOptions & {
    * defaults to one day
    */
   maxReconnectionTime?: number
-}
-
-/**
- * @public
- */
-export type EntityDeployment = {
-  entityId: string
-  entityType: string
-  content: Array<ContentMapping>
-  auditInfo: { authChain: any[] }
-}
-
-export type ContentEncoding = 'gzip'
-
-export interface ContentStorage {
-  exist(fileIds: string): Promise<boolean>
-  storeStream(fileId: string, fileStream: Readable): Promise<void>
-  delete(fileIds: string[]): Promise<void>
-  retrieve(fileId: string): Promise<ContentItem | undefined>
-}
-
-export interface ContentItem {
-  asStream(): Promise<Readable>
 }

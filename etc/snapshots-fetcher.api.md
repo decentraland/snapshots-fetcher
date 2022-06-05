@@ -4,13 +4,11 @@
 
 ```ts
 
-/// <reference types="node" />
-
 import { DeploymentWithAuthChain } from '@dcl/schemas';
+import { IContentStorageComponent } from '@dcl/catalyst-storage';
 import { IFetchComponent } from '@well-known-components/http-server';
 import { ILoggerComponent } from '@well-known-components/interfaces';
 import { IMetricsComponent } from '@well-known-components/interfaces';
-import { Readable } from 'stream';
 
 // Warning: (ae-forgotten-export) The symbol "SnapshotsFetcherComponents" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "CatalystDeploymentStreamOptions" needs to be exported by the entry point index.d.ts
