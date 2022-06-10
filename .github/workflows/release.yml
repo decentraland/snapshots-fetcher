@@ -2,11 +2,13 @@ name: 'release'
 on:
   workflow_dispatch:
     inputs:
-        dry_run:
-          description: dry run
-          type: boolean
-          required: false
-          default: false
+      dry_run:
+        description: dry run
+        type: boolean
+        required: false
+        default: false
+  schedule:
+    - cron: '0 13 * * 6'  # Every Saturday at 1PM UTC
 jobs:
   release:
     runs-on: ubuntu-latest
