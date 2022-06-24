@@ -1,4 +1,4 @@
-import { assertHash } from '../src/utils'
+import { assertHash } from '../src/fetcher'
 
 describe('hashing checks', () => {
   it('checks bafy', async () => {

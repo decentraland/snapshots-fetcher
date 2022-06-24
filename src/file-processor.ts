@@ -1,6 +1,6 @@
 import { SnapshotsFetcherComponents } from './types'
 import { createInterface } from 'readline'
-import { coerceEntityDeployment } from './utils'
+import { coerceEntityDeployment } from './fetcher'
 import { DeploymentWithAuthChain } from '@dcl/schemas'
 
 async function* processLineByLine(input: NodeJS.ReadableStream) {

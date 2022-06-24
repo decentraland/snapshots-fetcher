@@ -1,6 +1,6 @@
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import { IJobWithLifecycle } from './job-lifecycle-manager'
-import { sleep } from './utils'
+import { sleep } from './fetcher'
 
 /**
  * @public

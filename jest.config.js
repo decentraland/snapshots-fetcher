@@ -4,7 +4,7 @@ module.exports = {
       tsconfig: 'test/tsconfig.json',
     },
   },
-  moduleFileExtensions: ['ts', 'js'],
+  // moduleFileExtensions: ['ts'],
   transform: {
     '^.+\\.(ts|tsx)$': 'ts-jest',
   },

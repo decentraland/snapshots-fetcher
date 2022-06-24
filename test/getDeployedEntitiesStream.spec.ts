@@ -2,7 +2,7 @@ import { getDeployedEntitiesStream } from '../src'
 import { test } from './components'
 import { createReadStream, unlinkSync } from 'fs'
 import { resolve } from 'path'
-import { sleep } from '../src/utils'
+import { sleep } from '../src/fetcher'
 import Sinon from 'sinon'
 import { AuthLinkType } from '@dcl/schemas'
 
@@ -90,6 +90,7 @@ test('getDeployedEntitiesStream', ({ components, stubComponents }) => {
         logs: components.logs,
         metrics: components.metrics,
         storage: components.storage,
+        ipfs: components.ipfs
       },
       {
         contentServer: await components.getBaseUrl(),
@@ -140,6 +141,7 @@ test('getDeployedEntitiesStream', ({ components, stubComponents }) => {
         logs: components.logs,
         metrics: components.metrics,
         storage: components.storage,
+        ipfs: components.ipfs
       },
       {
         contentServer: await components.getBaseUrl(),
@@ -228,6 +230,7 @@ test("getDeployedEntitiesStream does not download snapshot if it doesn't include
         logs: components.logs,
         metrics: components.metrics,
         storage: components.storage,
+        ipfs: components.ipfs
       },
       {
         fromTimestamp: 150,

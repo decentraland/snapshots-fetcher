@@ -2,7 +2,7 @@ import { createCatalystDeploymentStream, getDeployedEntitiesStream } from '../sr
 import { test } from './components'
 import { createReadStream, unlinkSync } from 'fs'
 import { resolve } from 'path'
-import { sleep } from '../src/utils'
+import { sleep } from '../src/fetcher'
 import future from 'fp-future'
 import { IDeployerComponent } from '../src/types'
 import { AuthLinkType } from '@dcl/schemas'
@@ -125,6 +125,7 @@ test('createCatalystDeploymentStream', ({ components, stubComponents }) => {
         deployer,
         metrics: components.metrics,
         storage: components.storage,
+        ipfs: components.ipfs
       },
       {
         contentServer: await components.getBaseUrl(),

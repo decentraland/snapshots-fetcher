@@ -35,7 +35,16 @@ export type SnapshotsFetcherComponents = {
   fetcher: IFetchComponent
   downloadQueue: IJobQueue
   logs: ILoggerComponent
-  storage: IContentStorageComponent
+  storage: IContentStorageComponent,
+  ipfs: IIPFSComponent
+}
+
+/**
+ * A component that handles IPFS downloads
+ * @public
+ */
+export type IIPFSComponent = {
+  get: (ipfs_path: string, options?: any) => Promise<AsyncIterable<Uint8Array>>
 }
 
 /**

@@ -1,12 +1,12 @@
 import { Path, SnapshotsFetcherComponents } from './types'
 import * as path from 'path'
 import { saveContentFileToDisk } from './client'
-import { pickLeastRecentlyUsedServer, sleep } from './utils'
+import { pickLeastRecentlyUsedServer, sleep } from './fetcher'
 
 const downloadFileJobsMap = new Map<Path, ReturnType<typeof downloadFileWithRetries>>()
 
 async function downloadJob(
-  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage'>,
+  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage' | 'ipfs'>,
   hashToDownload: string,
   finalFileName: string,
   presentInServers: string[],
@@ -43,7 +43,7 @@ async function downloadJob(
  * being downloaded
  */
 export async function downloadFileWithRetries(
-  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage'>,
+  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage' | 'ipfs'>,
   hashToDownload: string,
   targetTempFolder: string,
   presentInServers: string[],
@@ -76,7 +76,7 @@ export async function downloadFileWithRetries(
 }
 
 async function downloadContentFile(
-  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage'>,
+  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage' | 'ipfs'>,
   hash: string,
   finalFileName: string,
   serverToUse: string

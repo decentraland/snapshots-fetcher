@@ -1,9 +1,9 @@
 import { test } from './components'
-import { readFileSync, unlinkSync, promises as fsPromises, constants } from 'fs'
+import { unlinkSync } from 'fs'
 import { resolve } from 'path'
 import { Readable } from 'stream'
 import { gzipSync } from 'zlib'
-import { checkFileExists, saveContentFileToDisk, streamToBuffer } from '../src/utils'
+import { checkFileExists, saveContentFileToDisk, streamToBuffer } from '../src/fetcher'
 import { downloadFileWithRetries } from '../src/downloader'
 import { metricsDefinitions } from '../src/metrics'
 import { createTestMetricsComponent } from '@well-known-components/metrics'
@@ -11,7 +11,7 @@ import { createTestMetricsComponent } from '@well-known-components/metrics'
 const maxRetries = 10
 const waitTimeBetweenRetries = 100
 
-test('saveToDisk', ({ components, stubComponents }) => {
+test('saveToDisk', ({ components }) => {
   const contentFolder = resolve('downloads')
   const content = Buffer.from(Math.random().toString(), 'utf-8')
   const metrics = createTestMetricsComponent(metricsDefinitions)
@@ -110,7 +110,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     } catch {}
 
     await saveContentFileToDisk(
-      { metrics, storage: components.storage },
+      { metrics, storage: components.storage, ipfs: components.ipfs },
       (await components.getBaseUrl()) + '/working',
       filename,
       'working',
@@ -130,7 +130,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     } catch {}
 
     await saveContentFileToDisk(
-      { metrics, storage: components.storage },
+      { metrics, storage: components.storage, ipfs: components.ipfs },
       (await components.getBaseUrl()) + '/working-redirected-302',
       filename,
       'working',
@@ -150,7 +150,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     } catch {}
 
     await saveContentFileToDisk(
-      { metrics, storage: components.storage },
+      { metrics, storage: components.storage, ipfs: components.ipfs },
       (await components.getBaseUrl()) + '/working-redirected-301',
       filename,
       'working',
@@ -167,7 +167,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     const filename = resolve(contentFolder, 'working')
     await expect(
       saveContentFileToDisk(
-        { metrics, storage: components.storage },
+        { metrics, storage: components.storage, ipfs: components.ipfs },
         (await components.getBaseUrl()) + '/forever-redirecting-301',
         filename,
         'working',
@@ -188,7 +188,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     await expect(
       async () =>
         await saveContentFileToDisk(
-          { metrics, storage: components.storage },
+          { metrics, storage: components.storage, ipfs: components.ipfs },
           (await components.getBaseUrl()) + '/fails',
           filename,
           'fails',
@@ -211,7 +211,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     await expect(
       async () =>
         await saveContentFileToDisk(
-          { metrics, storage: components.storage },
+          { metrics, storage: components.storage, ipfs: components.ipfs },
           (await components.getBaseUrl()) + '/fails404',
           filename,
           'fails404',
@@ -234,7 +234,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     await expect(
       async () =>
         await saveContentFileToDisk(
-          { metrics, storage: components.storage },
+          { metrics, storage: components.storage, ipfs: components.ipfs },
           'http://0.0.0.0:65433/please-dont-listen-on-this-port',
           filename,
           'failsECONNREFUSED',
@@ -258,7 +258,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     await expect(
       async () =>
         await saveContentFileToDisk(
-          { metrics, storage: components.storage },
+          { metrics, storage: components.storage, ipfs: components.ipfs },
           (await components.getBaseUrl()).replace('http:', 'https:') + '/working',
           filename,
           'failsTLS',
@@ -280,7 +280,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     expect(await checkFileExists(filename)).toEqual(false)
 
     await saveContentFileToDisk(
-      { metrics, storage: components.storage },
+      { metrics, storage: components.storage, ipfs: components.ipfs },
       'https://decentraland.org',
       filename,
       'decentraland.org',
@@ -294,7 +294,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
   it('always failing endpoint converges and fails', async () => {
     await expect(async () => {
       await downloadFileWithRetries(
-        { metrics, storage: components.storage },
+        { metrics, storage: components.storage, ipfs: components.ipfs },
         'alwaysFails',
         contentFolder,
         [await components.getBaseUrl()],
@@ -307,7 +307,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
 
   it('concurrent download reuses job', async () => {
     const a = downloadFileWithRetries(
-      { metrics, storage: components.storage },
+      { metrics, storage: components.storage, ipfs: components.ipfs },
       'bafkreigwey5vc6q25ilofdu2vjvcag72eqj46lzipi6mredsfpe42ls2ri',
       contentFolder,
       [await components.getBaseUrl()],
@@ -316,7 +316,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
       waitTimeBetweenRetries
     )
     const b = downloadFileWithRetries(
-      { metrics, storage: components.storage },
+      { metrics, storage: components.storage, ipfs: components.ipfs },
       'bafkreigwey5vc6q25ilofdu2vjvcag72eqj46lzipi6mredsfpe42ls2ri',
       contentFolder,
       [await components.getBaseUrl()],
@@ -330,7 +330,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
 
   it('already downloaded files must return without actually downloading the file', async () => {
     const a = downloadFileWithRetries(
-      { metrics, storage: components.storage },
+      { metrics, storage: components.storage, ipfs: components.ipfs },
       'bafkreigwey5vc6q25ilofdu2vjvcag72eqj46lzipi6mredsfpe42ls2ri',
       contentFolder,
       [await components.getBaseUrl()],
@@ -354,7 +354,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     await expect(
       async () =>
         await saveContentFileToDisk(
-          { metrics, storage: components.storage },
+          { metrics, storage: components.storage, ipfs: components.ipfs },
           (await components.getBaseUrl()) + '/QmInValidHash',
           filename,
           'QmInValidHash'

@@ -1,7 +1,7 @@
 import { createLogComponent } from '@well-known-components/logger'
 import future from 'fp-future'
 import { createExponentialFallofRetry } from '../src/exponential-fallof-retry'
-import { sleep } from '../src/utils'
+import { sleep } from '../src/fetcher'
 
 describe('createExponentialFallofRetry', () => {
   it('iterates ten times', async () => {

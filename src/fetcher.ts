@@ -67,7 +67,7 @@ export async function assertHash(filename: string, hash: string) {
 }
 
 export async function saveContentFileToDisk(
-  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage'>,
+  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage' | 'ipfs'>,
   originalUrlString: string,
   destinationFilename: string,
   hash: string,
@@ -85,7 +85,11 @@ export async function saveContentFileToDisk(
   }
 
   try {
-    await downloadFile(originalUrlString, metricsLabels, components, tmpFileName)
+    if (hash.toLowerCase().startsWith("ba")) {
+      await downloadFileFromIPFS(components, hash, tmpFileName)
+    } else {
+      await downloadFile(originalUrlString, metricsLabels, components, tmpFileName)
+    }
 
     // make files not executable
     await fs.promises.chmod(tmpFileName, 0o644)
@@ -114,6 +118,14 @@ export async function saveContentFileToDisk(
       await fs.promises.unlink(tmpFileName)
     }
   }
+}
+
+async function downloadFileFromIPFS(components: Pick<SnapshotsFetcherComponents, "metrics" | "storage" | "ipfs">,
+  hash: string, tmpFileName: string) {
+  const ipfsResponse: AsyncIterable<Uint8Array> = await components.ipfs.get(hash)
+  const tmpFile = fs.createWriteStream(tmpFileName, { emitClose: true })
+  const pipe = streamPipeline(ipfsResponse, tmpFile)
+  pipe.then(() => { tmpFile.close() }).catch(() => { tmpFile.close() })
 }
 
 function downloadFile(

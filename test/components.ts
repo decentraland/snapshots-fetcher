@@ -3,7 +3,7 @@
 
 import { createRunner } from '@well-known-components/test-helpers'
 import { createJobQueue } from '../src/job-queue-port'
-import { SnapshotsFetcherComponents } from '../src/types'
+import { IIPFSComponent, SnapshotsFetcherComponents } from '../src/types'
 import { createFetchComponent, createStorageComponent } from './test-component'
 
 import {
@@ -14,6 +14,8 @@ import {
 import { createLogComponent } from '@well-known-components/logger'
 import { createTestMetricsComponent } from '@well-known-components/metrics'
 import { metricsDefinitions } from '../src/metrics'
+import * as ipfsClient from 'ipfs-client'
+import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
 
 // Record of components
 export type TestComponents = SnapshotsFetcherComponents & TestServerComponents<SnapshotsFetcherComponents>
@@ -31,6 +33,8 @@ export const test = createRunner<TestComponents>({
     await startComponents()
   },
   async initComponents() {
+    const config = await createDotEnvConfigComponent({ path: [".env.default", ".env"] })
+
     const fetcher = createFetchComponent()
     const downloadQueue = createJobQueue({
       autoStart: true,
@@ -42,6 +46,16 @@ export const test = createRunner<TestComponents>({
     const testServerComponents = await initTestServerComponents()
     const storage = await createStorageComponent()
 
+    const user = await config.requireString("IPFS_USER")
+    const password = await config.requireString("IPFS_PASSWORD")
+    const base64 = Buffer.from(`${user}:${password}`).toString('base64')
+    const ipfs: IIPFSComponent = await ipfsClient.create(
+      {
+        grpc: '/ipv4/127.0.0.1/tcp/5003/ws',
+        http: 'https://peer-historical.decentraland.org/ipfs/api/v0',
+        headers: { 'Authorization': `Basic ${base64}` }
+      })
+
     return {
       ...testServerComponents,
       metrics,
@@ -49,6 +63,7 @@ export const test = createRunner<TestComponents>({
       downloadQueue,
       fetcher,
       storage,
+      ipfs
     }
   },
 })

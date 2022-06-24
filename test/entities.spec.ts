@@ -1,7 +1,7 @@
 import { test } from './components'
 import { createReadStream, unlinkSync } from 'fs'
 import { resolve } from 'path'
-import { assertHash } from '../src/utils'
+import { assertHash } from '../src/fetcher'
 import { downloadEntityAndContentFiles } from '../src'
 
 test('entities', ({ components, stubComponents }) => {
@@ -47,7 +47,7 @@ test('entities', ({ components, stubComponents }) => {
 
     const usedServers = new Map()
     const entity = await downloadEntityAndContentFiles(
-      { fetcher: components.fetcher, metrics: components.metrics, storage: components.storage },
+      { fetcher: components.fetcher, metrics: components.metrics, storage: components.storage, ipfs: components.ipfs },
       'QmXx5dDq7nnPuCCP43Ngc7iq4kkqDfC5PEJGawUHYLGxUn',
       [await components.getBaseUrl()],
       usedServers,

@@ -1,8 +1,8 @@
 import { test } from './components'
-import { createJobLifecycleManagerComponent, JobLifecycleManagerComponent } from '../src/job-lifecycle-manager'
-import { sleep } from '../src/utils'
+import { createJobLifecycleManagerComponent } from '../src/job-lifecycle-manager'
+import { sleep } from '../src/fetcher'
 
-test('job-manager-1', ({ components, stubComponents }) => {
+test('job-manager-1', ({ components }) => {
   let jobManager: ReturnType<typeof createJobLifecycleManagerComponent>
   let emittedEvents: string[] = []
 
@@ -59,7 +59,7 @@ test('job-manager-1', ({ components, stubComponents }) => {
   })
 })
 
-test('job-manager-stops-all', ({ components, stubComponents }) => {
+test('job-manager-stops-all', ({ components }) => {
   let jobManager: ReturnType<typeof createJobLifecycleManagerComponent>
   let emittedEvents: string[] = []
 

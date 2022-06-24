@@ -14,7 +14,7 @@ import {
   Server,
   SnapshotsFetcherComponents,
 } from './types'
-import { coerceEntityDeployment, contentServerMetricLabels, sleep, streamToBuffer } from './utils'
+import { coerceEntityDeployment, contentServerMetricLabels, sleep, streamToBuffer } from './fetcher'
 
 export { metricsDefinitions } from './metrics'
 
@@ -30,7 +30,7 @@ if (parseInt(process.version.split('.')[0]) < 16) {
  * @public
  */
 export async function downloadEntityAndContentFiles(
-  components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'metrics' | 'storage'>,
+  components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'metrics' | 'storage' | 'ipfs'>,
   entityId: EntityHash,
   presentInServers: string[],
   _serverMapLRU: Map<Server, number>,

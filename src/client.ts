@@ -1,7 +1,7 @@
 import { DeploymentWithAuthChain } from '@dcl/schemas'
 import { metricsDefinitions } from './metrics'
 import { SnapshotsFetcherComponents } from './types'
-import { contentServerMetricLabels, fetchJson, saveContentFileToDisk as saveContentFile } from './utils'
+import { contentServerMetricLabels, fetchJson, saveContentFileToDisk as saveContentFile } from './fetcher'
 
 export async function getGlobalSnapshot(components: SnapshotsFetcherComponents, server: string, retries: number) {
   const url = new URL(`${server}/snapshot`).toString()
@@ -50,7 +50,7 @@ export function fetchPointerChanges(
 }
 
 export async function saveContentFileToDisk(
-  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage'>,
+  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage' | 'ipfs'>,
   server: string,
   hash: string,
   destinationFilename: string

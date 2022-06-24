@@ -5,3 +5,5 @@ downloads/**/*
 temp
 coverage
 **/.DS_Store
+.env
+.env.default
