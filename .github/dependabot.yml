@@ -4,9 +4,14 @@ updates:
   directory: "/"
   schedule:
     interval: weekly
+    day: monday
+    time: "09:00"
+    timezone: "America/Buenos_Aires"
   allow:
     - dependency-name: "@dcl/*"
     - dependency-name: "@catalyst/*"
     - dependency-name: "@well-known-components/*"
     - dependency-name: "dcl-*"
   versioning-strategy: auto
+  commit-message:
+    prefix: "chore: "
