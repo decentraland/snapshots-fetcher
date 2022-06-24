@@ -14,7 +14,7 @@
   "dependencies": {
     "@dcl/catalyst-storage": "^1.0.0-20220604235145.commit-892b669",
     "@dcl/hashing": "^1.0.0",
-    "@dcl/schemas": "^4.10.0",
+    "@dcl/schemas": "^5.0.3",
     "@well-known-components/interfaces": "^1.1.0",
     "@well-known-components/metrics": "^1.1.2",
     "ipfs-client": "^0.8.1",
