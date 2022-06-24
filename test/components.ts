@@ -14,7 +14,7 @@ import {
 import { createLogComponent } from '@well-known-components/logger'
 import { createTestMetricsComponent } from '@well-known-components/metrics'
 import { metricsDefinitions } from '../src/metrics'
-import * as ipfsClient from 'ipfs-client'
+import { create } from 'ipfs-client'
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
 
 // Record of components
@@ -46,10 +46,10 @@ export const test = createRunner<TestComponents>({
     const testServerComponents = await initTestServerComponents()
     const storage = await createStorageComponent()
 
-    const user = await config.requireString("IPFS_USER")
-    const password = await config.requireString("IPFS_PASSWORD")
+    const user = await config.getString("IPFS_USER")
+    const password = await config.getString("IPFS_PASSWORD")
     const base64 = Buffer.from(`${user}:${password}`).toString('base64')
-    const ipfs: IIPFSComponent = await ipfsClient.create(
+    const ipfs: IIPFSComponent = await create(
       {
         grpc: '/ipv4/127.0.0.1/tcp/5003/ws',
         http: 'https://peer-historical.decentraland.org/ipfs/api/v0',
