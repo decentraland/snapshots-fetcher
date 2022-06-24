@@ -6,7 +6,8 @@
   "typings": "dist/index.d.ts",
   "scripts": {
     "build": "make build",
-    "test": "npm run build && jest --runInBand --forceExit --detectOpenHandles --coverage"
+  "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest"
+
   },
   "keywords": [],
   "author": "Decentraland Contributors",
@@ -30,7 +31,10 @@
     "@well-known-components/http-server": "^1.1.1",
     "@well-known-components/logger": "^1.1.0",
     "@well-known-components/test-helpers": "^1.2.1",
+    "cross-env": "^7.0.3",
+    "jest": "^28.1.1",
     "node-fetch": "^2.6.7",
+    "ts-jest": "^28.0.5",
     "ts-node": "^10.5.0",
     "typescript": "^4.5.5"
   },
