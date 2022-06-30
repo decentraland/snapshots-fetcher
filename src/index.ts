@@ -121,7 +121,8 @@ export async function* getDeployedEntitiesStream(
         [options.contentServer],
         new Map(),
         options.requestMaxRetries,
-        options.requestRetryWaitTime
+        options.requestRetryWaitTime,
+        true
       )
 
       // 2.2. open the snapshot file and process line by line

@@ -1,7 +1,7 @@
 import { Path, SnapshotsFetcherComponents } from './types'
 import * as path from 'path'
-import { saveContentFileToDisk } from './client'
 import { pickLeastRecentlyUsedServer, sleep } from './utils'
+import { saveContentFileToDisk as saveContentFile } from './utils'
 
 const downloadFileJobsMap = new Map<Path, ReturnType<typeof downloadFileWithRetries>>()
 
@@ -11,7 +11,8 @@ async function downloadJob(
   finalFileName: string,
   presentInServers: string[],
   maxRetries: number,
-  waitTimeBetweenRetries: number
+  waitTimeBetweenRetries: number,
+  isSnapshot: boolean
 ): Promise<void> {
   // cancel early if the file is already downloaded
   if (await components.storage.exist(hashToDownload)) return
@@ -23,7 +24,12 @@ async function downloadJob(
     const serverToUse = pickLeastRecentlyUsedServer(presentInServers)
     try {
       components.metrics.observe('dcl_available_servers_histogram', {}, presentInServers.length)
-      await downloadContentFile(components, hashToDownload, finalFileName, serverToUse)
+
+      if (!(await components.storage.exist(finalFileName))) {
+        const url = new URL(`${serverToUse}/contents/${hashToDownload}`).toString()
+        await saveContentFile(components, url, finalFileName, hashToDownload, true, isSnapshot)
+      }
+
       components.metrics.observe('dcl_content_download_job_succeed_retries', {}, retries)
 
       return
@@ -49,7 +55,8 @@ export async function downloadFileWithRetries(
   presentInServers: string[],
   _serverMapLRU: Map<string, number>,
   maxRetries: number,
-  waitTimeBetweenRetries: number
+  waitTimeBetweenRetries: number,
+  isSnapshot: boolean = false
 ): Promise<void> {
   const finalFileName = path.resolve(targetTempFolder, hashToDownload)
 
@@ -64,7 +71,8 @@ export async function downloadFileWithRetries(
       finalFileName,
       presentInServers,
       maxRetries,
-      waitTimeBetweenRetries
+      waitTimeBetweenRetries,
+      isSnapshot
     )
     downloadFileJobsMap.set(finalFileName, downloadWithRetriesJob)
 
@@ -72,16 +80,5 @@ export async function downloadFileWithRetries(
     return
   } finally {
     downloadFileJobsMap.delete(finalFileName)
-  }
-}
-
-async function downloadContentFile(
-  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage'>,
-  hash: string,
-  finalFileName: string,
-  serverToUse: string
-): Promise<void> {
-  if (!(await components.storage.exist(finalFileName))) {
-    return saveContentFileToDisk(components, serverToUse, hash, finalFileName)
   }
 }

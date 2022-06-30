@@ -71,7 +71,8 @@ export async function saveContentFileToDisk(
   originalUrlString: string,
   destinationFilename: string,
   hash: string,
-  checkHash: boolean = true
+  checkHash: boolean = true,
+  isSnapshot: boolean = false
 ): Promise<void> {
   let tmpFileName: string
 

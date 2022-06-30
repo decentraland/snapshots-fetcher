@@ -11,6 +11,8 @@ import { createTestMetricsComponent } from '@well-known-components/metrics'
 const maxRetries = 10
 const waitTimeBetweenRetries = 100
 
+const contentHash = 'bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y'
+
 test('saveToDisk', ({ components, stubComponents }) => {
   const contentFolder = resolve('downloads')
   const content = Buffer.from(Math.random().toString(), 'utf-8')
@@ -64,7 +66,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
 
     let wasCalled = false
     // this endpoint works the first time and fails the 1+Nth time
-    components.router.get(`/contents/bafkreigwey5vc6q25ilofdu2vjvcag72eqj46lzipi6mredsfpe42ls2ri`, async () => {
+    components.router.get(`/contents/${contentHash}`, async () => {
       if (wasCalled) {
         return {
           status: 503,
@@ -308,7 +310,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
   it('concurrent download reuses job', async () => {
     const a = downloadFileWithRetries(
       { metrics, storage: components.storage },
-      'bafkreigwey5vc6q25ilofdu2vjvcag72eqj46lzipi6mredsfpe42ls2ri',
+      contentHash,
       contentFolder,
       [await components.getBaseUrl()],
       new Map(),
@@ -317,7 +319,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     )
     const b = downloadFileWithRetries(
       { metrics, storage: components.storage },
-      'bafkreigwey5vc6q25ilofdu2vjvcag72eqj46lzipi6mredsfpe42ls2ri',
+      contentHash,
       contentFolder,
       [await components.getBaseUrl()],
       new Map(),
@@ -331,7 +333,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
   it('already downloaded files must return without actually downloading the file', async () => {
     const a = downloadFileWithRetries(
       { metrics, storage: components.storage },
-      'bafkreigwey5vc6q25ilofdu2vjvcag72eqj46lzipi6mredsfpe42ls2ri',
+      contentHash,
       contentFolder,
       [await components.getBaseUrl()],
       new Map(),

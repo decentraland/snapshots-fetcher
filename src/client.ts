@@ -1,7 +1,7 @@
 import { DeploymentWithAuthChain } from '@dcl/schemas'
 import { metricsDefinitions } from './metrics'
 import { SnapshotsFetcherComponents } from './types'
-import { contentServerMetricLabels, fetchJson, saveContentFileToDisk as saveContentFile } from './utils'
+import { contentServerMetricLabels, fetchJson } from './utils'
 
 export async function getGlobalSnapshot(components: SnapshotsFetcherComponents, server: string, retries: number) {
   const url = new URL(`${server}/snapshot`).toString()
@@ -47,15 +47,4 @@ export function fetchPointerChanges(
     `${server}/pointer-changes?sortingOrder=ASC&sortingField=local_timestamp&from=${encodeURIComponent(fromTimestamp)}`
   ).toString()
   return fetchJsonPaginated(components, url, ($) => $.deltas, 'dcl_catalysts_pointer_changes_response_time_seconds')
-}
-
-export async function saveContentFileToDisk(
-  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage'>,
-  server: string,
-  hash: string,
-  destinationFilename: string
-) {
-  const url = new URL(`${server}/contents/${hash}`).toString()
-
-  return saveContentFile(components, url, destinationFilename, hash)
 }
