@@ -85,7 +85,12 @@ export async function saveContentFileToDisk(
   }
 
   try {
-    await downloadFile(originalUrlString, metricsLabels, components, tmpFileName)
+    if (!isSnapshot && hash.toLowerCase().startsWith("ba")) {
+      const ipfsURL = new URL(`https://peer-historical.decentraland.org/ipfs/${hash}`).toString()
+      await downloadFile(ipfsURL, metricsLabels, components, tmpFileName)
+    } else {
+      await downloadFile(originalUrlString, metricsLabels, components, tmpFileName)
+    }
 
     // make files not executable
     await fs.promises.chmod(tmpFileName, 0o644)
