@@ -17,6 +17,7 @@ import {
 import { coerceEntityDeployment, contentServerMetricLabels, sleep, streamToBuffer } from './utils'
 
 export { metricsDefinitions } from './metrics'
+export { IDeployerComponent } from './types'
 
 if (parseInt(process.version.split('.')[0]) < 16) {
   const { name } = require('../package.json')
@@ -30,7 +31,7 @@ if (parseInt(process.version.split('.')[0]) < 16) {
  * @public
  */
 export async function downloadEntityAndContentFiles(
-  components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'metrics' | 'storage'>,
+  components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'logs' | 'metrics' | 'storage'>,
   entityId: EntityHash,
   presentInServers: string[],
   _serverMapLRU: Map<Server, number>,
@@ -38,6 +39,8 @@ export async function downloadEntityAndContentFiles(
   maxRetries: number,
   waitTimeBetweenRetries: number
 ): Promise<unknown> {
+  const logger = components.logs.getLogger(`downloadEntityAndContentFiles)`)
+
   // download entity file
   await downloadFileWithRetries(
     components,
@@ -60,8 +63,40 @@ export async function downloadEntityAndContentFiles(
   }
 
   const entityMetadata: {
+    type: string,
+    metadata?: any,
     content?: Array<ContentMapping>
   } = JSON.parse(contentStream)
+
+  if (entityMetadata.type === 'profile' && entityMetadata.metadata) {
+    /*
+     * Profiles can have some images referenced in the avatar snapshots that are not included in content section.
+     * Why can this happen? Because a previous version of the profile did include those images in the content, and
+     * later on a new version of the profile decided not to include it (perhaps to avoid uploading it again) but is
+     * still referencing it in snapshots.
+     * This fix downloads those files not referenced in content but that are anyway referenced from snapshots.
+     * A proper fix needs to be added that validates and forces new deployments to include the files in content (even
+     *  if no need to upload them again).
+     */
+    const allAvatars: any[] = entityMetadata.metadata?.avatars ?? []
+    const snapshots = allAvatars.flatMap(avatar => Object.values(avatar.avatar.snapshots ?? {}) as string[])
+        .filter(snapshot => !!snapshot)
+        .filter(snapshot => !entityMetadata.content || entityMetadata.content.find(content => content.hash === snapshot) === undefined)
+    if (snapshots.length > 0) {
+      logger.info(`Downloading snapshots ${snapshots} for fixing entity ${JSON.stringify(entityMetadata)}`)
+      await Promise.all(
+          snapshots.map(snapshot => downloadFileWithRetries(
+              components,
+              snapshot,
+              targetFolder,
+              presentInServers,
+              _serverMapLRU,
+              maxRetries,
+              waitTimeBetweenRetries
+          ))
+      )
+    }
+  }
 
   if (entityMetadata.content) {
     await Promise.all(
