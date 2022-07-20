@@ -5,8 +5,11 @@
   "main": "dist/index.js",
   "typings": "dist/index.d.ts",
   "scripts": {
-    "build": "make build",
-    "test": "npm run build && jest --runInBand --forceExit --detectOpenHandles --coverage"
+    "clean-api-extractor": "rm -rf node_modules/@microsoft/api-extractor/node_modules/typescript || true",
+    "api-extractor": "yarn clean-api-extractor && api-extractor run --local --verbose --diagnostics --typescript-compiler-folder ./node_modules/typescript",
+    "api-extractor-ci": "yarn clean-api-extractor && api-extractor run --typescript-compiler-folder ./node_modules/typescript",
+    "build": "tsc -p tsconfig.json",
+    "test": "jest --runInBand --forceExit --detectOpenHandles --coverage"
   },
   "keywords": [],
   "author": "Decentraland Contributors",
