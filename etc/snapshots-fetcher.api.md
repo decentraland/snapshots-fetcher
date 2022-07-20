@@ -24,19 +24,21 @@ export function createCatalystDeploymentStream(components: SnapshotsFetcherCompo
 // Warning: (ae-forgotten-export) The symbol "Server" needs to be exported by the entry point index.d.ts
 //
 // @public
-export function downloadEntityAndContentFiles(components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'metrics' | 'storage'>, entityId: EntityHash, presentInServers: string[], _serverMapLRU: Map<Server, number>, targetFolder: string, maxRetries: number, waitTimeBetweenRetries: number): Promise<unknown>;
+export function downloadEntityAndContentFiles(components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'logs' | 'metrics' | 'storage'>, entityId: EntityHash, presentInServers: string[], _serverMapLRU: Map<Server, number>, targetFolder: string, maxRetries: number, waitTimeBetweenRetries: number): Promise<unknown>;
 
 // Warning: (ae-forgotten-export) The symbol "DeployedEntityStreamOptions" needs to be exported by the entry point index.d.ts
 //
 // @public
 export function getDeployedEntitiesStream(components: SnapshotsFetcherComponents, options: DeployedEntityStreamOptions): AsyncIterable<DeploymentWithAuthChain>;
 
+// @public
+export type IDeployerComponent = {
+    deployEntity(entity: DeploymentWithAuthChain, contentServers: string[]): Promise<void>;
+    onIdle(): Promise<void>;
+};
+
 // @public (undocumented)
 export const metricsDefinitions: IMetricsComponent<"dcl_content_download_bytes_total" | "dcl_content_download_duration_seconds" | "dcl_content_download_errors_total" | "dcl_content_download_hash_errors_total" | "dcl_entities_deployments_processed_total" | "dcl_catalysts_pointer_changes_response_time_seconds" | "dcl_deployments_stream_reconnection_count" | "dcl_deployments_stream_failure_count" | "dcl_content_download_job_succeed_retries" | "dcl_available_servers_histogram">;
-
-// Warnings were encountered during analysis:
-//
-// src/index.ts:189:46 - (ae-forgotten-export) The symbol "IDeployerComponent" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 
