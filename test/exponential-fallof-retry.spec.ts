@@ -5,7 +5,7 @@ import { sleep } from '../src/utils'
 
 describe('createExponentialFallofRetry', () => {
   it('iterates ten times', async () => {
-    const logs = createLogComponent().getLogger('logger')
+    const logs = createLogComponent({}).getLogger('logger')
 
     let totalCount = 0
 

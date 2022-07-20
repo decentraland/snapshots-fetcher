@@ -37,7 +37,7 @@ export const test = createRunner<TestComponents>({
       concurrency: 1,
       timeout: 100000,
     })
-    const logs = createLogComponent()
+    const logs = createLogComponent({})
     const metrics = createTestMetricsComponent(metricsDefinitions)
     const testServerComponents = await initTestServerComponents()
     const storage = await createStorageComponent()
