@@ -182,20 +182,8 @@ function downloadFile(
   })
 }
 
-const ADR_45_TIMESTAMP = 1652191200000
-
 export function coerceEntityDeployment(value: any): DeploymentWithAuthChain | null {
-  if (DeploymentWithAuthChain.validate(value)) {
-    return value
-  }
-  if (
-      value &&
-      typeof value == 'object' &&
-      typeof value.entityId == 'string' &&
-      typeof value.entityType == 'string' &&
-      typeof value.localTimestamp == 'number' &&
-      Array.isArray(value.authChain) && value.entityTimestamp < ADR_45_TIMESTAMP
-  ) {
+  if (DeploymentWithAuthChain.validate(value) || DeploymentWithAuthChain.validate.errors![0].message === "must have required property 'signature'") {
     return value
   }
 
