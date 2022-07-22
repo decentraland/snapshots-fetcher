@@ -183,7 +183,7 @@ function downloadFile(
 }
 
 export function coerceEntityDeployment(value: any): DeploymentWithAuthChain | null {
-  if (DeploymentWithAuthChain.validate(value) || DeploymentWithAuthChain.validate.errors![0].message === "must have required property 'signature'") {
+  if (DeploymentWithAuthChain.validate(value)) {
     return value
   }
 
