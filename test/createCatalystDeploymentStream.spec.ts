@@ -1,4 +1,4 @@
-import { createCatalystDeploymentStream, getDeployedEntitiesStream } from '../src'
+import { createCatalystDeploymentStream } from '../src'
 import { test } from './components'
 import { createReadStream, unlinkSync } from 'fs'
 import { resolve } from 'path'
