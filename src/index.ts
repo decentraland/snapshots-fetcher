@@ -97,7 +97,7 @@ export async function downloadEntityAndContentFiles(
               _serverMapLRU,
               maxRetries,
               waitTimeBetweenRetries
-          ).catch((error) => console.log(error))
+          ).catch(() => logger.info(`File ${snapshot} not available for download.`))
         )
       )
     }
