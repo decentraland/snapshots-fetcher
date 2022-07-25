@@ -81,6 +81,10 @@ export async function downloadEntityAndContentFiles(
     const allAvatars: any[] = entityMetadata.metadata?.avatars ?? []
     const snapshots = allAvatars.flatMap(avatar => Object.values(avatar.avatar.snapshots ?? {}) as string[])
         .filter(snapshot => !!snapshot)
+        .map(snapshot => {
+          const matches = snapshot.match(/^http.*\/content\/contents\/(.*)/);
+          return matches ? matches[1] : snapshot
+        })
         .filter(snapshot => !entityMetadata.content || entityMetadata.content.find(content => content.hash === snapshot) === undefined)
     if (snapshots.length > 0) {
       logger.info(`Downloading snapshots ${snapshots} for fixing entity ${JSON.stringify(entityMetadata)}`)
@@ -93,7 +97,8 @@ export async function downloadEntityAndContentFiles(
               _serverMapLRU,
               maxRetries,
               waitTimeBetweenRetries
-          ))
+          ).catch(() => logger.info(`File ${snapshot} not available for download.`))
+        )
       )
     }
   }
