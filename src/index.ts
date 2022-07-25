@@ -97,7 +97,8 @@ export async function downloadEntityAndContentFiles(
               _serverMapLRU,
               maxRetries,
               waitTimeBetweenRetries
-          ))
+          ).catch((error) => console.log(error))
+        )
       )
     }
   }
