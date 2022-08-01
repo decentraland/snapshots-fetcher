@@ -30,7 +30,7 @@
     "@microsoft/api-extractor": "^7.19.4",
     "@well-known-components/env-config-provider": "^1.1.1",
     "@well-known-components/http-server": "^1.1.1",
-    "@well-known-components/logger": "^2.1.0",
+    "@well-known-components/logger": "^3.0.0",
     "@well-known-components/test-helpers": "^1.2.1",
     "node-fetch": "^2.6.7",
     "ts-node": "^10.5.0",
