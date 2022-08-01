@@ -2,16 +2,19 @@ import { createLogComponent } from '@well-known-components/logger'
 import future from 'fp-future'
 import { createExponentialFallofRetry } from '../src/exponential-fallof-retry'
 import { sleep } from '../src/utils'
+import {createConfigComponent} from "@well-known-components/env-config-provider";
 
 describe('createExponentialFallofRetry', () => {
   it('iterates ten times', async () => {
-    const logs = createLogComponent({}).getLogger('logger')
+    const config = createConfigComponent({})
+    const logs = await createLogComponent({config})
+    const logger = logs.getLogger('logger')
 
     let totalCount = 0
 
     let finishedFuture = future<void>()
 
-    const component = createExponentialFallofRetry(logs, {
+    const component = createExponentialFallofRetry(logger, {
       async action() {
         totalCount++
 

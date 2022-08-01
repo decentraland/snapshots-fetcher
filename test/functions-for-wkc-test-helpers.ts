@@ -73,9 +73,10 @@ export async function wireTestServerComponents<T>(context: TestServerAppContext<
  * Creates a test server and returns all the components and helpers
  */
 export async function initTestServerComponents(): Promise<TestServerComponents<any>> {
-  const logs = createLogComponent({})
 
-  const config = createConfigComponent(defaultServerConfig())
+  const config = createConfigComponent({...defaultServerConfig(), LOG_LEVEL: "INFO"})
+
+  const logs = await createLogComponent({ config })
 
   const server = await createServerComponent<TestServerAppContext<any>>({ logs, config }, {})
 

@@ -13,7 +13,9 @@ import {
 } from './functions-for-wkc-test-helpers'
 import { createLogComponent } from '@well-known-components/logger'
 import { createTestMetricsComponent } from '@well-known-components/metrics'
-import { metricsDefinitions } from '../src/metrics'
+import { metricsDefinitions } from '../src'
+import {IConfigComponent} from "@well-known-components/interfaces";
+import {createConfigComponent} from "@well-known-components/env-config-provider";
 
 // Record of components
 export type TestComponents = SnapshotsFetcherComponents & TestServerComponents<SnapshotsFetcherComponents>
@@ -37,7 +39,8 @@ export const test = createRunner<TestComponents>({
       concurrency: 1,
       timeout: 100000,
     })
-    const logs = createLogComponent({})
+    const config: IConfigComponent = createConfigComponent({ ...process.env, LOG_LEVEL: "INFO" })
+    const logs = await createLogComponent({ config })
     const metrics = createTestMetricsComponent(metricsDefinitions)
     const testServerComponents = await initTestServerComponents()
     const storage = await createStorageComponent()
