@@ -297,12 +297,12 @@
     "@jridgewell/trace-mapping" "0.3.9"
 
 "@dcl/catalyst-storage@^1.0.0-20220604235145.commit-892b669":
-  version "1.0.0"
-  resolved "https://registry.yarnpkg.com/@dcl/catalyst-storage/-/catalyst-storage-1.0.0.tgz#21f62295c00fb97a4b8efb9cb5d4ab65cedb2f55"
-  integrity sha512-TtKpP8P/v/kzKiIWR2eB+OlCmTkvXlGL9ZlVBHHSs0XCdrxcc7p0SROFd7qzt7aFQA2hMFjODrhHAxACDD1ijA==
+  version "1.0.1"
+  resolved "https://registry.yarnpkg.com/@dcl/catalyst-storage/-/catalyst-storage-1.0.1.tgz#f66870e39853ed2f541f3cab81ca66c70c44be25"
+  integrity sha512-f+nA+UE5/6FYCDVjOeZpLE09u+9bP0YIiYqGiTXrMMUxuCsF4VrbtyCXh7Rc5VX0EVMdJiOO324D8JRkawo3ag==
   dependencies:
     "@types/destroy" "^1.0.0"
-    "@types/node" "^17.0.39"
+    "@types/node" "^18.6.3"
     "@well-known-components/interfaces" "^1.1.1"
     aws-sdk "^2.1148.0"
     destroy "^1.2.0"
@@ -938,10 +938,10 @@
     "@types/node" "*"
     form-data "^3.0.0"
 
-"@types/node@*", "@types/node@>=13.7.0":
-  version "18.0.6"
-  resolved "https://registry.yarnpkg.com/@types/node/-/node-18.0.6.tgz#0ba49ac517ad69abe7a1508bc9b3a5483df9d5d7"
-  integrity sha512-/xUq6H2aQm261exT6iZTMifUySEt4GR5KX8eYyY+C4MSNPqSh9oNIP7tz2GLKTlFaiBbgZNxffoR3CVRG+cljw==
+"@types/node@*", "@types/node@>=13.7.0", "@types/node@^18.6.3":
+  version "18.6.5"
+  resolved "https://registry.yarnpkg.com/@types/node/-/node-18.6.5.tgz#06caea822caf9e59d5034b695186ee74154d2802"
+  integrity sha512-Xjt5ZGUa5WusGZJ4WJPbOT8QOqp6nDynVFRKcUt32bOgvXEoc6o085WNkYTMO7ifAj2isEfQQ2cseE+wT6jsRw==
 
 "@types/node@12.20.24":
   version "12.20.24"
@@ -952,11 +952,6 @@
   version "16.11.45"
   resolved "https://registry.yarnpkg.com/@types/node/-/node-16.11.45.tgz#155b13a33c665ef2b136f7f245fa525da419e810"
   integrity sha512-3rKg/L5x0rofKuuUt5zlXzOnKyIHXmIu5R8A0TuNDMF2062/AOIDBciFIjToLEJ/9F9DzkHNot+BpNsMI1OLdQ==
-
-"@types/node@^17.0.39":
-  version "17.0.45"
-  resolved "https://registry.yarnpkg.com/@types/node/-/node-17.0.45.tgz#2c0fafd78705e7a18b7906b5201a522719dc5190"
-  integrity sha512-w+tIMs3rq2afQdsPJlODhoUEKzFP1ayaoyl1CcnwtIlsVe7K7bA1NGm4s3PraqTLlXnbIN84zuBlxBWo1u9BLw==
 
 "@types/prettier@^2.1.5":
   version "2.6.3"
