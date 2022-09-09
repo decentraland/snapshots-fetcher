@@ -97,6 +97,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
       return {
         headers: {
           'content-length': '100000',
+          connection: 'keep-alive',
         },
         body: Readable.from(streamContent(), { encoding: 'utf-8' }),
       }
