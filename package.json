@@ -19,7 +19,7 @@
     "@dcl/hashing": "^1.0.0",
     "@dcl/schemas": "^5.4.2",
     "@well-known-components/interfaces": "^1.1.0",
-    "@well-known-components/metrics": "^1.1.2",
+    "@well-known-components/metrics": "^2.0.0",
     "p-queue": "^6.6.2"
   },
   "engines": {
