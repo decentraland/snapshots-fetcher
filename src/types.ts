@@ -118,3 +118,7 @@ export type CatalystDeploymentStreamOptions = DeployedEntityStreamOptions & {
    */
   maxReconnectionTime?: number
 }
+
+export type ISnapshotProcessTearDownComponent = {
+  onSnapshotProcessed(hash: string): Promise<void>
+}

@@ -80,24 +80,24 @@ export async function downloadEntityAndContentFiles(
      */
     const allAvatars: any[] = entityMetadata.metadata?.avatars ?? []
     const snapshots = allAvatars.flatMap(avatar => Object.values(avatar.avatar.snapshots ?? {}) as string[])
-        .filter(snapshot => !!snapshot)
-        .map(snapshot => {
-          const matches = snapshot.match(/^http.*\/content\/contents\/(.*)/);
-          return matches ? matches[1] : snapshot
-        })
-        .filter(snapshot => !entityMetadata.content || entityMetadata.content.find(content => content.hash === snapshot) === undefined)
+      .filter(snapshot => !!snapshot)
+      .map(snapshot => {
+        const matches = snapshot.match(/^http.*\/content\/contents\/(.*)/)
+        return matches ? matches[1] : snapshot
+      })
+      .filter(snapshot => !entityMetadata.content || entityMetadata.content.find(content => content.hash === snapshot) === undefined)
     if (snapshots.length > 0) {
       logger.info(`Downloading snapshots ${snapshots} for fixing entity ${JSON.stringify(entityMetadata)}`)
       await Promise.all(
-          snapshots.map(snapshot => downloadFileWithRetries(
-              components,
-              snapshot,
-              targetFolder,
-              presentInServers,
-              _serverMapLRU,
-              maxRetries,
-              waitTimeBetweenRetries
-          ).catch(() => logger.info(`File ${snapshot} not available for download.`))
+        snapshots.map(snapshot => downloadFileWithRetries(
+          components,
+          snapshot,
+          targetFolder,
+          presentInServers,
+          _serverMapLRU,
+          maxRetries,
+          waitTimeBetweenRetries
+        ).catch(() => logger.info(`File ${snapshot} not available for download.`))
         )
       )
     }
@@ -142,53 +142,57 @@ export async function* getDeployedEntitiesStream(
 
   const metricLabels = contentServerMetricLabels(options.contentServer)
 
-  // 1. get the hash of the latest snapshot in the remote server, retry 10 times
-  const { hash, lastIncludedDeploymentTimestamp } = await getGlobalSnapshot(
+  // 1. get the hashes of the latest snapshots in the remote server, retry 10 times
+  const snapshots = await getGlobalSnapshot(
     components,
     options.contentServer,
     options.requestMaxRetries
   )
 
-  // 2. download the snapshot file if it contains deployments
-  //    in the range we are interested (>= genesisTimestamp)
-  if (hash && lastIncludedDeploymentTimestamp && lastIncludedDeploymentTimestamp > genesisTimestamp) {
-    try {
-      // 2.1. download the snapshot file if needed
-      await downloadFileWithRetries(
-        components,
-        hash,
-        options.tmpDownloadFolder,
-        [options.contentServer],
-        new Map(),
-        options.requestMaxRetries,
-        options.requestRetryWaitTime
-      )
+  for (const snapshot of snapshots) {
+    const { hash, lastIncludedDeploymentTimestamp } = snapshot
+    // 2. for each snapshot, download the snapshot file if it contains deployments
+    //    in the range we are interested (>= genesisTimestamp)
+    if (hash && lastIncludedDeploymentTimestamp && lastIncludedDeploymentTimestamp > genesisTimestamp) {
+      try {
+        // 2.1. download the snapshot file if needed
+        await downloadFileWithRetries(
+          components,
+          hash,
+          options.tmpDownloadFolder,
+          [options.contentServer],
+          new Map(),
+          options.requestMaxRetries,
+          options.requestRetryWaitTime
+        )
 
-      // 2.2. open the snapshot file and process line by line
-      const deploymentsInFile = processDeploymentsInFile(hash, components)
-      for await (const rawDeployment of deploymentsInFile) {
-        const deployment = coerceEntityDeployment(rawDeployment)
-        if (!deployment) continue
-        // selectively ignore deployments by localTimestamp
-        if (deployment.localTimestamp >= genesisTimestamp) {
-          components.metrics.increment('dcl_entities_deployments_processed_total', metricLabels)
-          yield deployment
+        // 2.2. open the snapshot file and process line by line
+        const deploymentsInFile = processDeploymentsInFile(hash, components)
+        for await (const rawDeployment of deploymentsInFile) {
+          const deployment = coerceEntityDeployment(rawDeployment)
+          if (!deployment) continue
+          // selectively ignore deployments by localTimestamp
+          if (deployment.localTimestamp >= genesisTimestamp) {
+            components.metrics.increment('dcl_entities_deployments_processed_total', metricLabels)
+            yield deployment
+          }
+          // update greatest processed timestamp
+          if (deployment.localTimestamp > greatestProcessedTimestamp) {
+            greatestProcessedTimestamp = deployment.localTimestamp
+          }
         }
-        // update greatest processed timestamp
-        if (deployment.localTimestamp > greatestProcessedTimestamp) {
-          greatestProcessedTimestamp = deployment.localTimestamp
-        }
-      }
-    } finally {
-      if (options.deleteSnapshotAfterUsage !== false) {
-        try {
-          await components.storage.delete([hash])
-        } catch (err: any) {
-          logs.error(err)
+      } finally {
+        if (options.deleteSnapshotAfterUsage !== false) {
+          try {
+            await components.storage.delete([hash])
+          } catch (err: any) {
+            logs.error(err)
+          }
         }
       }
     }
   }
+
 
   // 3. fetch the /pointer-changes of the remote server using the last timestamp from the previous step
   do {

@@ -3,11 +3,29 @@ import { metricsDefinitions } from './metrics'
 import { SnapshotsFetcherComponents } from './types'
 import { contentServerMetricLabels, fetchJson, saveContentFileToDisk as saveContentFile } from './utils'
 
-export async function getGlobalSnapshot(components: SnapshotsFetcherComponents, server: string, retries: number) {
-  const url = new URL(`${server}/snapshot`).toString()
+export async function getGlobalSnapshot(components: SnapshotsFetcherComponents, server: string, retries: number):
+  Promise<{
+    hash: string,
+    lastIncludedDeploymentTimestamp: number
+  }[]> {
+  try {
+    const newUrl = new URL(`${server}/snapshots`).toString()
+    // TODO: validate response
+    const newSnapshots: {
+      hash: string,
+      timeRange: { initTimestampSecs: number, endTimestampSecs: number }
+    }[] = await components.downloadQueue.scheduleJobWithRetries(() => fetchJson(newUrl, components.fetcher), 1)
+    return newSnapshots.map(newSnapshot => ({
+      hash: newSnapshot.hash,
+      lastIncludedDeploymentTimestamp: newSnapshot.timeRange.endTimestampSecs
+    }))
+  } catch {
+    components.logs.getLogger('snapshots-fetcher')
+      .info(`Error fetching new snapshots from ${server}. Will continue to fetch old one.`)
+  }
 
-  // TODO: validate response
-  return await components.downloadQueue.scheduleJobWithRetries(() => fetchJson(url, components.fetcher), retries)
+  const oldUrl = new URL(`${server}/snapshot`).toString()
+  return [await components.downloadQueue.scheduleJobWithRetries(() => fetchJson(oldUrl, components.fetcher), 1)]
 }
 
 export async function* fetchJsonPaginated<T>(
