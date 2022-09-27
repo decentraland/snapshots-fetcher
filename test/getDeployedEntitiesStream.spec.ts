@@ -399,7 +399,6 @@ test('when successfully process a snapshot file and fails to process other', ({ 
   })
 })
 
-
 test('getDeployedEntitiesStream from old /snapshot endpoint', ({ components, stubComponents }) => {
   const contentFolder = resolve('downloads')
   const downloadedSnapshotFile = 'bafkreico6luxnkk5vxuxvmpsg7hva4upamyz3br2b6ucc7rf3hdlcaehha'
