@@ -4,7 +4,7 @@ import { createReadStream, unlinkSync } from 'fs'
 import { resolve } from 'path'
 import { sleep } from '../src/utils'
 import future from 'fp-future'
-import { IDeployerComponent } from '../src/types'
+import { IDeployerComponent, ISnapshotProcessEndTaskComponent } from '../src/types'
 import { AuthLinkType } from '@dcl/schemas'
 
 test('createCatalystDeploymentStream', ({ components, stubComponents }) => {
@@ -97,7 +97,7 @@ test('createCatalystDeploymentStream', ({ components, stubComponents }) => {
 
     try {
       unlinkSync(resolve(contentFolder, downloadedSnapshotFile))
-    } catch {}
+    } catch { }
   })
 
   it('fetches a stream', async () => {
@@ -125,6 +125,7 @@ test('createCatalystDeploymentStream', ({ components, stubComponents }) => {
         deployer,
         metrics: components.metrics,
         storage: components.storage,
+        snapshotProcessEndTask: components.snapshotProcessEndTask
       },
       {
         contentServer: await components.getBaseUrl(),

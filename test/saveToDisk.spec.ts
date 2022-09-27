@@ -89,7 +89,6 @@ test('saveToDisk', ({ components, stubComponents }) => {
         chunk++
         yield 'a'
         if (chunk == 100) {
-          console.log('Closing stream')
           throw new Error('Closing stream')
         }
       }
@@ -107,7 +106,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     const filename = resolve(contentFolder, 'working')
     try {
       unlinkSync(filename)
-    } catch {}
+    } catch { }
 
     await saveContentFileToDisk(
       { metrics, storage: components.storage },
@@ -127,7 +126,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     const filename = resolve(contentFolder, 'working')
     try {
       unlinkSync(filename)
-    } catch {}
+    } catch { }
 
     await saveContentFileToDisk(
       { metrics, storage: components.storage },
@@ -147,7 +146,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     const filename = resolve(contentFolder, 'working')
     try {
       unlinkSync(filename)
-    } catch {}
+    } catch { }
 
     await saveContentFileToDisk(
       { metrics, storage: components.storage },
@@ -180,7 +179,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     const filename = resolve(contentFolder, 'fails')
     try {
       unlinkSync(filename)
-    } catch {}
+    } catch { }
 
     // check file exists and has correct content
     expect(await checkFileExists(filename)).toEqual(false)
@@ -203,7 +202,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     const filename = resolve(contentFolder, 'fails404')
     try {
       unlinkSync(filename)
-    } catch {}
+    } catch { }
 
     // check file exists and has correct content
     expect(await checkFileExists(filename)).toEqual(false)
@@ -226,7 +225,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     const filename = resolve(contentFolder, 'failsECONNREFUSED')
     try {
       unlinkSync(filename)
-    } catch {}
+    } catch { }
 
     // check file exists and has correct content
     expect(await checkFileExists(filename)).toEqual(false)
@@ -250,7 +249,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     const filename = resolve(contentFolder, 'failsTLS')
     try {
       unlinkSync(filename)
-    } catch {}
+    } catch { }
 
     // check file exists and has correct content
     expect(await checkFileExists(filename)).toEqual(false)
@@ -274,7 +273,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     const filename = resolve(contentFolder, 'decentraland.org')
     try {
       unlinkSync(filename)
-    } catch {}
+    } catch { }
 
     // check file exists and has correct content
     expect(await checkFileExists(filename)).toEqual(false)
@@ -346,7 +345,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     const filename = resolve(contentFolder, 'QmInValidHash')
     try {
       unlinkSync(filename)
-    } catch {}
+    } catch { }
 
     // check file exists and has correct content
     expect(await checkFileExists(filename)).toEqual(false)

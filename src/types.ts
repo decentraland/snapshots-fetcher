@@ -36,6 +36,7 @@ export type SnapshotsFetcherComponents = {
   downloadQueue: IJobQueue
   logs: ILoggerComponent
   storage: IContentStorageComponent
+  snapshotProcessEndTask: ISnapshotProcessEndTaskComponent
 }
 
 /**
@@ -119,6 +120,6 @@ export type CatalystDeploymentStreamOptions = DeployedEntityStreamOptions & {
   maxReconnectionTime?: number
 }
 
-export type ISnapshotProcessTearDownComponent = {
-  onSnapshotProcessed(hash: string): Promise<void>
+export type ISnapshotProcessEndTaskComponent = {
+  onSnapshotSuccessfullyProcessed(hash: string): Promise<void>
 }
