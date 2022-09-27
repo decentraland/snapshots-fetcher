@@ -3,7 +3,7 @@ import { metricsDefinitions } from './metrics'
 import { SnapshotsFetcherComponents } from './types'
 import { contentServerMetricLabels, fetchJson, saveContentFileToDisk as saveContentFile } from './utils'
 
-export async function getGlobalSnapshot(components: SnapshotsFetcherComponents, server: string, retries: number):
+export async function getGlobalSnapshots(components: SnapshotsFetcherComponents, server: string, retries: number):
   Promise<{
     hash: string,
     lastIncludedDeploymentTimestamp: number
