@@ -4,7 +4,7 @@ import { createReadStream, unlinkSync } from 'fs'
 import { resolve } from 'path'
 import { sleep } from '../src/utils'
 import future from 'fp-future'
-import { IDeployerComponent, ISnapshotProcessEndTaskComponent } from '../src/types'
+import { IDeployerComponent, IProcessedSnapshotStorageComponent } from '../src/types'
 import { AuthLinkType } from '@dcl/schemas'
 
 test('createCatalystDeploymentStream', ({ components, stubComponents }) => {

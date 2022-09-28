@@ -1,11 +1,11 @@
 import { getDeployedEntitiesStream } from '../src'
-import { test } from './components'
+import { test, TestComponents } from './components'
 import { createReadStream, unlinkSync } from 'fs'
 import { resolve } from 'path'
 import { sleep } from '../src/utils'
 import Sinon from 'sinon'
 import { AuthLinkType } from '@dcl/schemas'
-import { ISnapshotProcessEndTaskComponent } from '../src/types'
+import { IProcessedSnapshotStorageComponent } from '../src/types'
 
 test('getDeployedEntitiesStream from /snapshots endpoint', ({ components, stubComponents }) => {
   const contentFolder = resolve('downloads')
@@ -87,14 +87,7 @@ test('getDeployedEntitiesStream from /snapshots endpoint', ({ components, stubCo
 
     const r = []
     const stream = getDeployedEntitiesStream(
-      {
-        fetcher: components.fetcher,
-        downloadQueue: components.downloadQueue,
-        logs: components.logs,
-        metrics: components.metrics,
-        storage: components.storage,
-        snapshotProcessEndTask: components.snapshotProcessEndTask
-      },
+      components,
       {
         contentServer: await components.getBaseUrl(),
         tmpDownloadFolder: contentFolder,
@@ -129,6 +122,79 @@ test('getDeployedEntitiesStream from /snapshots endpoint', ({ components, stubCo
       { entityType: 'profile', entityId: 'Qm000013', localTimestamp: 13, authChain, pointers: ['0x1'] },
     ])
   })
+})
+
+test('fetches a stream without deleting the downloaded file', ({ components, stubComponents }) => {
+  const contentFolder = resolve('downloads')
+  const downloadedSnapshotFile = 'bafkreico6luxnkk5vxuxvmpsg7hva4upamyz3br2b6ucc7rf3hdlcaehha'
+  const authChain = [
+    {
+      type: AuthLinkType.SIGNER,
+      payload: '0x3b21028719a4aca7ebee35b0157a6f1b0cf0d0c5',
+      signature: '',
+    },
+  ]
+  it('prepares the endpoints', () => {
+    // serve the snapshots
+    components.router.get('/snapshots', async () => ({
+      body: [{
+        hash: downloadedSnapshotFile,
+        timeRange: {
+          initTimestampSecs: 0, endTimestampSecs: 8
+        }
+      }],
+    }))
+
+    // serve the snapshot file
+    let downloadAttempts = 0
+    components.router.get(`/contents/${downloadedSnapshotFile}`, async () => {
+      if (downloadAttempts == 0) {
+        await sleep(100)
+        downloadAttempts++
+        return { status: 503 }
+      }
+
+      return {
+        body: createReadStream('test/fixtures/bafkreico6luxnkk5vxuxvmpsg7hva4upamyz3br2b6ucc7rf3hdlcaehha'),
+      }
+    })
+
+    components.router.get('/pointer-changes', async (ctx) => {
+      if (!ctx.url.searchParams.has('from')) throw new Error('pointer-changes called without ?from')
+
+      if (ctx.url.searchParams.get('from') == '9') {
+        return {
+          body: {
+            deltas: [
+              { entityType: 'profile', entityId: 'Qm000010', localTimestamp: 10, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'Qm000011', localTimestamp: 11, authChain, pointers: ['0x1'] },
+            ],
+            pagination: {
+              next: '?from=11&entityId=Qm000011',
+            },
+          },
+        }
+      }
+
+      if (ctx.url.searchParams.get('from') != '11' && ctx.url.searchParams.get('entityId') != 'Qm000011') {
+        throw new Error('pagination is not working properly')
+      }
+
+      return {
+        body: {
+          deltas: [
+            { entityType: 'profile', entityId: 'Qm000012', localTimestamp: 12, authChain, pointers: ['0x1'] },
+            { entityType: 'profile', entityId: 'Qm000013', localTimestamp: 13, authChain, pointers: ['0x1'] },
+          ],
+          pagination: {},
+        },
+      }
+    })
+
+    try {
+      unlinkSync(resolve(contentFolder, downloadedSnapshotFile))
+    } catch { }
+  })
 
   it('fetches a stream without deleting the downloaded file', async () => {
     const { storage } = stubComponents
@@ -138,14 +204,7 @@ test('getDeployedEntitiesStream from /snapshots endpoint', ({ components, stubCo
 
     const r = []
     const stream = getDeployedEntitiesStream(
-      {
-        fetcher: components.fetcher,
-        downloadQueue: components.downloadQueue,
-        logs: components.logs,
-        metrics: components.metrics,
-        storage: components.storage,
-        snapshotProcessEndTask: components.snapshotProcessEndTask
-      },
+      components,
       {
         contentServer: await components.getBaseUrl(),
         tmpDownloadFolder: contentFolder,
@@ -247,10 +306,11 @@ test('when successfully process all snapshot files', ({ components, stubComponen
     } catch { }
   })
 
-  it('runs the end task for each one', async () => {
+  it('should mark all as processed', async () => {
     const { storage } = stubComponents
-    const snapshotProcessEndTask: ISnapshotProcessEndTaskComponent = {
-      onSnapshotSuccessfullyProcessed: jest.fn()
+    const snapshotProcessEndTask: IProcessedSnapshotStorageComponent = {
+      wasSnapshotProcessed: jest.fn(),
+      markSnapshotProcessed: jest.fn()
     }
     storage.storeStream.callThrough()
     storage.retrieve.callThrough()
@@ -277,8 +337,8 @@ test('when successfully process all snapshot files', ({ components, stubComponen
     for await (const deployment of stream) {
       r.push(deployment)
     }
-    expect(snapshotProcessEndTask.onSnapshotSuccessfullyProcessed).toBeCalledTimes(2)
-    expect(snapshotProcessEndTask.onSnapshotSuccessfullyProcessed).toBeCalledWith(downloadedSnapshotFile)
+    expect(snapshotProcessEndTask.markSnapshotProcessed).toBeCalledTimes(2)
+    expect(snapshotProcessEndTask.markSnapshotProcessed).toBeCalledWith(downloadedSnapshotFile)
   })
 })
 
@@ -360,10 +420,11 @@ test('when successfully process a snapshot file and fails to process other', ({ 
     } catch { }
   })
 
-  it('runs the end task only for the successfully processed one', async () => {
+  it('should mark as processed only for the successfully processed one', async () => {
     const { storage } = stubComponents
-    const snapshotProcessEndTask: ISnapshotProcessEndTaskComponent = {
-      onSnapshotSuccessfullyProcessed: jest.fn()
+    const snapshotProcessEndTask: IProcessedSnapshotStorageComponent = {
+      wasSnapshotProcessed: jest.fn(),
+      markSnapshotProcessed: jest.fn()
     }
 
     storage.storeStream.callThrough()
@@ -394,8 +455,8 @@ test('when successfully process a snapshot file and fails to process other', ({ 
       }
     }
     await expect(iterate()).rejects.toThrow()
-    expect(snapshotProcessEndTask.onSnapshotSuccessfullyProcessed).toBeCalledTimes(1)
-    expect(snapshotProcessEndTask.onSnapshotSuccessfullyProcessed).toBeCalledWith(downloadedSnapshotFile)
+    expect(snapshotProcessEndTask.markSnapshotProcessed).toBeCalledTimes(1)
+    expect(snapshotProcessEndTask.markSnapshotProcessed).toBeCalledWith(downloadedSnapshotFile)
   })
 })
 
@@ -481,14 +542,7 @@ test('getDeployedEntitiesStream from old /snapshot endpoint', ({ components, stu
 
     const r = []
     const stream = getDeployedEntitiesStream(
-      {
-        fetcher: components.fetcher,
-        downloadQueue: components.downloadQueue,
-        logs: components.logs,
-        metrics: components.metrics,
-        storage: components.storage,
-        snapshotProcessEndTask: components.snapshotProcessEndTask
-      },
+      components,
       {
         contentServer: await components.getBaseUrl(),
         tmpDownloadFolder: contentFolder,
@@ -525,7 +579,7 @@ test('getDeployedEntitiesStream from old /snapshot endpoint', ({ components, stu
   })
 })
 
-test("getDeployedEntitiesStream does not download snapshot if it doesn't include relevant deployments. keeps polling after finishing without using pagination", ({
+test("does not download snapshot if it doesn't include relevant deployments. keeps polling after finishing without using pagination", ({
   components,
 }) => {
   const authChain = [
@@ -583,14 +637,7 @@ test("getDeployedEntitiesStream does not download snapshot if it doesn't include
   it('fetches the stream', async () => {
     const r = []
     const stream = getDeployedEntitiesStream(
-      {
-        fetcher: components.fetcher,
-        downloadQueue: components.downloadQueue,
-        logs: components.logs,
-        metrics: components.metrics,
-        storage: components.storage,
-        snapshotProcessEndTask: components.snapshotProcessEndTask
-      },
+      components,
       {
         fromTimestamp: 150,
         contentServer: await components.getBaseUrl(),

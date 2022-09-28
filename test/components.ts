@@ -4,7 +4,7 @@
 import { createRunner } from '@well-known-components/test-helpers'
 import { createJobQueue } from '../src/job-queue-port'
 import { SnapshotsFetcherComponents } from '../src/types'
-import { createFetchComponent, createSnapshotProcessEndTaskComponent, createStorageComponent } from './test-component'
+import { createFetchComponent, createProcessedSnapshotStorageComponent, createStorageComponent } from './test-component'
 
 import {
   initTestServerComponents,
@@ -44,7 +44,7 @@ export const test = createRunner<TestComponents>({
     const metrics = createTestMetricsComponent(metricsDefinitions)
     const testServerComponents = await initTestServerComponents()
     const storage = await createStorageComponent()
-    const snapshotProcessEndTask = createSnapshotProcessEndTaskComponent({ logs })
+    const snapshotProcessEndTask = createProcessedSnapshotStorageComponent()
 
     return {
       ...testServerComponents,

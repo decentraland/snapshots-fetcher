@@ -153,7 +153,9 @@ export async function* getDeployedEntitiesStream(
     const { hash, lastIncludedDeploymentTimestamp } = snapshot
     // 2. for each snapshot, download the snapshot file if it contains deployments
     //    in the range we are interested (>= genesisTimestamp)
-    if (hash && lastIncludedDeploymentTimestamp && lastIncludedDeploymentTimestamp > genesisTimestamp) {
+    if (
+      hash && lastIncludedDeploymentTimestamp && lastIncludedDeploymentTimestamp > genesisTimestamp &&
+      !(await components.snapshotProcessEndTask.wasSnapshotProcessed(hash))) {
       try {
         // 2.1. download the snapshot file if needed
         await downloadFileWithRetries(
@@ -181,7 +183,7 @@ export async function* getDeployedEntitiesStream(
             greatestProcessedTimestamp = deployment.localTimestamp
           }
         }
-        await components.snapshotProcessEndTask.onSnapshotSuccessfullyProcessed(hash)
+        await components.snapshotProcessEndTask.markSnapshotProcessed(hash)
       } finally {
         if (options.deleteSnapshotAfterUsage !== false) {
           try {

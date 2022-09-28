@@ -5,8 +5,7 @@ import { readdir, stat } from 'fs/promises'
 import { resolve } from 'path'
 import { MockedStorage } from '@dcl/catalyst-storage/dist/MockedStorage'
 import { IContentStorageComponent } from '@dcl/catalyst-storage'
-import { TestComponents } from './components'
-import { ISnapshotProcessEndTaskComponent } from '../src/types'
+import { IProcessedSnapshotStorageComponent } from '../src/types'
 
 export function createFetchComponent() {
   const fetch: IFetchComponent = {
@@ -19,6 +18,7 @@ export function createFetchComponent() {
 }
 
 export async function createStorageComponent(): Promise<IContentStorageComponent> {
+  console.log('called')
   const rootFixturesDir = 'test/fixtures'
 
   const files = await readdir(rootFixturesDir)
@@ -42,11 +42,15 @@ export async function createStorageComponent(): Promise<IContentStorageComponent
   return mockFileSystem
 }
 
-export function createSnapshotProcessEndTaskComponent(components: Pick<TestComponents, 'logs'>): ISnapshotProcessEndTaskComponent {
-  const endTaskLogger = components.logs.getLogger('snapshots-fetcher')
+export function createProcessedSnapshotStorageComponent(): IProcessedSnapshotStorageComponent {
+  const processedSnapshots = new Set()
   return {
-    async onSnapshotSuccessfullyProcessed(hash: string) {
-      endTaskLogger.info(`Finished processing snapshot with hash: ${hash}`)
+    async wasSnapshotProcessed(hash: string) {
+      return processedSnapshots.has(hash)
+      // return false
+    },
+    async markSnapshotProcessed(hash: string) {
+      processedSnapshots.add(hash)
     }
   }
 
