@@ -44,7 +44,7 @@ export const test = createRunner<TestComponents>({
     const metrics = createTestMetricsComponent(metricsDefinitions)
     const testServerComponents = await initTestServerComponents()
     const storage = await createStorageComponent()
-    const snapshotProcessEndTask = createProcessedSnapshotStorageComponent()
+    const processedSnapshotStorage = createProcessedSnapshotStorageComponent()
 
     return {
       ...testServerComponents,
@@ -53,7 +53,7 @@ export const test = createRunner<TestComponents>({
       downloadQueue,
       fetcher,
       storage,
-      snapshotProcessEndTask
+      processedSnapshotStorage
     }
   },
 })

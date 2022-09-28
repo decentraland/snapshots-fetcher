@@ -36,7 +36,7 @@ export type SnapshotsFetcherComponents = {
   downloadQueue: IJobQueue
   logs: ILoggerComponent
   storage: IContentStorageComponent
-  snapshotProcessEndTask: IProcessedSnapshotStorageComponent
+  processedSnapshotStorage: IProcessedSnapshotStorageComponent
 }
 
 /**

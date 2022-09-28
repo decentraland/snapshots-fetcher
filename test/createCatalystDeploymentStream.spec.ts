@@ -125,7 +125,7 @@ test('createCatalystDeploymentStream', ({ components, stubComponents }) => {
         deployer,
         metrics: components.metrics,
         storage: components.storage,
-        snapshotProcessEndTask: components.snapshotProcessEndTask
+        processedSnapshotStorage: components.processedSnapshotStorage
       },
       {
         contentServer: await components.getBaseUrl(),

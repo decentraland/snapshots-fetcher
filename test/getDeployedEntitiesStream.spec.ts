@@ -308,7 +308,7 @@ test('when successfully process all snapshot files', ({ components, stubComponen
 
   it('should mark all as processed', async () => {
     const { storage } = stubComponents
-    const snapshotProcessEndTask: IProcessedSnapshotStorageComponent = {
+    const processedSnapshotStorage: IProcessedSnapshotStorageComponent = {
       wasSnapshotProcessed: jest.fn(),
       markSnapshotProcessed: jest.fn()
     }
@@ -323,7 +323,7 @@ test('when successfully process all snapshot files', ({ components, stubComponen
         logs: components.logs,
         metrics: components.metrics,
         storage: components.storage,
-        snapshotProcessEndTask: snapshotProcessEndTask
+        processedSnapshotStorage
       },
       {
         contentServer: await components.getBaseUrl(),
@@ -337,8 +337,8 @@ test('when successfully process all snapshot files', ({ components, stubComponen
     for await (const deployment of stream) {
       r.push(deployment)
     }
-    expect(snapshotProcessEndTask.markSnapshotProcessed).toBeCalledTimes(2)
-    expect(snapshotProcessEndTask.markSnapshotProcessed).toBeCalledWith(downloadedSnapshotFile)
+    expect(processedSnapshotStorage.markSnapshotProcessed).toBeCalledTimes(2)
+    expect(processedSnapshotStorage.markSnapshotProcessed).toBeCalledWith(downloadedSnapshotFile)
   })
 })
 
@@ -422,7 +422,7 @@ test('when successfully process a snapshot file and fails to process other', ({ 
 
   it('should mark as processed only for the successfully processed one', async () => {
     const { storage } = stubComponents
-    const snapshotProcessEndTask: IProcessedSnapshotStorageComponent = {
+    const processedSnapshotStorage: IProcessedSnapshotStorageComponent = {
       wasSnapshotProcessed: jest.fn(),
       markSnapshotProcessed: jest.fn()
     }
@@ -438,7 +438,7 @@ test('when successfully process a snapshot file and fails to process other', ({ 
         logs: components.logs,
         metrics: components.metrics,
         storage: components.storage,
-        snapshotProcessEndTask
+        processedSnapshotStorage
       },
       {
         contentServer: await components.getBaseUrl(),
@@ -455,8 +455,8 @@ test('when successfully process a snapshot file and fails to process other', ({ 
       }
     }
     await expect(iterate()).rejects.toThrow()
-    expect(snapshotProcessEndTask.markSnapshotProcessed).toBeCalledTimes(1)
-    expect(snapshotProcessEndTask.markSnapshotProcessed).toBeCalledWith(downloadedSnapshotFile)
+    expect(processedSnapshotStorage.markSnapshotProcessed).toBeCalledTimes(1)
+    expect(processedSnapshotStorage.markSnapshotProcessed).toBeCalledWith(downloadedSnapshotFile)
   })
 })
 

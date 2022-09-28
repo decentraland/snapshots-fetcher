@@ -18,7 +18,7 @@ export function createFetchComponent() {
 }
 
 export async function createStorageComponent(): Promise<IContentStorageComponent> {
-  console.log('called')
+
   const rootFixturesDir = 'test/fixtures'
 
   const files = await readdir(rootFixturesDir)
