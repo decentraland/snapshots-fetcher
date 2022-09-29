@@ -121,6 +121,6 @@ export type CatalystDeploymentStreamOptions = DeployedEntityStreamOptions & {
 }
 
 export type IProcessedSnapshotStorageComponent = {
-  wasSnapshotProcessed(hash: string): Promise<boolean>
+  wasSnapshotProcessed(hash: string, replacedSnapshotHashes?: string[]): Promise<boolean>
   markSnapshotProcessed(hash: string): Promise<void>
 }

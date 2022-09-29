@@ -251,7 +251,8 @@ test('when successfully process all snapshot files', ({ components, stubComponen
         hash: downloadedSnapshotFile,
         timeRange: {
           initTimestampSecs: 8, endTimestampSecs: 16
-        }
+        },
+        replacedSnapshotHashes: ['otherHash1', 'otherHash2']
       }],
     }))
 
@@ -339,6 +340,10 @@ test('when successfully process all snapshot files', ({ components, stubComponen
     }
     expect(processedSnapshotStorage.markSnapshotProcessed).toBeCalledTimes(2)
     expect(processedSnapshotStorage.markSnapshotProcessed).toBeCalledWith(downloadedSnapshotFile)
+    expect(processedSnapshotStorage.wasSnapshotProcessed)
+      .toBeCalledWith(downloadedSnapshotFile, expect.arrayContaining(['otherHash1', 'otherHash2']))
+    expect(processedSnapshotStorage.wasSnapshotProcessed)
+      .toBeCalledWith(downloadedSnapshotFile, undefined)
   })
 })
 

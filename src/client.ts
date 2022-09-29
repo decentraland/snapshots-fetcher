@@ -7,17 +7,20 @@ export async function getGlobalSnapshots(components: SnapshotsFetcherComponents,
   Promise<{
     hash: string,
     lastIncludedDeploymentTimestamp: number
+    replacedSnapshotHashes?: string[]
   }[]> {
   try {
     const newUrl = new URL(`${server}/snapshots`).toString()
     // TODO: validate response
     const newSnapshots: {
       hash: string,
-      timeRange: { initTimestampSecs: number, endTimestampSecs: number }
+      timeRange: { initTimestampSecs: number, endTimestampSecs: number },
+      replacedSnapshotHashes?: string[]
     }[] = await components.downloadQueue.scheduleJobWithRetries(() => fetchJson(newUrl, components.fetcher), 1)
     return newSnapshots.map(newSnapshot => ({
       hash: newSnapshot.hash,
-      lastIncludedDeploymentTimestamp: newSnapshot.timeRange.endTimestampSecs
+      lastIncludedDeploymentTimestamp: newSnapshot.timeRange.endTimestampSecs,
+      replacedSnapshotHashes: newSnapshot.replacedSnapshotHashes
     }))
   } catch {
     components.logs.getLogger('snapshots-fetcher')
@@ -25,7 +28,7 @@ export async function getGlobalSnapshots(components: SnapshotsFetcherComponents,
   }
 
   const oldUrl = new URL(`${server}/snapshot`).toString()
-  return [await components.downloadQueue.scheduleJobWithRetries(() => fetchJson(oldUrl, components.fetcher), 1)]
+  return [await components.downloadQueue.scheduleJobWithRetries(() => fetchJson(oldUrl, components.fetcher), retries)]
 }
 
 export async function* fetchJsonPaginated<T>(
