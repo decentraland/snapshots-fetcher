@@ -361,15 +361,16 @@ test('when successfully process a snapshot file and fails to process other', ({ 
     // serve the snapshots
     components.router.get('/snapshots', async () => ({
       body: [{
+        // This is processed first because it has greater end timestamp
         hash: downloadedSnapshotFile,
         timeRange: {
-          initTimestampSecs: 0, endTimestampSecs: 8
+          initTimestampSecs: 10, endTimestampSecs: 20
         }
       },
       {
         hash: 'unexistent-hash',
         timeRange: {
-          initTimestampSecs: 8, endTimestampSecs: 16
+          initTimestampSecs: 0, endTimestampSecs: 10
         }
       }],
     }))

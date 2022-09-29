@@ -1,5 +1,5 @@
 import { DeploymentWithAuthChain } from '@dcl/schemas'
-import { fetchPointerChanges, getGlobalSnapshots } from './client'
+import { fetchPointerChanges, getSnapshots } from './client'
 import { downloadFileWithRetries } from './downloader'
 import { createExponentialFallofRetry } from './exponential-fallof-retry'
 import { processDeploymentsInFile } from './file-processor'
@@ -143,7 +143,7 @@ export async function* getDeployedEntitiesStream(
   const metricLabels = contentServerMetricLabels(options.contentServer)
 
   // 1. get the hashes of the latest snapshots in the remote server, retry 10 times
-  const snapshots = await getGlobalSnapshots(
+  const snapshots = await getSnapshots(
     components,
     options.contentServer,
     options.requestMaxRetries
