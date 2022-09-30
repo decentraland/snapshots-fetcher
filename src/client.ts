@@ -14,15 +14,15 @@ export async function getSnapshots(components: SnapshotsFetcherComponents, serve
     // TODO: validate response
     const newSnapshots: {
       hash: string,
-      timeRange: { initTimestampSecs: number, endTimestampSecs: number },
+      timeRange: { initTimestamp: number, endTimestamp: number },
       replacedSnapshotHashes?: string[]
     }[] = await components.downloadQueue.scheduleJobWithRetries(() => fetchJson(incrementalSnapshotsUrl, components.fetcher), 1)
     return newSnapshots
       // newest first
-      .sort((s1, s2) => s2.timeRange.endTimestampSecs - s1.timeRange.endTimestampSecs)
+      .sort((s1, s2) => s2.timeRange.endTimestamp - s1.timeRange.endTimestamp)
       .map(newSnapshot => ({
         hash: newSnapshot.hash,
-        lastIncludedDeploymentTimestamp: newSnapshot.timeRange.endTimestampSecs,
+        lastIncludedDeploymentTimestamp: newSnapshot.timeRange.endTimestamp,
         replacedSnapshotHashes: newSnapshot.replacedSnapshotHashes
       }))
   } catch {

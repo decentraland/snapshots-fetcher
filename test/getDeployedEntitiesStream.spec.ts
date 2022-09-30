@@ -1,5 +1,5 @@
 import { getDeployedEntitiesStream } from '../src'
-import { test, TestComponents } from './components'
+import { test } from './components'
 import { createReadStream, unlinkSync } from 'fs'
 import { resolve } from 'path'
 import { sleep } from '../src/utils'
@@ -23,7 +23,7 @@ test('getDeployedEntitiesStream from /snapshots endpoint', ({ components, stubCo
       body: [{
         hash: downloadedSnapshotFile,
         timeRange: {
-          initTimestampSecs: 0, endTimestampSecs: 8
+          initTimestamp: 0, endTimestamp: 8
         }
       }],
     }))
@@ -140,7 +140,7 @@ test('fetches a stream without deleting the downloaded file', ({ components, stu
       body: [{
         hash: downloadedSnapshotFile,
         timeRange: {
-          initTimestampSecs: 0, endTimestampSecs: 8
+          initTimestamp: 0, endTimestamp: 8
         }
       }],
     }))
@@ -244,13 +244,13 @@ test('when successfully process all snapshot files', ({ components, stubComponen
       body: [{
         hash: downloadedSnapshotFile,
         timeRange: {
-          initTimestampSecs: 0, endTimestampSecs: 8
+          initTimestamp: 0, endTimestamp: 8
         }
       },
       {
         hash: downloadedSnapshotFile,
         timeRange: {
-          initTimestampSecs: 8, endTimestampSecs: 16
+          initTimestamp: 8, endTimestamp: 16
         },
         replacedSnapshotHashes: ['otherHash1', 'otherHash2']
       }],
@@ -364,13 +364,13 @@ test('when successfully process a snapshot file and fails to process other', ({ 
         // This is processed first because it has greater end timestamp
         hash: downloadedSnapshotFile,
         timeRange: {
-          initTimestampSecs: 10, endTimestampSecs: 20
+          initTimestamp: 10, endTimestamp: 20
         }
       },
       {
         hash: 'unexistent-hash',
         timeRange: {
-          initTimestampSecs: 0, endTimestampSecs: 10
+          initTimestamp: 0, endTimestamp: 10
         }
       }],
     }))
