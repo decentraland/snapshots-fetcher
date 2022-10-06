@@ -339,7 +339,10 @@ test('when successfully process all snapshot files', ({ components, stubComponen
       r.push(deployment)
     }
     expect(processedSnapshotStorage.markSnapshotProcessed).toBeCalledTimes(2)
-    expect(processedSnapshotStorage.markSnapshotProcessed).toBeCalledWith(downloadedSnapshotFile)
+    expect(processedSnapshotStorage.markSnapshotProcessed)
+      .toBeCalledWith(downloadedSnapshotFile, undefined)
+    expect(processedSnapshotStorage.markSnapshotProcessed)
+      .toBeCalledWith(downloadedSnapshotFile, expect.arrayContaining(['otherHash1', 'otherHash2']))
     expect(processedSnapshotStorage.wasSnapshotProcessed)
       .toBeCalledWith(downloadedSnapshotFile, expect.arrayContaining(['otherHash1', 'otherHash2']))
     expect(processedSnapshotStorage.wasSnapshotProcessed)
@@ -462,7 +465,7 @@ test('when successfully process a snapshot file and fails to process other', ({ 
     }
     await expect(iterate()).rejects.toThrow()
     expect(processedSnapshotStorage.markSnapshotProcessed).toBeCalledTimes(1)
-    expect(processedSnapshotStorage.markSnapshotProcessed).toBeCalledWith(downloadedSnapshotFile)
+    expect(processedSnapshotStorage.markSnapshotProcessed).toBeCalledWith(downloadedSnapshotFile, undefined)
   })
 })
 
