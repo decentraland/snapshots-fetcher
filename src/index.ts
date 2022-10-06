@@ -183,7 +183,7 @@ export async function* getDeployedEntitiesStream(
             greatestProcessedTimestamp = deployment.localTimestamp
           }
         }
-        await components.processedSnapshotStorage.markSnapshotProcessed(hash)
+        await components.processedSnapshotStorage.markSnapshotProcessed(hash, replacedSnapshotHashes)
       } finally {
         if (options.deleteSnapshotAfterUsage !== false) {
           try {
