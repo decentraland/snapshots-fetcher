@@ -1045,9 +1045,9 @@
   integrity sha512-UbVTSwV+9VtP1Z0sBW+ICbPYJfvy80sJNJNGHi33SeXq4rNSJRsFK8t7LWTipJNLpZRHyMNq4P9swBBB8yAyFw==
 
 "@well-known-components/metrics@^2.0.0":
-  version "2.0.0"
-  resolved "https://registry.yarnpkg.com/@well-known-components/metrics/-/metrics-2.0.0.tgz#56d1bb35ea34a02ae178bdf9fc2e33ef2cab871f"
-  integrity sha512-nVIuGrMbR/N9UF7o2lyMUZgZH8t+W7suaO1Kv4Pbz9MELKlR9Es/DwP+M3RbwJ4IQXT1AMqUHm4fatV+qLxxUg==
+  version "2.0.1"
+  resolved "https://registry.yarnpkg.com/@well-known-components/metrics/-/metrics-2.0.1.tgz#b5f5410c3ba6e5658ef80926a1f7bd81d7aa1f56"
+  integrity sha512-jgT9TuxVS9GzVMMYWXNJRM2qXvexuf4xfrFNBYa3w+gqEWCK4Id5R4zBee/bm6/F5yIPauAWxbOS6KNNDBIrGw==
   dependencies:
     prom-client "^14.1.0"
 
