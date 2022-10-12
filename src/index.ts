@@ -195,6 +195,8 @@ export async function* getDeployedEntitiesStream(
         }
       }
     }
+    greatestProcessedTimestamp = lastIncludedDeploymentTimestamp > greatestProcessedTimestamp
+      ? lastIncludedDeploymentTimestamp : greatestProcessedTimestamp
   }
 
 
