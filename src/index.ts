@@ -150,6 +150,7 @@ export async function* getDeployedEntitiesStream(
   )
 
   for (const snapshot of snapshots) {
+    console.log(`processing snapshot: ${JSON.stringify(snapshot)}`)
     const { hash, lastIncludedDeploymentTimestamp, replacedSnapshotHashes } = snapshot
     // 2. for each snapshot, download the snapshot file if it contains deployments
     //    in the range we are interested (>= genesisTimestamp)
@@ -200,6 +201,7 @@ export async function* getDeployedEntitiesStream(
   // 3. fetch the /pointer-changes of the remote server using the last timestamp from the previous step
   do {
     // 3.1. download pointer changes and yield
+    console.log(`asking pointer changes to ${options.contentServer} after timestap: ${greatestProcessedTimestamp}`)
     const pointerChanges = fetchPointerChanges(components, options.contentServer, greatestProcessedTimestamp)
     for await (const rawDeployment of pointerChanges) {
       const deployment = coerceEntityDeployment(rawDeployment)
