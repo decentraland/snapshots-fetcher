@@ -195,8 +195,11 @@ export async function* getDeployedEntitiesStream(
         }
       }
     }
+    console.log(`lastIncludedDeploymentTimestamp: ${lastIncludedDeploymentTimestamp}`)
+    console.log(`greatestProcessedTimestamp: ${greatestProcessedTimestamp}`)
     greatestProcessedTimestamp = lastIncludedDeploymentTimestamp > greatestProcessedTimestamp
       ? lastIncludedDeploymentTimestamp : greatestProcessedTimestamp
+    console.log(`greatestProcessedTimestamp: ${greatestProcessedTimestamp}`)
   }
 
 
