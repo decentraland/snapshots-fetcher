@@ -273,7 +273,7 @@ test('when successfully process all snapshot files', ({ components, stubComponen
     components.router.get('/pointer-changes', async (ctx) => {
       if (!ctx.url.searchParams.has('from')) throw new Error('pointer-changes called without ?from')
 
-      if (ctx.url.searchParams.get('from') == '9') {
+      if (ctx.url.searchParams.get('from') == '16') {
         return {
           body: {
             deltas: [
@@ -281,13 +281,13 @@ test('when successfully process all snapshot files', ({ components, stubComponen
               { entityType: 'profile', entityId: 'Qm000011', localTimestamp: 11, authChain, pointers: ['0x1'] },
             ],
             pagination: {
-              next: '?from=11&entityId=Qm000011',
+              next: '?from=18&entityId=Qm000011',
             },
           },
         }
       }
 
-      if (ctx.url.searchParams.get('from') != '11' && ctx.url.searchParams.get('entityId') != 'Qm000011') {
+      if (ctx.url.searchParams.get('from') != '18' && ctx.url.searchParams.get('entityId') != 'Qm000011') {
         throw new Error('pagination is not working properly')
       }
 
