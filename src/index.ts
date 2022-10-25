@@ -154,9 +154,13 @@ export async function* getDeployedEntitiesStream(
     logs.debug(`Processing snapshot`, { contentServer: options.contentServer, hash: snapshot.hash })
     // 2. for each snapshot, download the snapshot file if it contains deployments
     //    in the range we are interested (>= genesisTimestamp)
-    if (
-      hash && lastIncludedDeploymentTimestamp && lastIncludedDeploymentTimestamp > genesisTimestamp &&
-      !(await components.processedSnapshotStorage.wasSnapshotProcessed(hash, replacedSnapshotHashes))) {
+    const snapshotShouldBeProcessed =
+      hash &&
+      lastIncludedDeploymentTimestamp &&
+      lastIncludedDeploymentTimestamp > genesisTimestamp &&
+      !(await components.processedSnapshotStorage.wasSnapshotProcessed(hash, replacedSnapshotHashes))
+
+    if (snapshotShouldBeProcessed) {
       try {
         // 2.1. download the snapshot file if needed
         await downloadFileWithRetries(
