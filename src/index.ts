@@ -1,4 +1,5 @@
 import { DeploymentWithAuthChain } from '@dcl/schemas'
+import { ILoggerComponent } from '@well-known-components/interfaces'
 import { fetchPointerChanges, getSnapshots } from './client'
 import { downloadFileWithRetries } from './downloader'
 import { createExponentialFallofRetry } from './exponential-fallof-retry'
@@ -22,6 +23,45 @@ export { IDeployerComponent } from './types'
 if (parseInt(process.version.split('.')[0]) < 16) {
   const { name } = require('../package.json')
   throw new Error(`In order to work, the package ${name} needs to run in Node v16 or newer to handle streams properly.`)
+}
+
+async function downloadProfileAvatars(
+  components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'logs' | 'metrics' | 'storage'>,
+  logger: ILoggerComponent.ILogger,
+  presentInServers: string[],
+  _serverMapLRU: Map<Server, number>,
+  targetFolder: string,
+  maxRetries: number,
+  waitTimeBetweenRetries: number,
+  entityMetadata:
+    {
+      type: string
+      metadata?: any
+      content?: ContentMapping[] | undefined
+    }) {
+  const allAvatars: any[] = entityMetadata.metadata?.avatars ?? []
+  const snapshots = allAvatars.flatMap(avatar => Object.values(avatar.avatar.snapshots ?? {}) as string[])
+    .filter(snapshot => !!snapshot)
+    .map(snapshot => {
+      const matches = snapshot.match(/^http.*\/content\/contents\/(.*)/)
+      return matches ? matches[1] : snapshot
+    })
+    .filter(snapshot => !entityMetadata.content || entityMetadata.content.find(content => content.hash === snapshot) === undefined)
+  if (snapshots.length > 0) {
+    logger.info(`Downloading snapshots ${snapshots} for fixing entity ${JSON.stringify(entityMetadata)}`)
+    await Promise.all(
+      snapshots.map(snapshot => downloadFileWithRetries(
+        components,
+        snapshot,
+        targetFolder,
+        presentInServers,
+        _serverMapLRU,
+        maxRetries,
+        waitTimeBetweenRetries
+      ).catch(() => logger.info(`File ${snapshot} not available for download.`))
+      )
+    )
+  }
 }
 
 /**
@@ -78,29 +118,15 @@ export async function downloadEntityAndContentFiles(
      * A proper fix needs to be added that validates and forces new deployments to include the files in content (even
      *  if no need to upload them again).
      */
-    const allAvatars: any[] = entityMetadata.metadata?.avatars ?? []
-    const snapshots = allAvatars.flatMap(avatar => Object.values(avatar.avatar.snapshots ?? {}) as string[])
-      .filter(snapshot => !!snapshot)
-      .map(snapshot => {
-        const matches = snapshot.match(/^http.*\/content\/contents\/(.*)/)
-        return matches ? matches[1] : snapshot
-      })
-      .filter(snapshot => !entityMetadata.content || entityMetadata.content.find(content => content.hash === snapshot) === undefined)
-    if (snapshots.length > 0) {
-      logger.info(`Downloading snapshots ${snapshots} for fixing entity ${JSON.stringify(entityMetadata)}`)
-      await Promise.all(
-        snapshots.map(snapshot => downloadFileWithRetries(
-          components,
-          snapshot,
-          targetFolder,
-          presentInServers,
-          _serverMapLRU,
-          maxRetries,
-          waitTimeBetweenRetries
-        ).catch(() => logger.info(`File ${snapshot} not available for download.`))
-        )
-      )
-    }
+    await downloadProfileAvatars(
+      components,
+      logger,
+      presentInServers,
+      _serverMapLRU,
+      targetFolder,
+      maxRetries,
+      waitTimeBetweenRetries,
+      entityMetadata)
   }
 
   if (entityMetadata.content) {
