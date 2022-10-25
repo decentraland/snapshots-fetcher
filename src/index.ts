@@ -199,7 +199,7 @@ export async function* getDeployedEntitiesStream(
       ? lastIncludedDeploymentTimestamp : greatestProcessedTimestamp
   }
 
-  logs.info(`End processing snapshots. Greatest processed timestamp: ${greatestProcessedTimestamp}`)
+  logs.info(`End processing snapshots.`, { greatestProcessedTimestamp })
   // 3. fetch the /pointer-changes of the remote server using the last timestamp from the previous step
   do {
     // 3.1. download pointer changes and yield
