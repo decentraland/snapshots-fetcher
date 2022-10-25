@@ -151,7 +151,7 @@ export async function* getDeployedEntitiesStream(
 
   for (const snapshot of snapshots) {
     const { hash, lastIncludedDeploymentTimestamp, replacedSnapshotHashes } = snapshot
-    logs.debug(`Processing snapshot: ${snapshot.hash} from ${options.contentServer}`)
+    logs.debug(`Processing snapshot`, { contentServer: options.contentServer, hash: snapshot.hash })
     // 2. for each snapshot, download the snapshot file if it contains deployments
     //    in the range we are interested (>= genesisTimestamp)
     if (
