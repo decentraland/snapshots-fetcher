@@ -317,9 +317,9 @@
     multiformats "^9.6.3"
 
 "@dcl/schemas@^5.4.2":
-  version "5.18.0"
-  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-5.18.0.tgz#b3936703b919c2d95aaaca39daaf1d88e7627cb8"
-  integrity sha512-WhE6Za//lSYTaSqfypNddq3IMmzIYNKe+Bn+huMHSmQ7ns6lMmBj7lAIQgIXPC8zCZnSU4ODsE2qNjcoD50vpw==
+  version "5.26.1"
+  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-5.26.1.tgz#604ab85babc9bcd6e0842d2b3c7731705568ceac"
+  integrity sha512-aMQVGIwOuJm9G2Gm4dLNKpzk650j+tWZC/sVuRNuIG5DTG+rfYksyvD2lrPRfgLJIOId590AtU8HOe1FDWLJ6Q==
   dependencies:
     ajv "^8.11.0"
     ajv-errors "^3.0.0"
@@ -1006,11 +1006,11 @@
     "@types/yargs-parser" "*"
 
 "@well-known-components/env-config-provider@^1.1.1":
-  version "1.1.1"
-  resolved "https://registry.yarnpkg.com/@well-known-components/env-config-provider/-/env-config-provider-1.1.1.tgz#d04215847fcab83a1ab05e375df8e2141dae23cd"
-  integrity sha512-toj2HcxYZRf9UuBqEC9mrej9yyQlGU/15oGtShrDtNC9/OVLBNY3q8cNgLLKbPOMLaRJkjdQvIvpjb+Q+E+PFQ==
+  version "1.2.0"
+  resolved "https://registry.yarnpkg.com/@well-known-components/env-config-provider/-/env-config-provider-1.2.0.tgz#bd170c0af24cd8a34ebff23245fe53466db7f8be"
+  integrity sha512-QYDL9Uk1zEs5Q4ymgeZo1GVzuHe9Pp/jOLPRIbhwtPOCQ2Bd9yIlUWiFoC36JpcUSIlQ7Fzh8x21v2U95q5/+Q==
   dependencies:
-    dotenv "^8.2.0"
+    dotenv "^16.0.1"
 
 "@well-known-components/http-server@^1.1.1":
   version "1.1.6"
@@ -1052,9 +1052,9 @@
     prom-client "^14.1.0"
 
 "@well-known-components/test-helpers@^1.2.1":
-  version "1.3.0"
-  resolved "https://registry.yarnpkg.com/@well-known-components/test-helpers/-/test-helpers-1.3.0.tgz#82baa356b9dfde7de30d94913e2a4279cea764fa"
-  integrity sha512-vUhSb4dQ5MhDItSa6WiRmPDC39FeybtRCqrrkZgNzGZdJEne3JklginyJ3acdigDHM3IOzgnUDXXqI0hh1YEMA==
+  version "1.4.0"
+  resolved "https://registry.yarnpkg.com/@well-known-components/test-helpers/-/test-helpers-1.4.0.tgz#c72def847c2b9233c57ac7d6db13d85107db74c2"
+  integrity sha512-nHjMnaNvpFUIJ0S2uTno2eqr5q5g4FmVA13H4JojTQAM6ymMyRTRGs3kCG242tE1BGD2mKnCAJ1mJft3ByrP6w==
   dependencies:
     "@types/jest" "^27.4.0"
     "@types/sinon" "^10.0.0"
@@ -1724,10 +1724,10 @@ domexception@^2.0.1:
   dependencies:
     webidl-conversions "^5.0.0"
 
-dotenv@^8.2.0:
-  version "8.6.0"
-  resolved "https://registry.yarnpkg.com/dotenv/-/dotenv-8.6.0.tgz#061af664d19f7f4d8fc6e4ff9b584ce237adcb8b"
-  integrity sha512-IrPdXQsk2BbzvCBGBOTmmSH5SodmqZNt4ERAZDmW4CT+tL8VtvinqywuANaFu4bOMWki16nqf0e4oC0QIaDr/g==
+dotenv@^16.0.1:
+  version "16.0.3"
+  resolved "https://registry.yarnpkg.com/dotenv/-/dotenv-16.0.3.tgz#115aec42bac5053db3c456db30cc243a5a836a07"
+  integrity sha512-7GO6HghkA5fYG9TYnNxi14/7K9f5occMlp3zXAuSxn7CKCxt9xbNWG7yF8hTCSUchlfWSe3uLmlPfigevRItzQ==
 
 ee-first@1.1.1:
   version "1.1.1"
