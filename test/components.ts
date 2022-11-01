@@ -3,6 +3,7 @@
 
 import { createRunner } from '@well-known-components/test-helpers'
 import { createJobQueue } from '../src/job-queue-port'
+import { createProcessedSnapshotsComponent } from '../src/processed-snapshots'
 import { SnapshotsFetcherComponents } from '../src/types'
 import { createFetchComponent, createProcessedSnapshotStorageComponent, createStorageComponent } from './test-component'
 
@@ -45,6 +46,7 @@ export const test = createRunner<TestComponents>({
     const testServerComponents = await initTestServerComponents()
     const storage = await createStorageComponent()
     const processedSnapshotStorage = createProcessedSnapshotStorageComponent()
+    const processedSnapshots = createProcessedSnapshotsComponent({ processedSnapshotStorage })
 
     return {
       ...testServerComponents,
@@ -53,7 +55,8 @@ export const test = createRunner<TestComponents>({
       downloadQueue,
       fetcher,
       storage,
-      processedSnapshotStorage
+      processedSnapshotStorage,
+      processedSnapshots
     }
   },
 })

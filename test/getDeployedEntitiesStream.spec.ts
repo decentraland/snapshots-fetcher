@@ -5,7 +5,7 @@ import { resolve } from 'path'
 import { sleep } from '../src/utils'
 import Sinon from 'sinon'
 import { AuthLinkType } from '@dcl/schemas'
-import { IProcessedSnapshotStorageComponent } from '../src/types'
+import { IProcessedSnapshotsComponent } from '../src/types'
 
 test('getDeployedEntitiesStream from /snapshots endpoint', ({ components, stubComponents }) => {
   const contentFolder = resolve('downloads')
@@ -107,15 +107,15 @@ test('getDeployedEntitiesStream from /snapshots endpoint', ({ components, stubCo
     Sinon.assert.calledOnce(storage.delete)
 
     expect(r).toEqual([
-      { entityType: 'profile', entityId: 'Qm000001', localTimestamp: 1, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000002', localTimestamp: 2, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000003', localTimestamp: 3, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000004', localTimestamp: 4, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000005', localTimestamp: 5, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000006', localTimestamp: 6, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000007', localTimestamp: 7, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000008', localTimestamp: 8, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000009', localTimestamp: 9, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000001', localTimestamp: 1, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000002', localTimestamp: 2, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000003', localTimestamp: 3, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000004', localTimestamp: 4, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000005', localTimestamp: 5, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000006', localTimestamp: 6, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000007', localTimestamp: 7, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000008', localTimestamp: 8, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000009', localTimestamp: 9, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
       { entityType: 'profile', entityId: 'Qm000010', localTimestamp: 10, authChain, pointers: ['0x1'] },
       { entityType: 'profile', entityId: 'Qm000011', localTimestamp: 11, authChain, pointers: ['0x1'] },
       { entityType: 'profile', entityId: 'Qm000012', localTimestamp: 12, authChain, pointers: ['0x1'] },
@@ -231,6 +231,7 @@ test('fetches a stream without deleting the downloaded file', ({ components, stu
 test('when successfully process all snapshot files', ({ components, stubComponents }) => {
   const contentFolder = resolve('downloads')
   const downloadedSnapshotFile = 'bafkreico6luxnkk5vxuxvmpsg7hva4upamyz3br2b6ucc7rf3hdlcaehha'
+  const anotherSnapshotFile = 'bafkreig6sfhegnp4okzecgx3v6gj6pohh5qzw6zjtrdqtggx64743rkmz4'
   const authChain = [
     {
       type: AuthLinkType.SIGNER,
@@ -248,7 +249,7 @@ test('when successfully process all snapshot files', ({ components, stubComponen
         }
       },
       {
-        hash: downloadedSnapshotFile,
+        hash: anotherSnapshotFile,
         timeRange: {
           initTimestamp: 8, endTimestamp: 16
         },
@@ -267,6 +268,18 @@ test('when successfully process all snapshot files', ({ components, stubComponen
 
       return {
         body: createReadStream('test/fixtures/bafkreico6luxnkk5vxuxvmpsg7hva4upamyz3br2b6ucc7rf3hdlcaehha'),
+      }
+    })
+
+    components.router.get(`/contents/${anotherSnapshotFile}`, async () => {
+      if (downloadAttempts == 0) {
+        await sleep(100)
+        downloadAttempts++
+        return { status: 503 }
+      }
+
+      return {
+        body: createReadStream('test/fixtures/bafkreig6sfhegnp4okzecgx3v6gj6pohh5qzw6zjtrdqtggx64743rkmz4'),
       }
     })
 
@@ -307,25 +320,15 @@ test('when successfully process all snapshot files', ({ components, stubComponen
     } catch { }
   })
 
-  it('should mark all as processed', async () => {
+  it('should call end of stream for all', async () => {
     const { storage } = stubComponents
-    const processedSnapshotStorage: IProcessedSnapshotStorageComponent = {
-      wasSnapshotProcessed: jest.fn(),
-      markSnapshotProcessed: jest.fn()
-    }
+    const endStreamOfSpy = jest.spyOn(components.processedSnapshots, 'endStreamOf')
     storage.storeStream.callThrough()
     storage.retrieve.callThrough()
 
     const r = []
     const stream = getDeployedEntitiesStream(
-      {
-        fetcher: components.fetcher,
-        downloadQueue: components.downloadQueue,
-        logs: components.logs,
-        metrics: components.metrics,
-        storage: components.storage,
-        processedSnapshotStorage
-      },
+      components,
       {
         contentServer: await components.getBaseUrl(),
         tmpDownloadFolder: contentFolder,
@@ -338,15 +341,9 @@ test('when successfully process all snapshot files', ({ components, stubComponen
     for await (const deployment of stream) {
       r.push(deployment)
     }
-    expect(processedSnapshotStorage.markSnapshotProcessed).toBeCalledTimes(2)
-    expect(processedSnapshotStorage.markSnapshotProcessed)
-      .toBeCalledWith(downloadedSnapshotFile, undefined)
-    expect(processedSnapshotStorage.markSnapshotProcessed)
-      .toBeCalledWith(downloadedSnapshotFile, expect.arrayContaining(['otherHash1', 'otherHash2']))
-    expect(processedSnapshotStorage.wasSnapshotProcessed)
-      .toBeCalledWith(downloadedSnapshotFile, expect.arrayContaining(['otherHash1', 'otherHash2']))
-    expect(processedSnapshotStorage.wasSnapshotProcessed)
-      .toBeCalledWith(downloadedSnapshotFile, undefined)
+    expect(endStreamOfSpy).toBeCalledTimes(2)
+    expect(endStreamOfSpy).toBeCalledWith(downloadedSnapshotFile, 9)
+    expect(endStreamOfSpy).toBeCalledWith(anotherSnapshotFile, 0)
   })
 })
 
@@ -429,26 +426,16 @@ test('when successfully process a snapshot file and fails to process other', ({ 
     } catch { }
   })
 
-  it('should mark as processed only for the successfully processed one', async () => {
+  it('should call end of stream only for the successfully processed one', async () => {
     const { storage } = stubComponents
-    const processedSnapshotStorage: IProcessedSnapshotStorageComponent = {
-      wasSnapshotProcessed: jest.fn(),
-      markSnapshotProcessed: jest.fn()
-    }
+    const endStreamOfSpy = jest.spyOn(components.processedSnapshots, 'endStreamOf')
 
     storage.storeStream.callThrough()
     storage.retrieve.callThrough()
 
     const r = []
     const stream = getDeployedEntitiesStream(
-      {
-        fetcher: components.fetcher,
-        downloadQueue: components.downloadQueue,
-        logs: components.logs,
-        metrics: components.metrics,
-        storage: components.storage,
-        processedSnapshotStorage
-      },
+      components,
       {
         contentServer: await components.getBaseUrl(),
         tmpDownloadFolder: contentFolder,
@@ -464,8 +451,8 @@ test('when successfully process a snapshot file and fails to process other', ({ 
       }
     }
     await expect(iterate()).rejects.toThrow()
-    expect(processedSnapshotStorage.markSnapshotProcessed).toBeCalledTimes(1)
-    expect(processedSnapshotStorage.markSnapshotProcessed).toBeCalledWith(downloadedSnapshotFile, undefined)
+    expect(endStreamOfSpy).toBeCalledTimes(1)
+    expect(endStreamOfSpy).toBeCalledWith(downloadedSnapshotFile, 9)
   })
 })
 
@@ -571,15 +558,15 @@ test('getDeployedEntitiesStream from old /snapshot endpoint', ({ components, stu
     Sinon.assert.calledOnce(storage.delete)
 
     expect(r).toEqual([
-      { entityType: 'profile', entityId: 'Qm000001', localTimestamp: 1, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000002', localTimestamp: 2, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000003', localTimestamp: 3, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000004', localTimestamp: 4, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000005', localTimestamp: 5, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000006', localTimestamp: 6, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000007', localTimestamp: 7, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000008', localTimestamp: 8, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000009', localTimestamp: 9, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000001', localTimestamp: 1, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000002', localTimestamp: 2, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000003', localTimestamp: 3, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000004', localTimestamp: 4, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000005', localTimestamp: 5, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000006', localTimestamp: 6, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000007', localTimestamp: 7, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000008', localTimestamp: 8, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000009', localTimestamp: 9, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
       { entityType: 'profile', entityId: 'Qm000010', localTimestamp: 10, authChain, pointers: ['0x1'] },
       { entityType: 'profile', entityId: 'Qm000011', localTimestamp: 11, authChain, pointers: ['0x1'] },
       { entityType: 'profile', entityId: 'Qm000012', localTimestamp: 12, authChain, pointers: ['0x1'] },

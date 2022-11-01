@@ -37,6 +37,7 @@ export type SnapshotsFetcherComponents = {
   logs: ILoggerComponent
   storage: IContentStorageComponent
   processedSnapshotStorage: IProcessedSnapshotStorageComponent
+  processedSnapshots: IProcessedSnapshotsComponent
 }
 
 /**
@@ -45,7 +46,7 @@ export type SnapshotsFetcherComponents = {
  * @public
  */
 export type IDeployerComponent = {
-  deployEntity(entity: DeploymentWithAuthChain, contentServers: string[]): Promise<void>
+  deployEntity(entity: DeploymentWithAuthChain & { snapshotHash?: string }, contentServers: string[]): Promise<void>
   /**
    * onIdle returns a promise that should be resolved once every deployEntity(...) job has
    * finished and there are no more queued jobs.
@@ -121,6 +122,13 @@ export type CatalystDeploymentStreamOptions = DeployedEntityStreamOptions & {
 }
 
 export type IProcessedSnapshotStorageComponent = {
-  wasSnapshotProcessed(hash: string, replacedSnapshotHashes?: string[]): Promise<boolean>
-  markSnapshotProcessed(hash: string, replacedSnapshotHashes?: string[]): Promise<void>
+  processedFrom(snapshotHashes: string[]): Promise<Set<string>>
+  saveProcessed(snapshotHash: string): Promise<void>
+}
+
+export type IProcessedSnapshotsComponent = {
+  shouldStream(snapshotHash: string, replacedSnapshotHashes?: string[]): Promise<boolean>
+  startStreamOf(snapshotHash: string): void
+  endStreamOf(snapshotHash: string, numberOfEntitiesStreamed: number): Promise<void>
+  entityProcessedFrom(snapshotHash: string): Promise<void>
 }

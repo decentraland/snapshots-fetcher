@@ -19,6 +19,7 @@ import { coerceEntityDeployment, contentServerMetricLabels, sleep, streamToBuffe
 
 export { metricsDefinitions } from './metrics'
 export { IDeployerComponent } from './types'
+export { createProcessedSnapshotsComponent } from './processed-snapshots'
 
 if (parseInt(process.version.split('.')[0]) < 16) {
   const { name } = require('../package.json')
@@ -158,7 +159,7 @@ export async function downloadEntityAndContentFiles(
 export async function* getDeployedEntitiesStream(
   components: SnapshotsFetcherComponents,
   options: DeployedEntityStreamOptions
-): AsyncIterable<DeploymentWithAuthChain> {
+): AsyncIterable<DeploymentWithAuthChain & { snapshotHash?: string }> {
   const logs = components.logs.getLogger(`getDeployedEntitiesStream(${options.contentServer})`)
   // the minimum timestamp we are looking for
   const genesisTimestamp = options.fromTimestamp || 0
@@ -180,13 +181,13 @@ export async function* getDeployedEntitiesStream(
     logs.debug(`Processing snapshot`, { contentServer: options.contentServer, hash: snapshot.hash })
     // 2. for each snapshot, download the snapshot file if it contains deployments
     //    in the range we are interested (>= genesisTimestamp)
-    const snapshotShouldBeProcessed =
+    const shouldStreamSnapshot =
       hash &&
       lastIncludedDeploymentTimestamp &&
       lastIncludedDeploymentTimestamp > genesisTimestamp &&
-      !(await components.processedSnapshotStorage.wasSnapshotProcessed(hash, replacedSnapshotHashes))
+      await components.processedSnapshots.shouldStream(hash, replacedSnapshotHashes)
 
-    if (snapshotShouldBeProcessed) {
+    if (shouldStreamSnapshot) {
       try {
         // 2.1. download the snapshot file if needed
         await downloadFileWithRetries(
@@ -201,20 +202,26 @@ export async function* getDeployedEntitiesStream(
 
         // 2.2. open the snapshot file and process line by line
         const deploymentsInFile = processDeploymentsInFile(hash, components)
+        components.processedSnapshots.startStreamOf(hash)
+        let numberOfStreamedEntities = 0
         for await (const rawDeployment of deploymentsInFile) {
           const deployment = coerceEntityDeployment(rawDeployment)
           if (!deployment) continue
           // selectively ignore deployments by localTimestamp
           if (deployment.localTimestamp >= genesisTimestamp) {
             components.metrics.increment('dcl_entities_deployments_processed_total', metricLabels)
-            yield deployment
+            numberOfStreamedEntities++
+            yield {
+              ...deployment,
+              snapshotHash: hash
+            }
           }
           // update greatest processed timestamp
           if (deployment.localTimestamp > greatestProcessedTimestamp) {
             greatestProcessedTimestamp = deployment.localTimestamp
           }
         }
-        await components.processedSnapshotStorage.markSnapshotProcessed(hash, replacedSnapshotHashes)
+        components.processedSnapshots.endStreamOf(hash, numberOfStreamedEntities)
       } finally {
         if (options.deleteSnapshotAfterUsage !== false) {
           try {

@@ -4,7 +4,7 @@ import { createReadStream, unlinkSync } from 'fs'
 import { resolve } from 'path'
 import { sleep } from '../src/utils'
 import future from 'fp-future'
-import { IDeployerComponent, IProcessedSnapshotStorageComponent } from '../src/types'
+import { IDeployerComponent, IProcessedSnapshotsComponent } from '../src/types'
 import { AuthLinkType } from '@dcl/schemas'
 
 test('createCatalystDeploymentStream', ({ components, stubComponents }) => {
@@ -125,7 +125,8 @@ test('createCatalystDeploymentStream', ({ components, stubComponents }) => {
         deployer,
         metrics: components.metrics,
         storage: components.storage,
-        processedSnapshotStorage: components.processedSnapshotStorage
+        processedSnapshotStorage: components.processedSnapshotStorage,
+        processedSnapshots: components.processedSnapshots
       },
       {
         contentServer: await components.getBaseUrl(),
@@ -155,15 +156,15 @@ test('createCatalystDeploymentStream', ({ components, stubComponents }) => {
     expect(stream.isStopped()).toEqual(true)
 
     expect(r).toEqual([
-      { entityType: 'profile', entityId: 'Qm000001', localTimestamp: 1, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000002', localTimestamp: 2, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000003', localTimestamp: 3, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000004', localTimestamp: 4, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000005', localTimestamp: 5, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000006', localTimestamp: 6, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000007', localTimestamp: 7, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000008', localTimestamp: 8, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000009', localTimestamp: 9, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000001', localTimestamp: 1, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000002', localTimestamp: 2, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000003', localTimestamp: 3, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000004', localTimestamp: 4, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000005', localTimestamp: 5, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000006', localTimestamp: 6, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000007', localTimestamp: 7, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000008', localTimestamp: 8, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000009', localTimestamp: 9, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
       { entityType: 'profile', entityId: 'Qm000010', localTimestamp: 10, authChain, pointers: ['0x1'] },
       { entityType: 'profile', entityId: 'Qm000011', localTimestamp: 11, authChain, pointers: ['0x1'] },
       { entityType: 'profile', entityId: 'Qm000012', localTimestamp: 12, authChain, pointers: ['0x1'] },
