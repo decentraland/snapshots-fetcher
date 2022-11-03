@@ -20,6 +20,11 @@ export function createCatalystDeploymentStream(components: SnapshotsFetcherCompo
     deployer: IDeployerComponent;
 }, options: CatalystDeploymentStreamOptions): IJobWithLifecycle & CatalystDeploymentStreamComponent;
 
+// Warning: (ae-forgotten-export) The symbol "IProcessedSnapshotsComponent" needs to be exported by the entry point index.d.ts
+//
+// @public
+export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage'>): IProcessedSnapshotsComponent;
+
 // Warning: (ae-forgotten-export) The symbol "EntityHash" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "Server" needs to be exported by the entry point index.d.ts
 //
@@ -29,11 +34,15 @@ export function downloadEntityAndContentFiles(components: Pick<SnapshotsFetcherC
 // Warning: (ae-forgotten-export) The symbol "DeployedEntityStreamOptions" needs to be exported by the entry point index.d.ts
 //
 // @public
-export function getDeployedEntitiesStream(components: SnapshotsFetcherComponents, options: DeployedEntityStreamOptions): AsyncIterable<DeploymentWithAuthChain>;
+export function getDeployedEntitiesStream(components: SnapshotsFetcherComponents, options: DeployedEntityStreamOptions): AsyncIterable<DeploymentWithAuthChain & {
+    snapshotHash?: string;
+}>;
 
 // @public
 export type IDeployerComponent = {
-    deployEntity(entity: DeploymentWithAuthChain, contentServers: string[]): Promise<void>;
+    deployEntity(entity: DeploymentWithAuthChain & {
+        snapshotHash?: string;
+    }, contentServers: string[]): Promise<void>;
     onIdle(): Promise<void>;
 };
 

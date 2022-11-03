@@ -1,5 +1,10 @@
 import { IProcessedSnapshotsComponent, SnapshotsFetcherComponents } from "./types"
 
+/**
+ * Creates the component that signals the streaming and processing of a snapshot.
+ *
+ * @public
+ */
 export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage'>): IProcessedSnapshotsComponent {
   const snapshotsBeingStreamed = new Set()
   const snapshotsCompletelyStreamed = new Set()
