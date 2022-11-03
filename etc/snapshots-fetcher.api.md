@@ -23,7 +23,7 @@ export function createCatalystDeploymentStream(components: SnapshotsFetcherCompo
 // Warning: (ae-forgotten-export) The symbol "IProcessedSnapshotsComponent" needs to be exported by the entry point index.d.ts
 //
 // @public
-export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage'>): IProcessedSnapshotsComponent;
+export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage' | 'logs'>): IProcessedSnapshotsComponent;
 
 // Warning: (ae-forgotten-export) The symbol "EntityHash" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "Server" needs to be exported by the entry point index.d.ts
