@@ -1,11 +1,10 @@
-
+import { test } from './components'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import { createLogComponent } from '@well-known-components/logger'
 import { createProcessedSnapshotsComponent } from '../src'
 import { IProcessedSnapshotsComponent, IProcessedSnapshotStorageComponent } from '../src/types'
 import { createProcessedSnapshotStorageComponent } from './test-component'
-
 
 describe('processed snapshots', () => {
 
@@ -16,11 +15,20 @@ describe('processed snapshots', () => {
 
   let processedSnapshotStorage: IProcessedSnapshotStorageComponent
   let processedSnapshots: IProcessedSnapshotsComponent
+  let logs: ILoggerComponent
+
+  beforeAll(async () => {
+    logs = await createLogComponent({
+      config: createConfigComponent({
+        LOG_LEVEL: 'INFO'
+      })
+    })
+  })
 
   beforeEach(() => {
     jest.restoreAllMocks()
     processedSnapshotStorage = createProcessedSnapshotStorageComponent()
-    processedSnapshots = createProcessedSnapshotsComponent({ processedSnapshotStorage })
+    processedSnapshots = createProcessedSnapshotsComponent({ processedSnapshotStorage, logs })
   })
 
   describe('shouldStream', () => {

@@ -5,7 +5,8 @@ import { IProcessedSnapshotsComponent, SnapshotsFetcherComponents } from "./type
  *
  * @public
  */
-export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage'>): IProcessedSnapshotsComponent {
+export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage' | 'logs'>): IProcessedSnapshotsComponent {
+  const logger = components.logs.getLogger('processed-snapshots-logic')
   const snapshotsBeingStreamed = new Set()
   const snapshotsCompletelyStreamed = new Set()
   const numberOfProcessedEntitiesBySnapshot: Map<string, number> = new Map()
@@ -27,6 +28,7 @@ export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetc
     },
     startStreamOf(snapshotHash: string) {
       snapshotsBeingStreamed.add(snapshotHash)
+      logger.info('Starting stream...', { snapshotHash })
     },
     async endStreamOf(snapshotHash: string, numberOfStreamedEntities: number) {
       snapshotsCompletelyStreamed.add(snapshotHash)
@@ -36,6 +38,7 @@ export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetc
       if (numberOfEntities == 0) {
         await components.processedSnapshotStorage.saveProcessed(snapshotHash)
       }
+      logger.info('Stream ended.', { snapshotHash })
     },
     async entityProcessedFrom(snapshotHash: string) {
       let numberOfEntities = numberOfProcessedEntitiesBySnapshot.get(snapshotHash) ?? 0

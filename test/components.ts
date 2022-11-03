@@ -46,7 +46,7 @@ export const test = createRunner<TestComponents>({
     const testServerComponents = await initTestServerComponents()
     const storage = await createStorageComponent()
     const processedSnapshotStorage = createProcessedSnapshotStorageComponent()
-    const processedSnapshots = createProcessedSnapshotsComponent({ processedSnapshotStorage })
+    const processedSnapshots = createProcessedSnapshotsComponent({ processedSnapshotStorage, logs })
 
     return {
       ...testServerComponents,
