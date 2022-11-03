@@ -426,8 +426,9 @@ test('when successfully process a snapshot file and fails to process other', ({ 
     } catch { }
   })
 
-  it('should call end of stream only for the successfully processed one', async () => {
+  it('should start and end stream only for the successfully read one', async () => {
     const { storage } = stubComponents
+    const startStreamOfSpy = jest.spyOn(components.processedSnapshots, 'startStreamOf')
     const endStreamOfSpy = jest.spyOn(components.processedSnapshots, 'endStreamOf')
 
     storage.storeStream.callThrough()
@@ -451,6 +452,8 @@ test('when successfully process a snapshot file and fails to process other', ({ 
       }
     }
     await expect(iterate()).rejects.toThrow()
+    expect(startStreamOfSpy).toBeCalledWith(downloadedSnapshotFile)
+    expect(startStreamOfSpy).toBeCalledTimes(1)
     expect(endStreamOfSpy).toBeCalledTimes(1)
     expect(endStreamOfSpy).toBeCalledWith(downloadedSnapshotFile, 9)
   })

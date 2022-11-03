@@ -5,7 +5,7 @@ import { readdir, stat } from 'fs/promises'
 import { resolve } from 'path'
 import { MockedStorage } from '@dcl/catalyst-storage/dist/MockedStorage'
 import { IContentStorageComponent } from '@dcl/catalyst-storage'
-import { IProcessedSnapshotsComponent, IProcessedSnapshotStorageComponent } from '../src/types'
+import { IProcessedSnapshotStorageComponent } from '../src/types'
 
 export function createFetchComponent() {
   const fetch: IFetchComponent = {

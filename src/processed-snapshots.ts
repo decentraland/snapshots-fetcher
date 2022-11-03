@@ -6,7 +6,7 @@ export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetc
   const numberOfProcessedEntitiesBySnapshot: Map<string, number> = new Map()
 
   return {
-    async shouldStream(snapshotHash: string, replacedSnapshotHashes: string[]) {
+    async shouldStream(snapshotHash: string, replacedSnapshotHashes?: string[]) {
       const isBeingStreamed = snapshotsBeingStreamed.has(snapshotHash)
       const wasStreamed = snapshotsCompletelyStreamed.has(snapshotHash)
       const replacedHashes = replacedSnapshotHashes ?? []
@@ -24,6 +24,7 @@ export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetc
       snapshotsBeingStreamed.add(snapshotHash)
     },
     async endStreamOf(snapshotHash: string, numberOfStreamedEntities: number) {
+      snapshotsCompletelyStreamed.add(snapshotHash)
       let numberOfEntities = numberOfProcessedEntitiesBySnapshot.get(snapshotHash) ?? 0
       numberOfEntities = numberOfEntities - numberOfStreamedEntities
       numberOfProcessedEntitiesBySnapshot.set(snapshotHash, numberOfEntities)
