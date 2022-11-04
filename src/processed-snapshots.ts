@@ -35,10 +35,10 @@ export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetc
       let numberOfEntities = numberOfProcessedEntitiesBySnapshot.get(snapshotHash) ?? 0
       numberOfEntities = numberOfEntities - numberOfStreamedEntities
       numberOfProcessedEntitiesBySnapshot.set(snapshotHash, numberOfEntities)
+      logger.info('Stream ended.', { snapshotHash })
       if (numberOfEntities == 0) {
         await components.processedSnapshotStorage.saveProcessed(snapshotHash)
       }
-      logger.info('Stream ended.', { snapshotHash })
     },
     async entityProcessedFrom(snapshotHash: string) {
       let numberOfEntities = numberOfProcessedEntitiesBySnapshot.get(snapshotHash) ?? 0
