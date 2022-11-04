@@ -44,17 +44,13 @@ export async function createStorageComponent(): Promise<IContentStorageComponent
 
 export function createProcessedSnapshotStorageComponent(): IProcessedSnapshotStorageComponent {
   const processedSnapshots = new Set()
+
   return {
-    async wasSnapshotProcessed(hash: string, replacedSnapshotHashes?: string[]) {
-      const replacedSnapshotsWereProcessed =
-        replacedSnapshotHashes
-          ? replacedSnapshotHashes.length > 0 && replacedSnapshotHashes.every(s => processedSnapshots.has(s))
-          : false
-      return replacedSnapshotsWereProcessed || processedSnapshots.has(hash)
+    async processedFrom(snapshotHashes: string[]) {
+      return new Set(snapshotHashes.filter(h => processedSnapshots.has(h)))
     },
-    async markSnapshotProcessed(hash: string) {
-      processedSnapshots.add(hash)
+    async saveProcessed(snapshotHash: string) {
+      processedSnapshots.add(snapshotHash)
     }
   }
-
 }
