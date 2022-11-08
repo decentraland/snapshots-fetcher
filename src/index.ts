@@ -207,8 +207,8 @@ export async function* getDeployedEntitiesStream(
         for await (const rawDeployment of deploymentsInFile) {
           const deployment = coerceEntityDeployment(rawDeployment)
           if (!deployment) continue
-          // selectively ignore deployments by localTimestamp
-          if (deployment.localTimestamp >= genesisTimestamp) {
+          // selectively ignore deployments by entityTimestamp
+          if (deployment.entityTimestamp >= genesisTimestamp) {
             components.metrics.increment('dcl_entities_deployments_processed_total', metricLabels)
             numberOfStreamedEntities++
             yield {
@@ -217,8 +217,8 @@ export async function* getDeployedEntitiesStream(
             }
           }
           // update greatest processed timestamp
-          if (deployment.localTimestamp > greatestProcessedTimestamp) {
-            greatestProcessedTimestamp = deployment.localTimestamp
+          if (deployment.entityTimestamp > greatestProcessedTimestamp) {
+            greatestProcessedTimestamp = deployment.entityTimestamp
           }
         }
         components.processedSnapshots.endStreamOf(hash, numberOfStreamedEntities)
@@ -244,14 +244,14 @@ export async function* getDeployedEntitiesStream(
     for await (const rawDeployment of pointerChanges) {
       const deployment = coerceEntityDeployment(rawDeployment)
       if (!deployment) continue
-      // selectively ignore deployments by localTimestamp
-      if (deployment.localTimestamp >= genesisTimestamp) {
+      // selectively ignore deployments by entityTimestamp
+      if (deployment.entityTimestamp >= genesisTimestamp) {
         components.metrics.increment('dcl_entities_deployments_processed_total', metricLabels)
         yield deployment
       }
       // update greatest processed timestamp
-      if (deployment.localTimestamp > greatestProcessedTimestamp) {
-        greatestProcessedTimestamp = deployment.localTimestamp
+      if (deployment.entityTimestamp > greatestProcessedTimestamp) {
+        greatestProcessedTimestamp = deployment.entityTimestamp
       }
     }
 
@@ -301,8 +301,8 @@ export function createCatalystDeploymentStream(
           await components.deployer.deployEntity(deployment, [options.contentServer])
 
           // update greatest processed timestamp
-          if (deployment.localTimestamp > greatestProcessedTimestamp) {
-            greatestProcessedTimestamp = deployment.localTimestamp
+          if (deployment.entityTimestamp > greatestProcessedTimestamp) {
+            greatestProcessedTimestamp = deployment.entityTimestamp
           }
         }
       } catch (e: any) {

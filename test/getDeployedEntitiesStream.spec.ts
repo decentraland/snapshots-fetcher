@@ -9,7 +9,7 @@ import { IProcessedSnapshotsComponent } from '../src/types'
 
 test('getDeployedEntitiesStream from /snapshots endpoint', ({ components, stubComponents }) => {
   const contentFolder = resolve('downloads')
-  const downloadedSnapshotFile = 'bafkreico6luxnkk5vxuxvmpsg7hva4upamyz3br2b6ucc7rf3hdlcaehha'
+  const downloadedSnapshotFile = 'bafkreicgygsdjrgyrs6dld3ft2cu2anvwzno3ahjjukohpi3lqkz54ei7y'
   const authChain = [
     {
       type: AuthLinkType.SIGNER,
@@ -38,7 +38,7 @@ test('getDeployedEntitiesStream from /snapshots endpoint', ({ components, stubCo
       }
 
       return {
-        body: createReadStream('test/fixtures/bafkreico6luxnkk5vxuxvmpsg7hva4upamyz3br2b6ucc7rf3hdlcaehha'),
+        body: createReadStream('test/fixtures/bafkreicgygsdjrgyrs6dld3ft2cu2anvwzno3ahjjukohpi3lqkz54ei7y'),
       }
     })
 
@@ -49,8 +49,8 @@ test('getDeployedEntitiesStream from /snapshots endpoint', ({ components, stubCo
         return {
           body: {
             deltas: [
-              { entityType: 'profile', entityId: 'Qm000010', localTimestamp: 10, authChain, pointers: ['0x1'] },
-              { entityType: 'profile', entityId: 'Qm000011', localTimestamp: 11, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'Qm000010', entityTimestamp: 10, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'Qm000011', entityTimestamp: 11, authChain, pointers: ['0x1'] },
             ],
             pagination: {
               next: '?from=11&entityId=Qm000011',
@@ -66,8 +66,8 @@ test('getDeployedEntitiesStream from /snapshots endpoint', ({ components, stubCo
       return {
         body: {
           deltas: [
-            { entityType: 'profile', entityId: 'Qm000012', localTimestamp: 12, authChain, pointers: ['0x1'] },
-            { entityType: 'profile', entityId: 'Qm000013', localTimestamp: 13, authChain, pointers: ['0x1'] },
+            { entityType: 'profile', entityId: 'Qm000012', entityTimestamp: 12, authChain, pointers: ['0x1'] },
+            { entityType: 'profile', entityId: 'Qm000013', entityTimestamp: 13, authChain, pointers: ['0x1'] },
           ],
           pagination: {},
         },
@@ -107,26 +107,26 @@ test('getDeployedEntitiesStream from /snapshots endpoint', ({ components, stubCo
     Sinon.assert.calledOnce(storage.delete)
 
     expect(r).toEqual([
-      { entityType: 'profile', entityId: 'Qm000001', localTimestamp: 1, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
-      { entityType: 'profile', entityId: 'Qm000002', localTimestamp: 2, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
-      { entityType: 'profile', entityId: 'Qm000003', localTimestamp: 3, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
-      { entityType: 'profile', entityId: 'Qm000004', localTimestamp: 4, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
-      { entityType: 'profile', entityId: 'Qm000005', localTimestamp: 5, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
-      { entityType: 'profile', entityId: 'Qm000006', localTimestamp: 6, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
-      { entityType: 'profile', entityId: 'Qm000007', localTimestamp: 7, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
-      { entityType: 'profile', entityId: 'Qm000008', localTimestamp: 8, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
-      { entityType: 'profile', entityId: 'Qm000009', localTimestamp: 9, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
-      { entityType: 'profile', entityId: 'Qm000010', localTimestamp: 10, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000011', localTimestamp: 11, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000012', localTimestamp: 12, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000013', localTimestamp: 13, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000001', entityTimestamp: 1, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000002', entityTimestamp: 2, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000003', entityTimestamp: 3, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000004', entityTimestamp: 4, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000005', entityTimestamp: 5, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000006', entityTimestamp: 6, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000007', entityTimestamp: 7, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000008', entityTimestamp: 8, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000009', entityTimestamp: 9, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000010', entityTimestamp: 10, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000011', entityTimestamp: 11, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000012', entityTimestamp: 12, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000013', entityTimestamp: 13, authChain, pointers: ['0x1'] },
     ])
   })
 })
 
 test('fetches a stream without deleting the downloaded file', ({ components, stubComponents }) => {
   const contentFolder = resolve('downloads')
-  const downloadedSnapshotFile = 'bafkreico6luxnkk5vxuxvmpsg7hva4upamyz3br2b6ucc7rf3hdlcaehha'
+  const downloadedSnapshotFile = 'bafkreicgygsdjrgyrs6dld3ft2cu2anvwzno3ahjjukohpi3lqkz54ei7y'
   const authChain = [
     {
       type: AuthLinkType.SIGNER,
@@ -155,7 +155,7 @@ test('fetches a stream without deleting the downloaded file', ({ components, stu
       }
 
       return {
-        body: createReadStream('test/fixtures/bafkreico6luxnkk5vxuxvmpsg7hva4upamyz3br2b6ucc7rf3hdlcaehha'),
+        body: createReadStream('test/fixtures/bafkreicgygsdjrgyrs6dld3ft2cu2anvwzno3ahjjukohpi3lqkz54ei7y'),
       }
     })
 
@@ -166,8 +166,8 @@ test('fetches a stream without deleting the downloaded file', ({ components, stu
         return {
           body: {
             deltas: [
-              { entityType: 'profile', entityId: 'Qm000010', localTimestamp: 10, authChain, pointers: ['0x1'] },
-              { entityType: 'profile', entityId: 'Qm000011', localTimestamp: 11, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'Qm000010', entityTimestamp: 10, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'Qm000011', entityTimestamp: 11, authChain, pointers: ['0x1'] },
             ],
             pagination: {
               next: '?from=11&entityId=Qm000011',
@@ -183,8 +183,8 @@ test('fetches a stream without deleting the downloaded file', ({ components, stu
       return {
         body: {
           deltas: [
-            { entityType: 'profile', entityId: 'Qm000012', localTimestamp: 12, authChain, pointers: ['0x1'] },
-            { entityType: 'profile', entityId: 'Qm000013', localTimestamp: 13, authChain, pointers: ['0x1'] },
+            { entityType: 'profile', entityId: 'Qm000012', entityTimestamp: 12, authChain, pointers: ['0x1'] },
+            { entityType: 'profile', entityId: 'Qm000013', entityTimestamp: 13, authChain, pointers: ['0x1'] },
           ],
           pagination: {},
         },
@@ -230,7 +230,7 @@ test('fetches a stream without deleting the downloaded file', ({ components, stu
 
 test('when successfully process all snapshot files', ({ components, stubComponents }) => {
   const contentFolder = resolve('downloads')
-  const downloadedSnapshotFile = 'bafkreico6luxnkk5vxuxvmpsg7hva4upamyz3br2b6ucc7rf3hdlcaehha'
+  const downloadedSnapshotFile = 'bafkreicgygsdjrgyrs6dld3ft2cu2anvwzno3ahjjukohpi3lqkz54ei7y'
   const anotherSnapshotFile = 'bafkreig6sfhegnp4okzecgx3v6gj6pohh5qzw6zjtrdqtggx64743rkmz4'
   const authChain = [
     {
@@ -267,7 +267,7 @@ test('when successfully process all snapshot files', ({ components, stubComponen
       }
 
       return {
-        body: createReadStream('test/fixtures/bafkreico6luxnkk5vxuxvmpsg7hva4upamyz3br2b6ucc7rf3hdlcaehha'),
+        body: createReadStream('test/fixtures/bafkreicgygsdjrgyrs6dld3ft2cu2anvwzno3ahjjukohpi3lqkz54ei7y'),
       }
     })
 
@@ -290,8 +290,8 @@ test('when successfully process all snapshot files', ({ components, stubComponen
         return {
           body: {
             deltas: [
-              { entityType: 'profile', entityId: 'Qm000010', localTimestamp: 10, authChain, pointers: ['0x1'] },
-              { entityType: 'profile', entityId: 'Qm000011', localTimestamp: 11, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'Qm000010', entityTimestamp: 10, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'Qm000011', entityTimestamp: 11, authChain, pointers: ['0x1'] },
             ],
             pagination: {
               next: '?from=18&entityId=Qm000011',
@@ -307,8 +307,8 @@ test('when successfully process all snapshot files', ({ components, stubComponen
       return {
         body: {
           deltas: [
-            { entityType: 'profile', entityId: 'Qm000012', localTimestamp: 12, authChain, pointers: ['0x1'] },
-            { entityType: 'profile', entityId: 'Qm000013', localTimestamp: 13, authChain, pointers: ['0x1'] },
+            { entityType: 'profile', entityId: 'Qm000012', entityTimestamp: 12, authChain, pointers: ['0x1'] },
+            { entityType: 'profile', entityId: 'Qm000013', entityTimestamp: 13, authChain, pointers: ['0x1'] },
           ],
           pagination: {},
         },
@@ -349,7 +349,7 @@ test('when successfully process all snapshot files', ({ components, stubComponen
 
 test('when successfully process a snapshot file and fails to process other', ({ components, stubComponents }) => {
   const contentFolder = resolve('downloads')
-  const downloadedSnapshotFile = 'bafkreico6luxnkk5vxuxvmpsg7hva4upamyz3br2b6ucc7rf3hdlcaehha'
+  const downloadedSnapshotFile = 'bafkreicgygsdjrgyrs6dld3ft2cu2anvwzno3ahjjukohpi3lqkz54ei7y'
   const authChain = [
     {
       type: AuthLinkType.SIGNER,
@@ -385,7 +385,7 @@ test('when successfully process a snapshot file and fails to process other', ({ 
       }
 
       return {
-        body: createReadStream('test/fixtures/bafkreico6luxnkk5vxuxvmpsg7hva4upamyz3br2b6ucc7rf3hdlcaehha'),
+        body: createReadStream('test/fixtures/bafkreicgygsdjrgyrs6dld3ft2cu2anvwzno3ahjjukohpi3lqkz54ei7y'),
       }
     })
 
@@ -396,8 +396,8 @@ test('when successfully process a snapshot file and fails to process other', ({ 
         return {
           body: {
             deltas: [
-              { entityType: 'profile', entityId: 'Qm000010', localTimestamp: 10, authChain, pointers: ['0x1'] },
-              { entityType: 'profile', entityId: 'Qm000011', localTimestamp: 11, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'Qm000010', entityTimestamp: 10, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'Qm000011', entityTimestamp: 11, authChain, pointers: ['0x1'] },
             ],
             pagination: {
               next: '?from=11&entityId=Qm000011',
@@ -413,8 +413,8 @@ test('when successfully process a snapshot file and fails to process other', ({ 
       return {
         body: {
           deltas: [
-            { entityType: 'profile', entityId: 'Qm000012', localTimestamp: 12, authChain, pointers: ['0x1'] },
-            { entityType: 'profile', entityId: 'Qm000013', localTimestamp: 13, authChain, pointers: ['0x1'] },
+            { entityType: 'profile', entityId: 'Qm000012', entityTimestamp: 12, authChain, pointers: ['0x1'] },
+            { entityType: 'profile', entityId: 'Qm000013', entityTimestamp: 13, authChain, pointers: ['0x1'] },
           ],
           pagination: {},
         },
@@ -461,7 +461,7 @@ test('when successfully process a snapshot file and fails to process other', ({ 
 
 test('getDeployedEntitiesStream from old /snapshot endpoint', ({ components, stubComponents }) => {
   const contentFolder = resolve('downloads')
-  const downloadedSnapshotFile = 'bafkreico6luxnkk5vxuxvmpsg7hva4upamyz3br2b6ucc7rf3hdlcaehha'
+  const downloadedSnapshotFile = 'bafkreicgygsdjrgyrs6dld3ft2cu2anvwzno3ahjjukohpi3lqkz54ei7y'
   const authChain = [
     {
       type: AuthLinkType.SIGNER,
@@ -492,7 +492,7 @@ test('getDeployedEntitiesStream from old /snapshot endpoint', ({ components, stu
       }
 
       return {
-        body: createReadStream('test/fixtures/bafkreico6luxnkk5vxuxvmpsg7hva4upamyz3br2b6ucc7rf3hdlcaehha'),
+        body: createReadStream('test/fixtures/bafkreicgygsdjrgyrs6dld3ft2cu2anvwzno3ahjjukohpi3lqkz54ei7y'),
       }
     })
 
@@ -503,8 +503,8 @@ test('getDeployedEntitiesStream from old /snapshot endpoint', ({ components, stu
         return {
           body: {
             deltas: [
-              { entityType: 'profile', entityId: 'Qm000010', localTimestamp: 10, authChain, pointers: ['0x1'] },
-              { entityType: 'profile', entityId: 'Qm000011', localTimestamp: 11, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'Qm000010', entityTimestamp: 10, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'Qm000011', entityTimestamp: 11, authChain, pointers: ['0x1'] },
             ],
             pagination: {
               next: '?from=11&entityId=Qm000011',
@@ -520,8 +520,8 @@ test('getDeployedEntitiesStream from old /snapshot endpoint', ({ components, stu
       return {
         body: {
           deltas: [
-            { entityType: 'profile', entityId: 'Qm000012', localTimestamp: 12, authChain, pointers: ['0x1'] },
-            { entityType: 'profile', entityId: 'Qm000013', localTimestamp: 13, authChain, pointers: ['0x1'] },
+            { entityType: 'profile', entityId: 'Qm000012', entityTimestamp: 12, authChain, pointers: ['0x1'] },
+            { entityType: 'profile', entityId: 'Qm000013', entityTimestamp: 13, authChain, pointers: ['0x1'] },
           ],
           pagination: {},
         },
@@ -561,19 +561,19 @@ test('getDeployedEntitiesStream from old /snapshot endpoint', ({ components, stu
     Sinon.assert.calledOnce(storage.delete)
 
     expect(r).toEqual([
-      { entityType: 'profile', entityId: 'Qm000001', localTimestamp: 1, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
-      { entityType: 'profile', entityId: 'Qm000002', localTimestamp: 2, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
-      { entityType: 'profile', entityId: 'Qm000003', localTimestamp: 3, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
-      { entityType: 'profile', entityId: 'Qm000004', localTimestamp: 4, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
-      { entityType: 'profile', entityId: 'Qm000005', localTimestamp: 5, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
-      { entityType: 'profile', entityId: 'Qm000006', localTimestamp: 6, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
-      { entityType: 'profile', entityId: 'Qm000007', localTimestamp: 7, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
-      { entityType: 'profile', entityId: 'Qm000008', localTimestamp: 8, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
-      { entityType: 'profile', entityId: 'Qm000009', localTimestamp: 9, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
-      { entityType: 'profile', entityId: 'Qm000010', localTimestamp: 10, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000011', localTimestamp: 11, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000012', localTimestamp: 12, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000013', localTimestamp: 13, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000001', entityTimestamp: 1, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000002', entityTimestamp: 2, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000003', entityTimestamp: 3, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000004', entityTimestamp: 4, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000005', entityTimestamp: 5, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000006', entityTimestamp: 6, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000007', entityTimestamp: 7, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000008', entityTimestamp: 8, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000009', entityTimestamp: 9, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000010', entityTimestamp: 10, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000011', entityTimestamp: 11, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000012', entityTimestamp: 12, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000013', entityTimestamp: 13, authChain, pointers: ['0x1'] },
     ])
   })
 })
@@ -607,8 +607,8 @@ test("does not download snapshot if it doesn't include relevant deployments. kee
         return {
           body: {
             deltas: [
-              { entityType: 'profile', entityId: 'Qm000150', localTimestamp: 150, authChain, pointers: ['0x1'] },
-              { entityType: 'profile', entityId: 'Qm000151', localTimestamp: 151, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'Qm000150', entityTimestamp: 150, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'Qm000151', entityTimestamp: 151, authChain, pointers: ['0x1'] },
             ],
             pagination: {},
           },
@@ -619,8 +619,8 @@ test("does not download snapshot if it doesn't include relevant deployments. kee
         return {
           body: {
             deltas: [
-              { entityType: 'profile', entityId: 'Qm000152', localTimestamp: 152, authChain, pointers: ['0x1'] },
-              { entityType: 'profile', entityId: 'Qm000153', localTimestamp: 153, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'Qm000152', entityTimestamp: 152, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'Qm000153', entityTimestamp: 153, authChain, pointers: ['0x1'] },
             ],
             pagination: {},
           },
@@ -653,10 +653,10 @@ test("does not download snapshot if it doesn't include relevant deployments. kee
     }
 
     expect(r).toEqual([
-      { entityType: 'profile', entityId: 'Qm000150', localTimestamp: 150, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000151', localTimestamp: 151, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000152', localTimestamp: 152, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000153', localTimestamp: 153, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000150', entityTimestamp: 150, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000151', entityTimestamp: 151, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000152', entityTimestamp: 152, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000153', entityTimestamp: 153, authChain, pointers: ['0x1'] },
     ])
   })
 })
