@@ -101,7 +101,7 @@ export async function saveContentFileToDisk(
           if (await checkFileExists(tmpFileName)) {
             await fs.promises.unlink(tmpFileName)
           }
-        } catch {}
+        } catch { }
         throw e
       }
     }
@@ -182,7 +182,7 @@ function downloadFile(
   })
 }
 
-export function coerceEntityDeployment(value: any): DeploymentWithAuthChain | null {
+export function coerceEntityDeployment(value: any): DeploymentWithAuthChain & { localTimestamp?: number } | null {
   if (DeploymentWithAuthChain.validate(value)) {
     return value
   }

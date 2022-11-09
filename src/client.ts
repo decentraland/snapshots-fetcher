@@ -66,9 +66,9 @@ export function fetchPointerChanges(
   components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'metrics'>,
   server: string,
   fromTimestamp: number
-): AsyncIterable<DeploymentWithAuthChain> {
+): AsyncIterable<DeploymentWithAuthChain & { localTimestamp: number }> {
   const url = new URL(
-    `${server}/pointer-changes?sortingOrder=ASC&sortingField=entity_timestamp&from=${encodeURIComponent(fromTimestamp)}`
+    `${server}/pointer-changes?sortingOrder=ASC&sortingField=local_timestamp&from=${encodeURIComponent(fromTimestamp)}`
   ).toString()
   return fetchJsonPaginated(components, url, ($) => $.deltas, 'dcl_catalysts_pointer_changes_response_time_seconds')
 }

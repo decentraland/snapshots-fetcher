@@ -4,8 +4,8 @@ import { createReadStream, unlinkSync } from 'fs'
 import { resolve } from 'path'
 import { sleep } from '../src/utils'
 import Sinon from 'sinon'
+import ms from 'ms'
 import { AuthLinkType } from '@dcl/schemas'
-import { IProcessedSnapshotsComponent } from '../src/types'
 
 test('getDeployedEntitiesStream from /snapshots endpoint', ({ components, stubComponents }) => {
   const contentFolder = resolve('downloads')
@@ -17,6 +17,9 @@ test('getDeployedEntitiesStream from /snapshots endpoint', ({ components, stubCo
       signature: '',
     },
   ]
+
+  const greatestEntityTimestamp = 9
+
   it('prepares the endpoints', () => {
     // serve the snapshots
     components.router.get('/snapshots', async () => ({
@@ -45,7 +48,7 @@ test('getDeployedEntitiesStream from /snapshots endpoint', ({ components, stubCo
     components.router.get('/pointer-changes', async (ctx) => {
       if (!ctx.url.searchParams.has('from')) throw new Error('pointer-changes called without ?from')
 
-      if (ctx.url.searchParams.get('from') == '9') {
+      if (ctx.url.searchParams.get('from') == (greatestEntityTimestamp - ms('20m')).toString()) {
         return {
           body: {
             deltas: [
@@ -115,7 +118,7 @@ test('getDeployedEntitiesStream from /snapshots endpoint', ({ components, stubCo
       { entityType: 'profile', entityId: 'Qm000006', entityTimestamp: 6, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
       { entityType: 'profile', entityId: 'Qm000007', entityTimestamp: 7, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
       { entityType: 'profile', entityId: 'Qm000008', entityTimestamp: 8, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
-      { entityType: 'profile', entityId: 'Qm000009', entityTimestamp: 9, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000009', entityTimestamp: greatestEntityTimestamp, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
       { entityType: 'profile', entityId: 'Qm000010', entityTimestamp: 10, authChain, pointers: ['0x1'] },
       { entityType: 'profile', entityId: 'Qm000011', entityTimestamp: 11, authChain, pointers: ['0x1'] },
       { entityType: 'profile', entityId: 'Qm000012', entityTimestamp: 12, authChain, pointers: ['0x1'] },
@@ -134,6 +137,8 @@ test('fetches a stream without deleting the downloaded file', ({ components, stu
       signature: '',
     },
   ]
+  const greatestEntityTimestamp = 9
+
   it('prepares the endpoints', () => {
     // serve the snapshots
     components.router.get('/snapshots', async () => ({
@@ -162,7 +167,7 @@ test('fetches a stream without deleting the downloaded file', ({ components, stu
     components.router.get('/pointer-changes', async (ctx) => {
       if (!ctx.url.searchParams.has('from')) throw new Error('pointer-changes called without ?from')
 
-      if (ctx.url.searchParams.get('from') == '9') {
+      if (ctx.url.searchParams.get('from') == (greatestEntityTimestamp - ms('20m')).toString()) {
         return {
           body: {
             deltas: [
@@ -239,6 +244,7 @@ test('when successfully process all snapshot files', ({ components, stubComponen
       signature: '',
     },
   ]
+
   it('prepares the endpoints', () => {
     // serve the snapshots
     components.router.get('/snapshots', async () => ({
@@ -284,32 +290,9 @@ test('when successfully process all snapshot files', ({ components, stubComponen
     })
 
     components.router.get('/pointer-changes', async (ctx) => {
-      if (!ctx.url.searchParams.has('from')) throw new Error('pointer-changes called without ?from')
-
-      if (ctx.url.searchParams.get('from') == '16') {
-        return {
-          body: {
-            deltas: [
-              { entityType: 'profile', entityId: 'Qm000010', entityTimestamp: 10, authChain, pointers: ['0x1'] },
-              { entityType: 'profile', entityId: 'Qm000011', entityTimestamp: 11, authChain, pointers: ['0x1'] },
-            ],
-            pagination: {
-              next: '?from=18&entityId=Qm000011',
-            },
-          },
-        }
-      }
-
-      if (ctx.url.searchParams.get('from') != '18' && ctx.url.searchParams.get('entityId') != 'Qm000011') {
-        throw new Error('pagination is not working properly')
-      }
-
       return {
         body: {
-          deltas: [
-            { entityType: 'profile', entityId: 'Qm000012', entityTimestamp: 12, authChain, pointers: ['0x1'] },
-            { entityType: 'profile', entityId: 'Qm000013', entityTimestamp: 13, authChain, pointers: ['0x1'] },
-          ],
+          deltas: [],
           pagination: {},
         },
       }
@@ -390,32 +373,9 @@ test('when successfully process a snapshot file and fails to process other', ({ 
     })
 
     components.router.get('/pointer-changes', async (ctx) => {
-      if (!ctx.url.searchParams.has('from')) throw new Error('pointer-changes called without ?from')
-
-      if (ctx.url.searchParams.get('from') == '9') {
-        return {
-          body: {
-            deltas: [
-              { entityType: 'profile', entityId: 'Qm000010', entityTimestamp: 10, authChain, pointers: ['0x1'] },
-              { entityType: 'profile', entityId: 'Qm000011', entityTimestamp: 11, authChain, pointers: ['0x1'] },
-            ],
-            pagination: {
-              next: '?from=11&entityId=Qm000011',
-            },
-          },
-        }
-      }
-
-      if (ctx.url.searchParams.get('from') != '11' && ctx.url.searchParams.get('entityId') != 'Qm000011') {
-        throw new Error('pagination is not working properly')
-      }
-
       return {
         body: {
-          deltas: [
-            { entityType: 'profile', entityId: 'Qm000012', entityTimestamp: 12, authChain, pointers: ['0x1'] },
-            { entityType: 'profile', entityId: 'Qm000013', entityTimestamp: 13, authChain, pointers: ['0x1'] },
-          ],
+          deltas: [],
           pagination: {},
         },
       }
@@ -469,6 +429,8 @@ test('getDeployedEntitiesStream from old /snapshot endpoint', ({ components, stu
       signature: '',
     },
   ]
+
+  const greatestEntityTimestamp = 9
   it('prepares the endpoints', () => {
     // serve the snapshots
     components.router.get('/snapshot', async () => ({
@@ -499,7 +461,7 @@ test('getDeployedEntitiesStream from old /snapshot endpoint', ({ components, stu
     components.router.get('/pointer-changes', async (ctx) => {
       if (!ctx.url.searchParams.has('from')) throw new Error('pointer-changes called without ?from')
 
-      if (ctx.url.searchParams.get('from') == '9') {
+      if (ctx.url.searchParams.get('from') == (greatestEntityTimestamp - ms('20m')).toString()) {
         return {
           body: {
             deltas: [
@@ -569,7 +531,7 @@ test('getDeployedEntitiesStream from old /snapshot endpoint', ({ components, stu
       { entityType: 'profile', entityId: 'Qm000006', entityTimestamp: 6, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
       { entityType: 'profile', entityId: 'Qm000007', entityTimestamp: 7, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
       { entityType: 'profile', entityId: 'Qm000008', entityTimestamp: 8, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
-      { entityType: 'profile', entityId: 'Qm000009', entityTimestamp: 9, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
+      { entityType: 'profile', entityId: 'Qm000009', entityTimestamp: greatestEntityTimestamp, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
       { entityType: 'profile', entityId: 'Qm000010', entityTimestamp: 10, authChain, pointers: ['0x1'] },
       { entityType: 'profile', entityId: 'Qm000011', entityTimestamp: 11, authChain, pointers: ['0x1'] },
       { entityType: 'profile', entityId: 'Qm000012', entityTimestamp: 12, authChain, pointers: ['0x1'] },
@@ -578,7 +540,7 @@ test('getDeployedEntitiesStream from old /snapshot endpoint', ({ components, stu
   })
 })
 
-test("does not download snapshot if it doesn't include relevant deployments. keeps polling after finishing without using pagination", ({
+test('does not download snapshot if it does not include relevant deployments. keeps polling after finishing without using pagination', ({
   components,
 }) => {
   const authChain = [
@@ -603,12 +565,13 @@ test("does not download snapshot if it doesn't include relevant deployments. kee
     components.router.get('/pointer-changes', async (ctx) => {
       if (!ctx.url.searchParams.has('from')) throw new Error('pointer-changes called without ?from')
 
-      if (ctx.url.searchParams.get('from') == '150') {
+      // if (ctx.url.searchParams.get('from') == '150') {
+      if (ctx.url.searchParams.get('from') == (150 - ms('20m')).toString()) {
         return {
           body: {
             deltas: [
-              { entityType: 'profile', entityId: 'Qm000150', entityTimestamp: 150, authChain, pointers: ['0x1'] },
-              { entityType: 'profile', entityId: 'Qm000151', entityTimestamp: 151, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'Qm000150', entityTimestamp: 150, localTimestamp: 150, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'Qm000151', entityTimestamp: 151, localTimestamp: 151, authChain, pointers: ['0x1'] },
             ],
             pagination: {},
           },
@@ -619,8 +582,8 @@ test("does not download snapshot if it doesn't include relevant deployments. kee
         return {
           body: {
             deltas: [
-              { entityType: 'profile', entityId: 'Qm000152', entityTimestamp: 152, authChain, pointers: ['0x1'] },
-              { entityType: 'profile', entityId: 'Qm000153', entityTimestamp: 153, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'Qm000152', entityTimestamp: 152, localTimestamp: 152, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'Qm000153', entityTimestamp: 153, localTimestamp: 153, authChain, pointers: ['0x1'] },
             ],
             pagination: {},
           },
@@ -653,10 +616,10 @@ test("does not download snapshot if it doesn't include relevant deployments. kee
     }
 
     expect(r).toEqual([
-      { entityType: 'profile', entityId: 'Qm000150', entityTimestamp: 150, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000151', entityTimestamp: 151, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000152', entityTimestamp: 152, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000153', entityTimestamp: 153, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000150', entityTimestamp: 150, localTimestamp: 150, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000151', entityTimestamp: 151, localTimestamp: 151, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000152', entityTimestamp: 152, localTimestamp: 152, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000153', entityTimestamp: 153, localTimestamp: 153, authChain, pointers: ['0x1'] },
     ])
   })
 })

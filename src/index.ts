@@ -5,6 +5,7 @@ import { downloadFileWithRetries } from './downloader'
 import { createExponentialFallofRetry } from './exponential-fallof-retry'
 import { processDeploymentsInFile } from './file-processor'
 import { IJobWithLifecycle } from './job-lifecycle-manager'
+import ms from 'ms'
 import {
   CatalystDeploymentStreamComponent,
   CatalystDeploymentStreamOptions,
@@ -165,7 +166,7 @@ export async function* getDeployedEntitiesStream(
   const genesisTimestamp = options.fromTimestamp || 0
 
   // the greatest timestamp we processed
-  let greatestProcessedTimestamp = genesisTimestamp
+  let greatestProcessedEntityTimestampFromSnapshots = genesisTimestamp
 
   const metricLabels = contentServerMetricLabels(options.contentServer)
 
@@ -217,8 +218,8 @@ export async function* getDeployedEntitiesStream(
             }
           }
           // update greatest processed timestamp
-          if (deployment.entityTimestamp > greatestProcessedTimestamp) {
-            greatestProcessedTimestamp = deployment.entityTimestamp
+          if (deployment.entityTimestamp > greatestProcessedEntityTimestampFromSnapshots) {
+            greatestProcessedEntityTimestampFromSnapshots = deployment.entityTimestamp
           }
         }
         components.processedSnapshots.endStreamOf(hash, numberOfStreamedEntities)
@@ -232,15 +233,16 @@ export async function* getDeployedEntitiesStream(
         }
       }
     }
-    greatestProcessedTimestamp = lastIncludedDeploymentTimestamp > greatestProcessedTimestamp
-      ? lastIncludedDeploymentTimestamp : greatestProcessedTimestamp
+    greatestProcessedEntityTimestampFromSnapshots = lastIncludedDeploymentTimestamp > greatestProcessedEntityTimestampFromSnapshots
+      ? lastIncludedDeploymentTimestamp : greatestProcessedEntityTimestampFromSnapshots
   }
 
-  logs.info('End streaming snapshots.', { greatestProcessedTimestamp })
-  // 3. fetch the /pointer-changes of the remote server using the last timestamp from the previous step
+  logs.info('End streaming snapshots.', { greatestProcessedTimestamp: greatestProcessedEntityTimestampFromSnapshots })
+  // 3. fetch the /pointer-changes of the remote server using the last timestamp from the previous step with a grace period of 20 min
+  let localTimestampFromWhichFetchPointerChanges = greatestProcessedEntityTimestampFromSnapshots - ms('20m')
   do {
     // 3.1. download pointer changes and yield
-    const pointerChanges = fetchPointerChanges(components, options.contentServer, greatestProcessedTimestamp)
+    const pointerChanges = fetchPointerChanges(components, options.contentServer, localTimestampFromWhichFetchPointerChanges)
     for await (const rawDeployment of pointerChanges) {
       const deployment = coerceEntityDeployment(rawDeployment)
       if (!deployment) continue
@@ -250,8 +252,15 @@ export async function* getDeployedEntitiesStream(
         yield deployment
       }
       // update greatest processed timestamp
-      if (deployment.entityTimestamp > greatestProcessedTimestamp) {
-        greatestProcessedTimestamp = deployment.entityTimestamp
+      if (deployment.entityTimestamp > greatestProcessedEntityTimestampFromSnapshots) {
+        greatestProcessedEntityTimestampFromSnapshots = deployment.entityTimestamp
+      }
+
+      // update greatest processed local timestamp
+      if (deployment.localTimestamp) {
+        if (deployment.localTimestamp > localTimestampFromWhichFetchPointerChanges) {
+          localTimestampFromWhichFetchPointerChanges = deployment.localTimestamp
+        }
       }
     }
 
