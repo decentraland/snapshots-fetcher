@@ -1,4 +1,5 @@
-import { DeploymentWithAuthChain } from '@dcl/schemas'
+import { PointerChangesSyncDeployment } from '@dcl/schemas'
+import { ILoggerComponent } from '@well-known-components/interfaces'
 import { metricsDefinitions } from './metrics'
 import { SnapshotsFetcherComponents } from './types'
 import { contentServerMetricLabels, fetchJson, saveContentFileToDisk as saveContentFile } from './utils'
@@ -62,15 +63,25 @@ export async function* fetchJsonPaginated<T>(
   }
 }
 
-export function fetchPointerChanges(
+export async function* fetchPointerChanges(
   components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'metrics'>,
   server: string,
-  fromTimestamp: number
-): AsyncIterable<DeploymentWithAuthChain & { localTimestamp: number }> {
+  fromTimestamp: number,
+  logger: ILoggerComponent.ILogger
+): AsyncIterable<PointerChangesSyncDeployment> {
   const url = new URL(
     `${server}/pointer-changes?sortingOrder=ASC&sortingField=local_timestamp&from=${encodeURIComponent(fromTimestamp)}`
   ).toString()
-  return fetchJsonPaginated(components, url, ($) => $.deltas, 'dcl_catalysts_pointer_changes_response_time_seconds')
+  for await (const deployment of fetchJsonPaginated(components, url, ($) => $.deltas, 'dcl_catalysts_pointer_changes_response_time_seconds')) {
+    if (PointerChangesSyncDeployment.validate(deployment)) {
+      yield deployment
+    }
+
+    logger.error('ERROR: Invalid entity deployment from /pointer-changes', {
+      deployment: JSON.stringify(deployment),
+      error: JSON.stringify(PointerChangesSyncDeployment.validate.errors)
+    })
+  }
 }
 
 export async function saveContentFileToDisk(

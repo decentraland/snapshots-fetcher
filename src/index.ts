@@ -1,4 +1,3 @@
-import { DeploymentWithAuthChain } from '@dcl/schemas'
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import { fetchPointerChanges, getSnapshots } from './client'
 import { downloadFileWithRetries } from './downloader'
@@ -16,7 +15,8 @@ import {
   Server,
   SnapshotsFetcherComponents,
 } from './types'
-import { coerceEntityDeployment, contentServerMetricLabels, sleep, streamToBuffer } from './utils'
+import { contentServerMetricLabels, sleep, streamToBuffer } from './utils'
+import { PointerChangesSyncDeployment, SnapshotSyncDeployment } from '@dcl/schemas'
 
 export { metricsDefinitions } from './metrics'
 export { IDeployerComponent } from './types'
@@ -160,13 +160,13 @@ export async function downloadEntityAndContentFiles(
 export async function* getDeployedEntitiesStream(
   components: SnapshotsFetcherComponents,
   options: DeployedEntityStreamOptions
-): AsyncIterable<DeploymentWithAuthChain & { snapshotHash?: string }> {
+): AsyncIterable<(SnapshotSyncDeployment | PointerChangesSyncDeployment) & { snapshotHash?: string }> {
   const logs = components.logs.getLogger(`getDeployedEntitiesStream(${options.contentServer})`)
   // the minimum timestamp we are looking for
   const genesisTimestamp = options.fromTimestamp || 0
 
   // the greatest timestamp we processed
-  let greatestProcessedEntityTimestampFromSnapshots = genesisTimestamp
+  let greatestProcessedDeploymentTimestampFromSnapshots = genesisTimestamp
 
   const metricLabels = contentServerMetricLabels(options.contentServer)
 
@@ -205,11 +205,11 @@ export async function* getDeployedEntitiesStream(
         const deploymentsInFile = processDeploymentsInFile(hash, components)
         components.processedSnapshots.startStreamOf(hash)
         let numberOfStreamedEntities = 0
-        for await (const rawDeployment of deploymentsInFile) {
-          const deployment = coerceEntityDeployment(rawDeployment)
-          if (!deployment) continue
-          // selectively ignore deployments by entityTimestamp
-          if (deployment.entityTimestamp >= genesisTimestamp) {
+        for await (const deployment of deploymentsInFile) {
+
+          const deploymentTimestamp = 'entityTimestamp' in deployment ? deployment.entityTimestamp : deployment.localTimestamp
+
+          if (deploymentTimestamp >= genesisTimestamp) {
             components.metrics.increment('dcl_entities_deployments_processed_total', metricLabels)
             numberOfStreamedEntities++
             yield {
@@ -218,8 +218,8 @@ export async function* getDeployedEntitiesStream(
             }
           }
           // update greatest processed timestamp
-          if (deployment.entityTimestamp > greatestProcessedEntityTimestampFromSnapshots) {
-            greatestProcessedEntityTimestampFromSnapshots = deployment.entityTimestamp
+          if (deploymentTimestamp > greatestProcessedDeploymentTimestampFromSnapshots) {
+            greatestProcessedDeploymentTimestampFromSnapshots = deploymentTimestamp
           }
         }
         components.processedSnapshots.endStreamOf(hash, numberOfStreamedEntities)
@@ -233,27 +233,22 @@ export async function* getDeployedEntitiesStream(
         }
       }
     }
-    greatestProcessedEntityTimestampFromSnapshots = lastIncludedDeploymentTimestamp > greatestProcessedEntityTimestampFromSnapshots
-      ? lastIncludedDeploymentTimestamp : greatestProcessedEntityTimestampFromSnapshots
+    greatestProcessedDeploymentTimestampFromSnapshots = lastIncludedDeploymentTimestamp > greatestProcessedDeploymentTimestampFromSnapshots
+      ? lastIncludedDeploymentTimestamp : greatestProcessedDeploymentTimestampFromSnapshots
   }
 
-  logs.info('End streaming snapshots.', { greatestProcessedTimestamp: greatestProcessedEntityTimestampFromSnapshots })
+  logs.info('End streaming snapshots.', { greatestProcessedTimestamp: greatestProcessedDeploymentTimestampFromSnapshots })
   // 3. fetch the /pointer-changes of the remote server using the last timestamp from the previous step with a grace period of 20 min
-  let localTimestampFromWhichFetchPointerChanges = greatestProcessedEntityTimestampFromSnapshots - ms('20m')
+  let localTimestampFromWhichFetchPointerChanges = greatestProcessedDeploymentTimestampFromSnapshots - ms('20m')
   do {
     // 3.1. download pointer changes and yield
-    const pointerChanges = fetchPointerChanges(components, options.contentServer, localTimestampFromWhichFetchPointerChanges)
-    for await (const rawDeployment of pointerChanges) {
-      const deployment = coerceEntityDeployment(rawDeployment)
-      if (!deployment) continue
+    const pointerChanges = fetchPointerChanges(components, options.contentServer, localTimestampFromWhichFetchPointerChanges, logs)
+    for await (const deployment of pointerChanges) {
+
       // selectively ignore deployments by entityTimestamp
-      if (deployment.entityTimestamp >= genesisTimestamp) {
+      if (deployment.localTimestamp >= genesisTimestamp) {
         components.metrics.increment('dcl_entities_deployments_processed_total', metricLabels)
         yield deployment
-      }
-      // update greatest processed timestamp
-      if (deployment.entityTimestamp > greatestProcessedEntityTimestampFromSnapshots) {
-        greatestProcessedEntityTimestampFromSnapshots = deployment.entityTimestamp
       }
 
       // update greatest processed local timestamp
@@ -309,9 +304,10 @@ export function createCatalystDeploymentStream(
 
           await components.deployer.deployEntity(deployment, [options.contentServer])
 
+          const deploymentTimestamp = 'entityTimestamp' in deployment ? deployment.entityTimestamp : deployment.localTimestamp
           // update greatest processed timestamp
-          if (deployment.entityTimestamp > greatestProcessedTimestamp) {
-            greatestProcessedTimestamp = deployment.entityTimestamp
+          if (deploymentTimestamp > greatestProcessedTimestamp) {
+            greatestProcessedTimestamp = deploymentTimestamp
           }
         }
       } catch (e: any) {

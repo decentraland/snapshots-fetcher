@@ -1,7 +1,6 @@
 import { SnapshotsFetcherComponents } from './types'
 import { createInterface } from 'readline'
-import { coerceEntityDeployment } from './utils'
-import { DeploymentWithAuthChain } from '@dcl/schemas'
+import { PointerChangesSyncDeployment, SnapshotSyncDeployment } from '@dcl/schemas'
 
 async function* processLineByLine(input: NodeJS.ReadableStream) {
   yield* createInterface({
@@ -18,7 +17,7 @@ async function* processLineByLine(input: NodeJS.ReadableStream) {
 export async function* processDeploymentsInFile(
   file: string,
   components: Pick<SnapshotsFetcherComponents, 'storage'>
-): AsyncIterable<DeploymentWithAuthChain> {
+): AsyncIterable<PointerChangesSyncDeployment | SnapshotSyncDeployment> {
   const fileContent = await components.storage.retrieve(file)
 
   if (!fileContent) {
@@ -41,14 +40,24 @@ export async function* processDeploymentsInFile(
  */
 export async function* processDeploymentsInStream(
   stream: NodeJS.ReadableStream
-): AsyncIterable<DeploymentWithAuthChain> {
+): AsyncIterable<SnapshotSyncDeployment | PointerChangesSyncDeployment> {
   for await (const line of processLineByLine(stream)) {
     const theLine = line.trim()
     if (theLine.startsWith('{') && theLine.endsWith('}')) {
-      const deployment = coerceEntityDeployment(JSON.parse(theLine))
-      if (deployment) {
-        yield deployment
+      const parsedLine = JSON.parse(theLine)
+      if (SnapshotSyncDeployment.validate(parsedLine)) {
+        yield parsedLine
       }
+      if (PointerChangesSyncDeployment.validate(parsedLine)) {
+        return parsedLine
+      }
+
+      const errors = {
+        ...SnapshotSyncDeployment.validate.errors,
+        ...PointerChangesSyncDeployment.validate.errors
+      }
+
+      console.error('ERROR: Invalid entity deployment in snapshot file', parsedLine, errors)
     }
   }
 }
