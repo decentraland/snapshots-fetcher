@@ -434,7 +434,7 @@ test('getDeployedEntitiesStream from old /snapshot endpoint', ({ components, stu
     }))
 
     components.router.get('/snapshots', async () => {
-      throw new Error('i am an error')
+      throw new Error('i am an error!')
     })
 
     // serve the snapshot file
