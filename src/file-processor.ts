@@ -1,6 +1,6 @@
 import { SnapshotsFetcherComponents } from './types'
 import { createInterface } from 'readline'
-import { PointerChangesSyncDeployment, SnapshotSyncDeployment } from '@dcl/schemas'
+import { PointerChangesSyncDeployment, SnapshotSyncDeployment, SyncDeployment } from '@dcl/schemas'
 
 async function* processLineByLine(input: NodeJS.ReadableStream) {
   yield* createInterface({
@@ -17,7 +17,7 @@ async function* processLineByLine(input: NodeJS.ReadableStream) {
 export async function* processDeploymentsInFile(
   file: string,
   components: Pick<SnapshotsFetcherComponents, 'storage'>
-): AsyncIterable<PointerChangesSyncDeployment | SnapshotSyncDeployment> {
+): AsyncIterable<SyncDeployment> {
   const fileContent = await components.storage.retrieve(file)
 
   if (!fileContent) {
@@ -40,24 +40,22 @@ export async function* processDeploymentsInFile(
  */
 export async function* processDeploymentsInStream(
   stream: NodeJS.ReadableStream
-): AsyncIterable<SnapshotSyncDeployment | PointerChangesSyncDeployment> {
+): AsyncIterable<SyncDeployment> {
   for await (const line of processLineByLine(stream)) {
     const theLine = line.trim()
     if (theLine.startsWith('{') && theLine.endsWith('}')) {
       const parsedLine = JSON.parse(theLine)
       if (SnapshotSyncDeployment.validate(parsedLine)) {
         yield parsedLine
+      } else if (PointerChangesSyncDeployment.validate(parsedLine)) {
+        yield parsedLine
+      } else {
+        const errors = {
+          ...SnapshotSyncDeployment.validate.errors,
+          ...PointerChangesSyncDeployment.validate.errors
+        }
+        console.error('ERROR: Invalid entity deployment in snapshot file', parsedLine, errors)
       }
-      if (PointerChangesSyncDeployment.validate(parsedLine)) {
-        return parsedLine
-      }
-
-      const errors = {
-        ...SnapshotSyncDeployment.validate.errors,
-        ...PointerChangesSyncDeployment.validate.errors
-      }
-
-      console.error('ERROR: Invalid entity deployment in snapshot file', parsedLine, errors)
     }
   }
 }

@@ -16,7 +16,7 @@ import {
   SnapshotsFetcherComponents,
 } from './types'
 import { contentServerMetricLabels, sleep, streamToBuffer } from './utils'
-import { PointerChangesSyncDeployment, SnapshotSyncDeployment } from '@dcl/schemas'
+import { PointerChangesSyncDeployment, SnapshotSyncDeployment, SyncDeployment } from '@dcl/schemas'
 
 export { metricsDefinitions } from './metrics'
 export { IDeployerComponent } from './types'
@@ -160,7 +160,7 @@ export async function downloadEntityAndContentFiles(
 export async function* getDeployedEntitiesStream(
   components: SnapshotsFetcherComponents,
   options: DeployedEntityStreamOptions
-): AsyncIterable<(SnapshotSyncDeployment | PointerChangesSyncDeployment) & { snapshotHash?: string }> {
+): AsyncIterable<SyncDeployment & { snapshotHash?: string }> {
   const logs = components.logs.getLogger(`getDeployedEntitiesStream(${options.contentServer})`)
   // the minimum timestamp we are looking for
   const genesisTimestamp = options.fromTimestamp || 0

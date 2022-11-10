@@ -75,12 +75,12 @@ export async function* fetchPointerChanges(
   for await (const deployment of fetchJsonPaginated(components, url, ($) => $.deltas, 'dcl_catalysts_pointer_changes_response_time_seconds')) {
     if (PointerChangesSyncDeployment.validate(deployment)) {
       yield deployment
+    } else {
+      logger.error('ERROR: Invalid entity deployment from /pointer-changes', {
+        deployment: JSON.stringify(deployment),
+        error: JSON.stringify(PointerChangesSyncDeployment.validate.errors)
+      })
     }
-
-    logger.error('ERROR: Invalid entity deployment from /pointer-changes', {
-      deployment: JSON.stringify(deployment),
-      error: JSON.stringify(PointerChangesSyncDeployment.validate.errors)
-    })
   }
 }
 

@@ -66,8 +66,8 @@ test('createCatalystDeploymentStream', ({ components, stubComponents }) => {
         return {
           body: {
             deltas: [
-              { entityType: 'profile', entityId: 'Qm000010', entityTimestamp: 10, localTimestamp: 10, authChain, pointers: ['0x1'] },
-              { entityType: 'profile', entityId: 'Qm000011', entityTimestamp: 11, localTimestamp: 11, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'Qm000010', localTimestamp: 10, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'Qm000011', localTimestamp: 11, authChain, pointers: ['0x1'] },
             ],
             pagination: {
               next: '?from=11&entityId=Qm000011&sortingOrder=ASC&sortingField=local_timestamp',
@@ -89,8 +89,8 @@ test('createCatalystDeploymentStream', ({ components, stubComponents }) => {
       return {
         body: {
           deltas: [
-            { entityType: 'profile', entityId: 'Qm000012', entityTimestamp: 12, localTimestamp: 12, authChain, pointers: ['0x1'] },
-            { entityType: 'profile', entityId: 'Qm000013', entityTimestamp: 13, localTimestamp: 13, authChain, pointers: ['0x1'] },
+            { entityType: 'profile', entityId: 'Qm000012', localTimestamp: 12, authChain, pointers: ['0x1'] },
+            { entityType: 'profile', entityId: 'Qm000013', localTimestamp: 13, authChain, pointers: ['0x1'] },
           ],
           pagination: {},
         },
@@ -167,10 +167,10 @@ test('createCatalystDeploymentStream', ({ components, stubComponents }) => {
       { entityType: 'profile', entityId: 'Qm000007', entityTimestamp: 7, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
       { entityType: 'profile', entityId: 'Qm000008', entityTimestamp: 8, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
       { entityType: 'profile', entityId: 'Qm000009', entityTimestamp: greatestEntityTimestampFromSnapshot, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile },
-      { entityType: 'profile', entityId: 'Qm000010', entityTimestamp: 10, localTimestamp: 10, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000011', entityTimestamp: 11, localTimestamp: 11, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000012', entityTimestamp: 12, localTimestamp: 12, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000013', entityTimestamp: 13, localTimestamp: 13, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000010', localTimestamp: 10, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000011', localTimestamp: 11, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000012', localTimestamp: 12, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'Qm000013', localTimestamp: 13, authChain, pointers: ['0x1'] },
     ])
 
     expect(stream.getGreatesProcessedTimestamp()).toEqual(13)

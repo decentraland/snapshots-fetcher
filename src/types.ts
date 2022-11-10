@@ -3,8 +3,8 @@ import { ILoggerComponent, IMetricsComponent } from '@well-known-components/inte
 import { ExponentialFallofRetryComponent } from './exponential-fallof-retry'
 import { IJobQueue } from './job-queue-port'
 import { metricsDefinitions } from './metrics'
-import { DeploymentWithAuthChain } from '@dcl/schemas'
 import { IContentStorageComponent } from '@dcl/catalyst-storage'
+import { SyncDeployment } from '@dcl/schemas'
 
 /**
  * @public
@@ -46,7 +46,7 @@ export type SnapshotsFetcherComponents = {
  * @public
  */
 export type IDeployerComponent = {
-  deployEntity(entity: DeploymentWithAuthChain & { snapshotHash?: string }, contentServers: string[]): Promise<void>
+  deployEntity(entity: SyncDeployment & { snapshotHash?: string }, contentServers: string[]): Promise<void>
   /**
    * onIdle returns a promise that should be resolved once every deployEntity(...) job has
    * finished and there are no more queued jobs.
@@ -104,7 +104,7 @@ export type CatalystDeploymentStreamComponent = ExponentialFallofRetryComponent 
 /**
  * @public
  */
-export type DeploymentHandler = (deployment: DeploymentWithAuthChain, server: string) => Promise<void>
+export type DeploymentHandler = (deployment: SyncDeployment, server: string) => Promise<void>
 
 /**
  * @public
