@@ -7,7 +7,7 @@
   "scripts": {
     "clean-api-extractor": "rm -rf node_modules/@microsoft/api-extractor/node_modules/typescript || true",
     "api-extractor": "yarn clean-api-extractor && api-extractor run --local --verbose --diagnostics --typescript-compiler-folder ./node_modules/typescript",
-    "api-extractor-ci": "yarn clean-api-extractor && api-extractor run --typescript-compiler-folder ./node_modules/typescript",
+    "api-extractor-ci": "ls etc && yarn clean-api-extractor && api-extractor run --verbose --typescript-compiler-folder ./node_modules/typescript",
     "build": "tsc -p tsconfig.json",
     "test": "jest --runInBand --forceExit --detectOpenHandles --coverage"
   },
