@@ -4,11 +4,11 @@
 
 ```ts
 
-import { DeploymentWithAuthChain } from '@dcl/schemas';
 import { IContentStorageComponent } from '@dcl/catalyst-storage';
 import { IFetchComponent } from '@well-known-components/http-server';
 import { ILoggerComponent } from '@well-known-components/interfaces';
 import { IMetricsComponent } from '@well-known-components/interfaces';
+import { SyncDeployment } from '@dcl/schemas';
 
 // Warning: (ae-forgotten-export) The symbol "SnapshotsFetcherComponents" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "CatalystDeploymentStreamOptions" needs to be exported by the entry point index.d.ts
@@ -34,13 +34,13 @@ export function downloadEntityAndContentFiles(components: Pick<SnapshotsFetcherC
 // Warning: (ae-forgotten-export) The symbol "DeployedEntityStreamOptions" needs to be exported by the entry point index.d.ts
 //
 // @public
-export function getDeployedEntitiesStream(components: SnapshotsFetcherComponents, options: DeployedEntityStreamOptions): AsyncIterable<DeploymentWithAuthChain & {
+export function getDeployedEntitiesStream(components: SnapshotsFetcherComponents, options: DeployedEntityStreamOptions): AsyncIterable<SyncDeployment & {
     snapshotHash?: string;
 }>;
 
 // @public
 export type IDeployerComponent = {
-    deployEntity(entity: DeploymentWithAuthChain & {
+    deployEntity(entity: SyncDeployment & {
         snapshotHash?: string;
     }, contentServers: string[]): Promise<void>;
     onIdle(): Promise<void>;
