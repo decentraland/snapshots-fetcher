@@ -1,6 +1,7 @@
 import { SnapshotsFetcherComponents } from './types'
 import { createInterface } from 'readline'
 import { PointerChangesSyncDeployment, SnapshotSyncDeployment, SyncDeployment } from '@dcl/schemas'
+import { ILoggerComponent } from '@well-known-components/interfaces'
 
 async function* processLineByLine(input: NodeJS.ReadableStream) {
   yield* createInterface({
@@ -16,7 +17,8 @@ async function* processLineByLine(input: NodeJS.ReadableStream) {
  */
 export async function* processDeploymentsInFile(
   file: string,
-  components: Pick<SnapshotsFetcherComponents, 'storage'>
+  components: Pick<SnapshotsFetcherComponents, 'storage'>,
+  logger: ILoggerComponent.ILogger
 ): AsyncIterable<SyncDeployment> {
   const fileContent = await components.storage.retrieve(file)
 
@@ -27,7 +29,7 @@ export async function* processDeploymentsInFile(
   const stream = await fileContent!.asStream()
 
   try {
-    yield* processDeploymentsInStream(stream)
+    yield* processDeploymentsInStream(stream, logger)
   } finally {
     stream.destroy()
   }
@@ -39,7 +41,8 @@ export async function* processDeploymentsInFile(
  * @public
  */
 export async function* processDeploymentsInStream(
-  stream: NodeJS.ReadableStream
+  stream: NodeJS.ReadableStream,
+  logger: ILoggerComponent.ILogger
 ): AsyncIterable<SyncDeployment> {
   for await (const line of processLineByLine(stream)) {
     const theLine = line.trim()
@@ -54,7 +57,10 @@ export async function* processDeploymentsInStream(
           ...SnapshotSyncDeployment.validate.errors,
           ...PointerChangesSyncDeployment.validate.errors
         }
-        console.error('ERROR: Invalid entity deployment in snapshot file', parsedLine, errors)
+        logger.error('ERROR: Invalid entity deployment in snapshot file', {
+          deployment: parsedLine,
+          error: JSON.stringify(errors)
+        })
       }
     }
   }

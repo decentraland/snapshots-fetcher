@@ -16,7 +16,7 @@ import {
   SnapshotsFetcherComponents,
 } from './types'
 import { contentServerMetricLabels, sleep, streamToBuffer } from './utils'
-import { PointerChangesSyncDeployment, SnapshotSyncDeployment, SyncDeployment } from '@dcl/schemas'
+import { SyncDeployment } from '@dcl/schemas'
 
 export { metricsDefinitions } from './metrics'
 export { IDeployerComponent } from './types'
@@ -202,7 +202,7 @@ export async function* getDeployedEntitiesStream(
         )
 
         // 2.2. open the snapshot file and process line by line
-        const deploymentsInFile = processDeploymentsInFile(hash, components)
+        const deploymentsInFile = processDeploymentsInFile(hash, components, logs)
         components.processedSnapshots.startStreamOf(hash)
         let numberOfStreamedEntities = 0
         for await (const deployment of deploymentsInFile) {
