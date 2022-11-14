@@ -41,7 +41,7 @@ export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetc
 
       return !isBeingStreamed && !wasStreamed && !(snapshotWasAlreadyProcessed || replacedHashesWereAlreadyProcessed)
     },
-    startStreamOf(snapshotHash: string) {
+    async startStreamOf(snapshotHash: string) {
       snapshotsBeingStreamed.add(snapshotHash)
       logger.info('Starting stream...', { snapshotHash })
     },

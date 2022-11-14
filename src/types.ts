@@ -128,7 +128,7 @@ export type IProcessedSnapshotStorageComponent = {
 
 export type IProcessedSnapshotsComponent = {
   shouldStream(snapshotHash: string, replacedSnapshotHashes?: string[]): Promise<boolean>
-  startStreamOf(snapshotHash: string): void
+  startStreamOf(snapshotHash: string): Promise<void>
   endStreamOf(snapshotHash: string, numberOfEntitiesStreamed: number): Promise<void>
   entityProcessedFrom(snapshotHash: string): Promise<void>
 }

@@ -203,7 +203,7 @@ export async function* getDeployedEntitiesStream(
 
         // 2.2. open the snapshot file and process line by line
         const deploymentsInFile = processDeploymentsInFile(hash, components, logs)
-        components.processedSnapshots.startStreamOf(hash)
+        await components.processedSnapshots.startStreamOf(hash)
         let numberOfStreamedEntities = 0
         for await (const deployment of deploymentsInFile) {
 
@@ -222,7 +222,7 @@ export async function* getDeployedEntitiesStream(
             greatestProcessedDeploymentTimestampFromSnapshots = deploymentTimestamp
           }
         }
-        components.processedSnapshots.endStreamOf(hash, numberOfStreamedEntities)
+        await components.processedSnapshots.endStreamOf(hash, numberOfStreamedEntities)
       } finally {
         if (options.deleteSnapshotAfterUsage !== false) {
           try {
@@ -245,7 +245,7 @@ export async function* getDeployedEntitiesStream(
     const pointerChanges = fetchPointerChanges(components, options.contentServer, localTimestampFromWhichFetchPointerChanges, logs)
     for await (const deployment of pointerChanges) {
 
-      // selectively ignore deployments by entityTimestamp
+      // selectively ignore deployments by localTimestamp
       if (deployment.localTimestamp >= genesisTimestamp) {
         components.metrics.increment('dcl_entities_deployments_processed_total', metricLabels)
         yield deployment
