@@ -239,7 +239,7 @@ export async function* getDeployedEntitiesStream(
 
   logs.info('End streaming snapshots.', { greatestProcessedTimestamp: greatestProcessedDeploymentTimestampFromSnapshots })
   // 3. fetch the /pointer-changes of the remote server using the last timestamp from the previous step with a grace period of 20 min
-  let localTimestampFromWhichFetchPointerChanges = greatestProcessedDeploymentTimestampFromSnapshots - ms('20m')
+  let localTimestampFromWhichFetchPointerChanges = greatestProcessedDeploymentTimestampFromSnapshots - 20 * 60_000
   do {
     // 3.1. download pointer changes and yield
     const pointerChanges = fetchPointerChanges(components, options.contentServer, localTimestampFromWhichFetchPointerChanges, logs)

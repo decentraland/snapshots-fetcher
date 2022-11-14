@@ -62,7 +62,7 @@ test('createCatalystDeploymentStream', ({ components, stubComponents }) => {
 
       if (!ctx.url.searchParams.has('from')) throw new Error('pointer-changes called without ?from')
 
-      if (ctx.url.searchParams.get('from') == (greatestEntityTimestampFromSnapshot - ms('20m')).toString()) {
+      if (ctx.url.searchParams.get('from') == (greatestEntityTimestampFromSnapshot - 20 * 60_000).toString()) {
         return {
           body: {
             deltas: [

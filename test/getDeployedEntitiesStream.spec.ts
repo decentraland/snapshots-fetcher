@@ -48,7 +48,7 @@ test('getDeployedEntitiesStream from /snapshots endpoint', ({ components, stubCo
     components.router.get('/pointer-changes', async (ctx) => {
       if (!ctx.url.searchParams.has('from')) throw new Error('pointer-changes called without ?from')
 
-      if (ctx.url.searchParams.get('from') == (greatestEntityTimestamp - ms('20m')).toString()) {
+      if (ctx.url.searchParams.get('from') == (greatestEntityTimestamp - 20 * 60_000).toString()) {
         return {
           body: {
             deltas: [
@@ -167,7 +167,7 @@ test('fetches a stream without deleting the downloaded file', ({ components, stu
     components.router.get('/pointer-changes', async (ctx) => {
       if (!ctx.url.searchParams.has('from')) throw new Error('pointer-changes called without ?from')
 
-      if (ctx.url.searchParams.get('from') == (greatestEntityTimestamp - ms('20m')).toString()) {
+      if (ctx.url.searchParams.get('from') == (greatestEntityTimestamp - 20 * 60_000).toString()) {
         return {
           body: {
             deltas: [
@@ -454,7 +454,7 @@ test('getDeployedEntitiesStream from old /snapshot endpoint', ({ components, stu
     components.router.get('/pointer-changes', async (ctx) => {
       if (!ctx.url.searchParams.has('from')) throw new Error('pointer-changes called without ?from')
 
-      if (ctx.url.searchParams.get('from') == (greatestEntityTimestamp - ms('20m')).toString()) {
+      if (ctx.url.searchParams.get('from') == (greatestEntityTimestamp - 20 * 60_000).toString()) {
         return {
           body: {
             deltas: [
@@ -559,7 +559,7 @@ test('does not download snapshot if it does not include relevant deployments. ke
       if (!ctx.url.searchParams.has('from')) throw new Error('pointer-changes called without ?from')
 
       // if (ctx.url.searchParams.get('from') == '150') {
-      if (ctx.url.searchParams.get('from') == (150 - ms('20m')).toString()) {
+      if (ctx.url.searchParams.get('from') == (150 - 20 * 60_000).toString()) {
         return {
           body: {
             deltas: [
