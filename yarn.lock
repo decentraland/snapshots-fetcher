@@ -297,14 +297,14 @@
     "@jridgewell/trace-mapping" "0.3.9"
 
 "@dcl/catalyst-storage@^1.0.0-20220604235145.commit-892b669":
-  version "1.0.3"
-  resolved "https://registry.yarnpkg.com/@dcl/catalyst-storage/-/catalyst-storage-1.0.3.tgz#f3209f28ebb8e0f971c50c4f95b76a89685584ff"
-  integrity sha512-XiujuMbgSIFeI79K/qNGsTUnyM8YcWM49Skn4CpTBvH0GWYDbbk7Fp+kK4LCmGmxg0EHbZglgt2hRZCQPhE9aw==
+  version "1.0.4"
+  resolved "https://registry.yarnpkg.com/@dcl/catalyst-storage/-/catalyst-storage-1.0.4.tgz#10ae674bfd1b8563021ea98e917047e3166bf67a"
+  integrity sha512-+ZudliKrQaR/J6QEb2XF1JlA3VGWtljT7Ms5Wrp6wFxL2qyjBbqs9D1uEBsuvhP0itkW62QXaphQFUZxd3UTRQ==
   dependencies:
     "@types/destroy" "^1.0.0"
     "@types/node" "^18.6.3"
     "@well-known-components/interfaces" "^1.1.1"
-    aws-sdk "^2.1148.0"
+    aws-sdk "^2.1248.0"
     destroy "^1.2.0"
 
 "@dcl/hashing@^1.0.0":
@@ -1208,10 +1208,10 @@ available-typed-arrays@^1.0.5:
   resolved "https://registry.yarnpkg.com/available-typed-arrays/-/available-typed-arrays-1.0.5.tgz#92f95616501069d07d10edb2fc37d3e1c65123b7"
   integrity sha512-DMD0KiN46eipeziST1LPP/STfDU0sufISXmjSgvVsoU2tqxctQeASejWcfNtxYKqETM1UxQ8sp2OrSBWpHY6sw==
 
-aws-sdk@^2.1148.0:
-  version "2.1178.0"
-  resolved "https://registry.yarnpkg.com/aws-sdk/-/aws-sdk-2.1178.0.tgz#b0f4b67494e7009427cd7059a3d908d333633fdb"
-  integrity sha512-ZsFuVbTp9aakAIZ7lTJspuCzSw5VRIDF0bUmSZmE2tc/X/haTu/TrMeWgwPjyLkQtdhfjChCyI71V+ADqFkjsA==
+aws-sdk@^2.1248.0:
+  version "2.1253.0"
+  resolved "https://registry.yarnpkg.com/aws-sdk/-/aws-sdk-2.1253.0.tgz#28ac12775f4d1589e366db6f2b162d8ea150c2ad"
+  integrity sha512-jlEfWPmRGRdeSVhtRhZnX/vvbJtHu6wzrm7DEUytef5I8P9kxFXnY/lByaXN20WpoU9Kw8zcEOVYIre4LLgswA==
   dependencies:
     buffer "4.9.2"
     events "1.1.1"
