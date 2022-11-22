@@ -31,47 +31,47 @@ describe('processed snapshots', () => {
     processedSnapshots = createProcessedSnapshotsComponent({ processedSnapshotStorage, logs })
   })
 
-  describe('shouldStream', () => {
-    it('should return false when the snapshot was processed', async () => {
-      processedSnapshotStorage.saveProcessed(processedSnapshot)
-      expect(await processedSnapshots.shouldStream(processedSnapshot)).toBeFalsy()
-    })
+  // describe('shouldStream', () => {
+  //   it('should return false when the snapshot was processed', async () => {
+  //     processedSnapshotStorage.saveProcessed(processedSnapshot)
+  //     expect(await processedSnapshots.shouldStream(processedSnapshot)).toBeFalsy()
+  //   })
 
-    it('should return false when the replaced hashes where processed', async () => {
-      processedSnapshotStorage.saveProcessed(h1)
-      processedSnapshotStorage.saveProcessed(h2)
-      processedSnapshotStorage.saveProcessed(h3)
+  //   it('should return false when the replaced hashes where processed', async () => {
+  //     processedSnapshotStorage.saveProcessed(h1)
+  //     processedSnapshotStorage.saveProcessed(h2)
+  //     processedSnapshotStorage.saveProcessed(h3)
 
-      expect(await processedSnapshots.shouldStream(processedSnapshot, [h1, h2, h3])).toBeFalsy()
-    })
+  //     expect(await processedSnapshots.shouldStream(processedSnapshot, [h1, h2, h3])).toBeFalsy()
+  //   })
 
-    it('should return false and save the snapshot as processed when the replaced hashes where processed', async () => {
-      processedSnapshotStorage.saveProcessed(h1)
-      processedSnapshotStorage.saveProcessed(h2)
-      processedSnapshotStorage.saveProcessed(h3)
+  //   it('should return false and save the snapshot as processed when the replaced hashes where processed', async () => {
+  //     processedSnapshotStorage.saveProcessed(h1)
+  //     processedSnapshotStorage.saveProcessed(h2)
+  //     processedSnapshotStorage.saveProcessed(h3)
 
-      await processedSnapshots.shouldStream(processedSnapshot, [h1, h2, h3])
+  //     await processedSnapshots.shouldStream(processedSnapshot, [h1, h2, h3])
 
-      const processedSnapshotsInDB = await processedSnapshotStorage.processedFrom([processedSnapshot])
-      expect(processedSnapshotsInDB.has(processedSnapshot)).toBeTruthy()
-    })
+  //     const processedSnapshotsInDB = await processedSnapshotStorage.processedFrom([processedSnapshot])
+  //     expect(processedSnapshotsInDB.has(processedSnapshot)).toBeTruthy()
+  //   })
 
-    it('should return false when the snapshot is being streamed', async () => {
-      processedSnapshots.startStreamOf(processedSnapshot)
-      expect(await processedSnapshots.shouldStream(processedSnapshot)).toBeFalsy()
-    })
+  //   it('should return false when the snapshot is being streamed', async () => {
+  //     processedSnapshots.startStreamOf(processedSnapshot)
+  //     expect(await processedSnapshots.shouldStream(processedSnapshot)).toBeFalsy()
+  //   })
 
-    it('should return false when the snapshot was completely streamed', async () => {
-      processedSnapshots.startStreamOf(processedSnapshot)
-      processedSnapshots.endStreamOf(processedSnapshot, 1)
-      expect(await processedSnapshots.shouldStream(processedSnapshot)).toBeFalsy()
-    })
+  //   it('should return false when the snapshot was completely streamed', async () => {
+  //     processedSnapshots.startStreamOf(processedSnapshot)
+  //     processedSnapshots.endStreamOf(processedSnapshot, 1)
+  //     expect(await processedSnapshots.shouldStream(processedSnapshot)).toBeFalsy()
+  //   })
 
-    it('should return true when the snapshot and the replaced ones were not processed', async () => {
-      expect(await processedSnapshots.shouldStream(processedSnapshot, [h1, h2, h3])).toBeTruthy()
-    })
+  //   it('should return true when the snapshot and the replaced ones were not processed', async () => {
+  //     expect(await processedSnapshots.shouldStream(processedSnapshot, [h1, h2, h3])).toBeTruthy()
+  //   })
 
-  })
+  // })
 
   describe('endStreamOf', () => {
     it('should not save the snapshot as processed when there are still entities to process', async () => {

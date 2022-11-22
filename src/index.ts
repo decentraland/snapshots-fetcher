@@ -1,10 +1,9 @@
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import { fetchPointerChanges, getSnapshots } from './client'
 import { downloadFileWithRetries } from './downloader'
-import { createExponentialFallofRetry } from './exponential-fallof-retry'
+import { createExponentialFallofRetry, ExponentialFallofRetryComponent } from './exponential-fallof-retry'
 import { processDeploymentsInFile } from './file-processor'
-import { IJobWithLifecycle } from './job-lifecycle-manager'
-import ms from 'ms'
+import { createJobLifecycleManagerComponent, IJobWithLifecycle } from './job-lifecycle-manager'
 import {
   CatalystDeploymentStreamComponent,
   CatalystDeploymentStreamOptions,
@@ -151,115 +150,124 @@ export async function downloadEntityAndContentFiles(
 }
 
 /**
- * Gets a stream of all the entities deployed to a server.
+ * Gets a stream of all the entities deployed to all the servers that are part of a snapshot.
  * Includes all the entities that are already present in the server.
  * Accepts a fromTimestamp option to filter out previous deployments.
  *
  * @public
  */
-export async function* getDeployedEntitiesStream(
+export async function* getDeployedEntitiesStreamFromSnapshots(
   components: SnapshotsFetcherComponents,
-  options: DeployedEntityStreamOptions
-): AsyncIterable<SyncDeployment & { snapshotHash?: string }> {
-  const logs = components.logs.getLogger(`getDeployedEntitiesStream(${options.contentServer})`)
+  options: DeployedEntityStreamOptions,
+  contentServers: string[]
+): AsyncIterable<SyncDeployment & {
+  snapshotHash: string
+  servers: string[]
+}> {
+  const logs = components.logs.getLogger('getDeployedEntitiesStream')
   // the minimum timestamp we are looking for
   const genesisTimestamp = options.fromTimestamp || 0
 
-  // the greatest timestamp we processed
-  let greatestProcessedDeploymentTimestampFromSnapshots = genesisTimestamp
-
-  const metricLabels = contentServerMetricLabels(options.contentServer)
-
   // 1. get the hashes of the latest snapshots in the remote server, retry 10 times
-  const snapshots = await getSnapshots(
-    components,
-    options.contentServer,
-    options.requestMaxRetries
-  )
+  const serversSnapshotsBySnapshotHash: Map<string, {
+    snapshot: {
+      hash: string
+      lastIncludedDeploymentTimestamp: number
+      replacedSnapshotHashes?: string[] | undefined
+    },
+    server: string
+  }[]> = new Map()
+  for (const server of contentServers) {
+    const snapshots = await getSnapshots(components, server, options.requestMaxRetries)
+    for (const snapshot of snapshots) {
+      const servers = serversSnapshotsBySnapshotHash.get(snapshot.hash) ?? []
+      servers.push({ snapshot, server })
+      serversSnapshotsBySnapshotHash.set(snapshot.hash, servers)
+    }
+  }
 
-  for (const snapshot of snapshots) {
-    const { hash, lastIncludedDeploymentTimestamp, replacedSnapshotHashes } = snapshot
-    logs.debug('Snapshot found.', { contentServer: options.contentServer, hash: snapshot.hash })
-    // 2. for each snapshot, download the snapshot file if it contains deployments
-    //    in the range we are interested (>= genesisTimestamp)
+  for (const [snapshotHash, snapshotsWithServer] of serversSnapshotsBySnapshotHash.entries()) {
+    logs.debug('Snapshot found.', { hash: snapshotHash, contentServers: JSON.stringify(snapshotsWithServer.map(s => s.server)) })
+    const snapshotIsAfterGensisTimestampInSomeServer = snapshotsWithServer.some(sn => sn.snapshot.lastIncludedDeploymentTimestamp > genesisTimestamp)
+    const replacedSnapshotHashes = snapshotsWithServer.map(s => s.snapshot.replacedSnapshotHashes ?? [])
+    const serversWithThisSnapshot = snapshotsWithServer.map(s => s.server)
     const shouldStreamSnapshot =
-      hash &&
-      lastIncludedDeploymentTimestamp &&
-      lastIncludedDeploymentTimestamp > genesisTimestamp &&
-      await components.processedSnapshots.shouldStream(hash, replacedSnapshotHashes)
+      snapshotIsAfterGensisTimestampInSomeServer &&
+      !await components.processedSnapshots.someGroupWasProcessed([[snapshotHash], ...replacedSnapshotHashes])
 
     if (shouldStreamSnapshot) {
       try {
         // 2.1. download the snapshot file if needed
         await downloadFileWithRetries(
           components,
-          hash,
+          snapshotHash,
           options.tmpDownloadFolder,
-          [options.contentServer],
+          serversWithThisSnapshot,
           new Map(),
           options.requestMaxRetries,
           options.requestRetryWaitTime
         )
 
         // 2.2. open the snapshot file and process line by line
-        const deploymentsInFile = processDeploymentsInFile(hash, components, logs)
-        await components.processedSnapshots.startStreamOf(hash)
+        const deploymentsInFile = processDeploymentsInFile(snapshotHash, components, logs)
+        await components.processedSnapshots.startStreamOf(snapshotHash)
         let numberOfStreamedEntities = 0
         for await (const deployment of deploymentsInFile) {
 
           const deploymentTimestamp = 'entityTimestamp' in deployment ? deployment.entityTimestamp : deployment.localTimestamp
 
           if (deploymentTimestamp >= genesisTimestamp) {
-            components.metrics.increment('dcl_entities_deployments_processed_total', metricLabels)
+            components.metrics.increment('dcl_entities_deployments_processed_total')
             numberOfStreamedEntities++
             yield {
               ...deployment,
-              snapshotHash: hash
+              snapshotHash,
+              servers: serversWithThisSnapshot
             }
           }
-          // update greatest processed timestamp
-          if (deploymentTimestamp > greatestProcessedDeploymentTimestampFromSnapshots) {
-            greatestProcessedDeploymentTimestampFromSnapshots = deploymentTimestamp
-          }
         }
-        await components.processedSnapshots.endStreamOf(hash, numberOfStreamedEntities)
+        await components.processedSnapshots.endStreamOf(snapshotHash, numberOfStreamedEntities)
       } finally {
         if (options.deleteSnapshotAfterUsage !== false) {
           try {
-            await components.storage.delete([hash])
+            await components.storage.delete([snapshotHash])
           } catch (err: any) {
             logs.error(err)
           }
         }
       }
     }
-    greatestProcessedDeploymentTimestampFromSnapshots = lastIncludedDeploymentTimestamp > greatestProcessedDeploymentTimestampFromSnapshots
-      ? lastIncludedDeploymentTimestamp : greatestProcessedDeploymentTimestampFromSnapshots
   }
 
-  logs.info('End streaming snapshots.', { greatestProcessedTimestamp: greatestProcessedDeploymentTimestampFromSnapshots })
-  // 3. fetch the /pointer-changes of the remote server using the last timestamp from the previous step with a grace period of 20 min
-  let localTimestampFromWhichFetchPointerChanges = greatestProcessedDeploymentTimestampFromSnapshots - 20 * 60_000
+  logs.info('End streaming snapshots.')
+}
+
+export async function* getDeployedEntitiesStreamFromPointerChanges(
+  components: SnapshotsFetcherComponents,
+  options: DeployedEntityStreamOptions,
+  contentServer: string
+) {
+  const logs = components.logs.getLogger(`pointerChangesStream(${contentServer})`)
+  // fetch the /pointer-changes of the remote server using the last timestamp from the previous step with a grace period of 20 min
+  const genesisTimestamp = options.fromTimestamp || 0
+  let greatestLocalTimestampProcessed = genesisTimestamp
   do {
-    // 3.1. download pointer changes and yield
-    const pointerChanges = fetchPointerChanges(components, options.contentServer, localTimestampFromWhichFetchPointerChanges, logs)
+    // 1. download pointer changes and yield
+    const pointerChanges = fetchPointerChanges(components, contentServer, greatestLocalTimestampProcessed, logs)
     for await (const deployment of pointerChanges) {
 
       // selectively ignore deployments by localTimestamp
       if (deployment.localTimestamp >= genesisTimestamp) {
-        components.metrics.increment('dcl_entities_deployments_processed_total', metricLabels)
+        components.metrics.increment('dcl_entities_deployments_processed_total')
         yield deployment
       }
 
       // update greatest processed local timestamp
       if (deployment.localTimestamp) {
-        if (deployment.localTimestamp > localTimestampFromWhichFetchPointerChanges) {
-          localTimestampFromWhichFetchPointerChanges = deployment.localTimestamp
-        }
+        greatestLocalTimestampProcessed = Math.max(greatestLocalTimestampProcessed, deployment.localTimestamp)
       }
     }
 
-    // 3.2 repeat (3) if waitTime > 0
     await sleep(options.pointerChangesWaitTime)
   } while (options.pointerChangesWaitTime > 0)
 }
@@ -276,24 +284,26 @@ export async function* getDeployedEntitiesStream(
  *
  * @public
  */
-export function createCatalystDeploymentStream(
+export function createCatalystPointerChangesDeploymentStream(
   components: SnapshotsFetcherComponents & { deployer: IDeployerComponent },
+  contentServer: string,
   options: CatalystDeploymentStreamOptions
 ): IJobWithLifecycle & CatalystDeploymentStreamComponent {
-  const logs = components.logs.getLogger(`CatalystDeploymentStream(${options.contentServer})`)
+  const logs = components.logs.getLogger(`CatalystDeploymentStream(${contentServer})`)
+
   let greatestProcessedTimestamp = options.fromTimestamp || 0
 
-  const metricsLabels = contentServerMetricLabels(options.contentServer)
+  const metricsLabels = contentServerMetricLabels(contentServer)
 
   const exponentialFallofRetryComponent = createExponentialFallofRetry(logs, {
     async action() {
       try {
         components.metrics.increment('dcl_deployments_stream_reconnection_count', metricsLabels)
 
-        const deployments = getDeployedEntitiesStream(components, {
-          ...options,
-          fromTimestamp: greatestProcessedTimestamp,
-        })
+        const deployments = getDeployedEntitiesStreamFromPointerChanges(
+          components,
+          { ...options, fromTimestamp: greatestProcessedTimestamp },
+          contentServer)
 
         for await (const deployment of deployments) {
           // if the stream is closed then we should not process more deployments
@@ -302,12 +312,11 @@ export function createCatalystDeploymentStream(
             return
           }
 
-          await components.deployer.deployEntity(deployment, [options.contentServer])
+          await components.deployer.deployEntity(deployment, [contentServer])
 
-          const deploymentTimestamp = 'entityTimestamp' in deployment ? deployment.entityTimestamp : deployment.localTimestamp
           // update greatest processed timestamp
-          if (deploymentTimestamp > greatestProcessedTimestamp) {
-            greatestProcessedTimestamp = deploymentTimestamp
+          if (deployment.localTimestamp > greatestProcessedTimestamp) {
+            greatestProcessedTimestamp = deployment.localTimestamp
           }
         }
       } catch (e: any) {

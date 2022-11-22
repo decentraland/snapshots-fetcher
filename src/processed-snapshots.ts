@@ -27,19 +27,10 @@ export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetc
   const numberOfProcessedEntitiesBySnapshot: Map<string, number> = new Map()
 
   return {
-    async shouldStream(snapshotHash: string, replacedSnapshotHashes?: string[]) {
-      const isBeingStreamed = snapshotsBeingStreamed.has(snapshotHash)
-      const wasStreamed = snapshotsCompletelyStreamed.has(snapshotHash)
-      const replacedHashes = replacedSnapshotHashes ?? []
-      const processedSnapshotHashes = await components.processedSnapshotStorage.processedFrom([snapshotHash, ...replacedHashes])
-      const snapshotWasAlreadyProcessed = processedSnapshotHashes.has(snapshotHash)
-      const replacedHashesWereAlreadyProcessed = replacedHashes.length > 0 && replacedHashes.every((h) => processedSnapshotHashes.has(h))
-
-      if (!snapshotWasAlreadyProcessed && replacedHashesWereAlreadyProcessed) {
-        await components.processedSnapshotStorage.saveProcessed(snapshotHash)
-      }
-
-      return !isBeingStreamed && !wasStreamed && !(snapshotWasAlreadyProcessed || replacedHashesWereAlreadyProcessed)
+    async someGroupWasProcessed(snapshotReplacedGroups: string[][]) {
+      const allReplacedSnapshots = snapshotReplacedGroups.flat()
+      const processedSnapshots = await components.processedSnapshotStorage.processedFrom(allReplacedSnapshots)
+      return snapshotReplacedGroups.some(replacedGroup => replacedGroup.length > 0 && replacedGroup.every(s => processedSnapshots.has(s)))
     },
     async startStreamOf(snapshotHash: string) {
       snapshotsBeingStreamed.add(snapshotHash)

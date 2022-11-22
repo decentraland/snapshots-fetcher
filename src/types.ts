@@ -74,7 +74,6 @@ export type DownloadEntitiesOptions = {
  * @public
  */
 export type DeployedEntityStreamOptions = {
-  contentServer: string
   fromTimestamp?: number
   tmpDownloadFolder: string
 
@@ -127,7 +126,7 @@ export type IProcessedSnapshotStorageComponent = {
 }
 
 export type IProcessedSnapshotsComponent = {
-  shouldStream(snapshotHash: string, replacedSnapshotHashes?: string[]): Promise<boolean>
+  someGroupWasProcessed(snapshotGroups: string[][]): Promise<boolean>
   startStreamOf(snapshotHash: string): Promise<void>
   endStreamOf(snapshotHash: string, numberOfEntitiesStreamed: number): Promise<void>
   entityProcessedFrom(snapshotHash: string): Promise<void>
