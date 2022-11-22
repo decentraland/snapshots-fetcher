@@ -242,6 +242,9 @@ export async function* getDeployedEntitiesStreamFromSnapshots(
   logs.info('End streaming snapshots.')
 }
 
+/**
+ * @public
+ */
 export async function* getDeployedEntitiesStreamFromPointerChanges(
   components: SnapshotsFetcherComponents,
   options: DeployedEntityStreamOptions,

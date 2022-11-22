@@ -8,6 +8,7 @@ import { IContentStorageComponent } from '@dcl/catalyst-storage';
 import { IFetchComponent } from '@well-known-components/http-server';
 import { ILoggerComponent } from '@well-known-components/interfaces';
 import { IMetricsComponent } from '@well-known-components/interfaces';
+import { PointerChangesSyncDeployment } from '@dcl/schemas';
 import { SyncDeployment } from '@dcl/schemas';
 
 // Warning: (ae-forgotten-export) The symbol "SnapshotsFetcherComponents" needs to be exported by the entry point index.d.ts
@@ -16,9 +17,9 @@ import { SyncDeployment } from '@dcl/schemas';
 // Warning: (ae-forgotten-export) The symbol "CatalystDeploymentStreamComponent" needs to be exported by the entry point index.d.ts
 //
 // @public
-export function createCatalystDeploymentStream(components: SnapshotsFetcherComponents & {
+export function createCatalystPointerChangesDeploymentStream(components: SnapshotsFetcherComponents & {
     deployer: IDeployerComponent;
-}, options: CatalystDeploymentStreamOptions): IJobWithLifecycle & CatalystDeploymentStreamComponent;
+}, contentServer: string, options: CatalystDeploymentStreamOptions): IJobWithLifecycle & CatalystDeploymentStreamComponent;
 
 // Warning: (ae-forgotten-export) The symbol "IProcessedSnapshotsComponent" needs to be exported by the entry point index.d.ts
 //
@@ -33,9 +34,13 @@ export function downloadEntityAndContentFiles(components: Pick<SnapshotsFetcherC
 
 // Warning: (ae-forgotten-export) The symbol "DeployedEntityStreamOptions" needs to be exported by the entry point index.d.ts
 //
+// @public (undocumented)
+export function getDeployedEntitiesStreamFromPointerChanges(components: SnapshotsFetcherComponents, options: DeployedEntityStreamOptions, contentServer: string): AsyncGenerator<PointerChangesSyncDeployment, void, unknown>;
+
 // @public
-export function getDeployedEntitiesStream(components: SnapshotsFetcherComponents, options: DeployedEntityStreamOptions): AsyncIterable<SyncDeployment & {
-    snapshotHash?: string;
+export function getDeployedEntitiesStreamFromSnapshots(components: SnapshotsFetcherComponents, options: DeployedEntityStreamOptions, contentServers: string[]): AsyncIterable<SyncDeployment & {
+    snapshotHash: string;
+    servers: string[];
 }>;
 
 // @public
