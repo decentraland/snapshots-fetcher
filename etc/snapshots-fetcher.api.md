@@ -26,6 +26,13 @@ export function createCatalystPointerChangesDeploymentStream(components: Snapsho
 // @public
 export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage' | 'logs'>): IProcessedSnapshotsComponent;
 
+// @public (undocumented)
+export function createSynchronizer(components: SnapshotsFetcherComponents & {
+    deployer: IDeployerComponent;
+}, options: CatalystDeploymentStreamOptions): Promise<{
+    syncWithServers(contentServers: Set<string>): Promise<void>;
+}>;
+
 // Warning: (ae-forgotten-export) The symbol "EntityHash" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "Server" needs to be exported by the entry point index.d.ts
 //

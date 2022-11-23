@@ -1,7 +1,10 @@
 import { createCatalystPointerChangesDeploymentStream, getDeployedEntitiesStreamFromSnapshots } from "."
 import { createJobLifecycleManagerComponent } from "./job-lifecycle-manager"
-import { CatalystDeploymentStreamOptions, DeployedEntityStreamOptions, IDeployerComponent, SnapshotsFetcherComponents } from "./types"
+import { CatalystDeploymentStreamOptions, IDeployerComponent, SnapshotsFetcherComponents } from "./types"
 
+/**
+ * @public
+ */
 export async function createSynchronizer(
   components: SnapshotsFetcherComponents & {
     deployer: IDeployerComponent

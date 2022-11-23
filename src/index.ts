@@ -1,9 +1,9 @@
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import { fetchPointerChanges, getSnapshots } from './client'
 import { downloadFileWithRetries } from './downloader'
-import { createExponentialFallofRetry, ExponentialFallofRetryComponent } from './exponential-fallof-retry'
+import { createExponentialFallofRetry } from './exponential-fallof-retry'
 import { processDeploymentsInFile } from './file-processor'
-import { createJobLifecycleManagerComponent, IJobWithLifecycle } from './job-lifecycle-manager'
+import { IJobWithLifecycle } from './job-lifecycle-manager'
 import {
   CatalystDeploymentStreamComponent,
   CatalystDeploymentStreamOptions,
@@ -20,6 +20,7 @@ import { SyncDeployment } from '@dcl/schemas'
 export { metricsDefinitions } from './metrics'
 export { IDeployerComponent } from './types'
 export { createProcessedSnapshotsComponent } from './processed-snapshots'
+export { createSynchronizer } from './synchronizer'
 
 if (parseInt(process.version.split('.')[0]) < 16) {
   const { name } = require('../package.json')
