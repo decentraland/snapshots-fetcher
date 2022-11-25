@@ -29,9 +29,7 @@ export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetc
 // @public (undocumented)
 export function createSynchronizer(components: SnapshotsFetcherComponents & {
     deployer: IDeployerComponent;
-}, options: CatalystDeploymentStreamOptions): Promise<{
-    syncWithServers(contentServers: Set<string>): Promise<void>;
-}>;
+}, options: CatalystDeploymentStreamOptions): Promise<SynchronizerComponent>;
 
 // Warning: (ae-forgotten-export) The symbol "EntityHash" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "Server" needs to be exported by the entry point index.d.ts
@@ -60,6 +58,11 @@ export type IDeployerComponent = {
 
 // @public (undocumented)
 export const metricsDefinitions: IMetricsComponent<"dcl_content_download_bytes_total" | "dcl_content_download_duration_seconds" | "dcl_content_download_errors_total" | "dcl_content_download_hash_errors_total" | "dcl_entities_deployments_processed_total" | "dcl_catalysts_pointer_changes_response_time_seconds" | "dcl_deployments_stream_reconnection_count" | "dcl_deployments_stream_failure_count" | "dcl_content_download_job_succeed_retries" | "dcl_available_servers_histogram">;
+
+// @public (undocumented)
+export type SynchronizerComponent = {
+    syncWithServers(contentServers: Set<string>): Promise<void>;
+};
 
 // (No @packageDocumentation comment for this package)
 

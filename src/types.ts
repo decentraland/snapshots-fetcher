@@ -131,3 +131,10 @@ export type IProcessedSnapshotsComponent = {
   endStreamOf(snapshotHash: string, numberOfEntitiesStreamed: number): Promise<void>
   entityProcessedFrom(snapshotHash: string): Promise<void>
 }
+
+/**
+ * @public
+ */
+export type SynchronizerComponent = {
+  syncWithServers(contentServers: Set<string>): Promise<void>
+}
