@@ -61,6 +61,8 @@ export const metricsDefinitions: IMetricsComponent<"dcl_content_download_bytes_t
 
 // @public (undocumented)
 export type SynchronizerComponent = {
+    syncFromSnapshots(contentServers: Set<string>): Promise<void>;
+    syncFromPointerChanges(contentServers: Set<string>): Promise<void>;
     syncWithServers(contentServers: Set<string>): Promise<void>;
 };
 

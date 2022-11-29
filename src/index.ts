@@ -178,12 +178,17 @@ export async function* getDeployedEntitiesStreamFromSnapshots(
     },
     server: string
   }[]> = new Map()
+
   for (const server of contentServers) {
-    const snapshots = await getSnapshots(components, server, options.requestMaxRetries)
-    for (const snapshot of snapshots) {
-      const servers = serversSnapshotsBySnapshotHash.get(snapshot.hash) ?? []
-      servers.push({ snapshot, server })
-      serversSnapshotsBySnapshotHash.set(snapshot.hash, servers)
+    try {
+      const snapshots = await getSnapshots(components, server, options.requestMaxRetries)
+      for (const snapshot of snapshots) {
+        const servers = serversSnapshotsBySnapshotHash.get(snapshot.hash) ?? []
+        servers.push({ snapshot, server })
+        serversSnapshotsBySnapshotHash.set(snapshot.hash, servers)
+      }
+    } catch (error) {
+      logs.error(`Error getting snapshots from ${server}.`)
     }
   }
 
