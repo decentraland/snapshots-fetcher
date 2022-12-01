@@ -136,7 +136,17 @@ export type IProcessedSnapshotsComponent = {
  * @public
  */
 export type SynchronizerComponent = {
-  syncFromSnapshots(contentServers: Set<string>): Promise<void>
-  syncFromPointerChanges(contentServers: Set<string>): Promise<void>
   syncWithServers(contentServers: Set<string>): Promise<void>
+}
+
+/**
+ * @internal
+ */
+export type Snapshot = {
+  snapshot: {
+    hash: string
+    lastIncludedDeploymentTimestamp: number
+    replacedSnapshotHashes?: string[] | undefined
+  }
+  server: string
 }

@@ -12,6 +12,7 @@ import {
   EntityHash,
   IDeployerComponent,
   Server,
+  Snapshot,
   SnapshotsFetcherComponents,
 } from './types'
 import { contentServerMetricLabels, sleep, streamToBuffer } from './utils'
@@ -148,6 +149,79 @@ export async function downloadEntityAndContentFiles(
   }
 
   return entityMetadata
+}
+
+/**
+ * Accepts a fromTimestamp option to filter out previous deployments.
+ *
+ * @internal
+ */
+export async function* getDeployedEntitiesStreamFromSnapshots2(
+  components: SnapshotsFetcherComponents,
+  options: DeployedEntityStreamOptions,
+  serversSnapshotsBySnapshotHash: Map<string, Snapshot[]>
+): AsyncIterable<SyncDeployment & {
+  snapshotHash: string
+  servers: string[]
+}> {
+  const logs = components.logs.getLogger('getDeployedEntitiesStream')
+  // the minimum timestamp we are looking for
+  const genesisTimestamp = options.fromTimestamp || 0
+
+  for (const [snapshotHash, snapshotsWithServer] of serversSnapshotsBySnapshotHash.entries()) {
+    logs.debug('Snapshot found.', { hash: snapshotHash, contentServers: JSON.stringify(snapshotsWithServer.map(s => s.server)) })
+    const snapshotIsAfterGensisTimestampInSomeServer = snapshotsWithServer.some(sn => sn.snapshot.lastIncludedDeploymentTimestamp > genesisTimestamp)
+    const replacedSnapshotHashes = snapshotsWithServer.map(s => s.snapshot.replacedSnapshotHashes ?? [])
+    const serversWithThisSnapshot = snapshotsWithServer.map(s => s.server)
+    const shouldStreamSnapshot =
+      snapshotIsAfterGensisTimestampInSomeServer &&
+      !await components.processedSnapshots.someGroupWasProcessed([[snapshotHash], ...replacedSnapshotHashes])
+
+    if (shouldStreamSnapshot) {
+      try {
+        // 2.1. download the snapshot file if needed
+        await downloadFileWithRetries(
+          components,
+          snapshotHash,
+          options.tmpDownloadFolder,
+          serversWithThisSnapshot,
+          new Map(),
+          options.requestMaxRetries,
+          options.requestRetryWaitTime
+        )
+
+        // 2.2. open the snapshot file and process line by line
+        const deploymentsInFile = processDeploymentsInFile(snapshotHash, components, logs)
+        await components.processedSnapshots.startStreamOf(snapshotHash)
+        let numberOfStreamedEntities = 0
+        for await (const deployment of deploymentsInFile) {
+
+          const deploymentTimestamp = 'entityTimestamp' in deployment ? deployment.entityTimestamp : deployment.localTimestamp
+
+          if (deploymentTimestamp >= genesisTimestamp) {
+            components.metrics.increment('dcl_entities_deployments_processed_total')
+            numberOfStreamedEntities++
+            yield {
+              ...deployment,
+              snapshotHash,
+              servers: serversWithThisSnapshot
+            }
+          }
+        }
+        await components.processedSnapshots.endStreamOf(snapshotHash, numberOfStreamedEntities)
+      } finally {
+        if (options.deleteSnapshotAfterUsage !== false) {
+          try {
+            await components.storage.delete([snapshotHash])
+          } catch (err: any) {
+            logs.error(err)
+          }
+        }
+      }
+    }
+  }
+
+  logs.info('End streaming snapshots.')
 }
 
 /**
