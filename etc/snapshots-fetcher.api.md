@@ -48,6 +48,15 @@ export function getDeployedEntitiesStreamFromSnapshots(components: SnapshotsFetc
     servers: string[];
 }>;
 
+// Warning: (ae-forgotten-export) The symbol "Snapshot" needs to be exported by the entry point index.d.ts
+// Warning: (ae-internal-missing-underscore) The name "getDeployedEntitiesStreamFromSnapshots2" should be prefixed with an underscore because the declaration is marked as @internal
+//
+// @internal
+export function getDeployedEntitiesStreamFromSnapshots2(components: SnapshotsFetcherComponents, options: DeployedEntityStreamOptions, serversSnapshotsBySnapshotHash: Map<string, Snapshot[]>): AsyncIterable<SyncDeployment & {
+    snapshotHash: string;
+    servers: string[];
+}>;
+
 // @public
 export type IDeployerComponent = {
     deployEntity(entity: SyncDeployment & {
@@ -61,8 +70,6 @@ export const metricsDefinitions: IMetricsComponent<"dcl_content_download_bytes_t
 
 // @public (undocumented)
 export type SynchronizerComponent = {
-    syncFromSnapshots(contentServers: Set<string>): Promise<void>;
-    syncFromPointerChanges(contentServers: Set<string>): Promise<void>;
     syncWithServers(contentServers: Set<string>): Promise<void>;
 };
 
