@@ -39,20 +39,20 @@ export function downloadEntityAndContentFiles(components: Pick<SnapshotsFetcherC
 
 // Warning: (ae-forgotten-export) The symbol "DeployedEntityStreamOptions" needs to be exported by the entry point index.d.ts
 //
-// @public (undocumented)
-export function getDeployedEntitiesStreamFromPointerChanges(components: SnapshotsFetcherComponents, options: DeployedEntityStreamOptions, contentServer: string): AsyncGenerator<PointerChangesSyncDeployment, void, unknown>;
-
 // @public
-export function getDeployedEntitiesStreamFromSnapshots(components: SnapshotsFetcherComponents, options: DeployedEntityStreamOptions, contentServers: string[]): AsyncIterable<SyncDeployment & {
+export function getDeployedEntitiesInSnapshotsStreamFromServers(components: SnapshotsFetcherComponents, options: DeployedEntityStreamOptions, contentServers: string[]): AsyncIterable<SyncDeployment & {
     snapshotHash: string;
     servers: string[];
 }>;
 
+// @public (undocumented)
+export function getDeployedEntitiesStreamFromPointerChanges(components: SnapshotsFetcherComponents, options: DeployedEntityStreamOptions, contentServer: string): AsyncGenerator<PointerChangesSyncDeployment, void, unknown>;
+
 // Warning: (ae-forgotten-export) The symbol "Snapshot" needs to be exported by the entry point index.d.ts
-// Warning: (ae-internal-missing-underscore) The name "getDeployedEntitiesStreamFromSnapshots2" should be prefixed with an underscore because the declaration is marked as @internal
+// Warning: (ae-internal-missing-underscore) The name "getDeployedEntitiesStreamFromSnapshots" should be prefixed with an underscore because the declaration is marked as @internal
 //
 // @internal
-export function getDeployedEntitiesStreamFromSnapshots2(components: SnapshotsFetcherComponents, options: DeployedEntityStreamOptions, serversSnapshotsBySnapshotHash: Map<string, Snapshot[]>): AsyncIterable<SyncDeployment & {
+export function getDeployedEntitiesStreamFromSnapshots(components: SnapshotsFetcherComponents, options: DeployedEntityStreamOptions, serversSnapshotsBySnapshotHash: Map<string, Snapshot[]>): AsyncIterable<SyncDeployment & {
     snapshotHash: string;
     servers: string[];
 }>;
@@ -71,7 +71,8 @@ export const metricsDefinitions: IMetricsComponent<"dcl_content_download_bytes_t
 // @public (undocumented)
 export type SynchronizerComponent = {
     syncWithServers(contentServers: Set<string>): Promise<void>;
-    onInitialBootstrapFinished(cb: () => void): void;
+    syncSnapshotsForSyncingServers(): Promise<void>;
+    onInitialBootstrapFinished(cb: () => Promise<void>): Promise<void>;
 };
 
 // (No @packageDocumentation comment for this package)

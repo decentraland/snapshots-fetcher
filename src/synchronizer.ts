@@ -1,9 +1,8 @@
-import { createCatalystPointerChangesDeploymentStream, getDeployedEntitiesStreamFromSnapshots2 } from "."
+import { createCatalystPointerChangesDeploymentStream, getDeployedEntitiesStreamFromSnapshots } from "."
 import { getSnapshots } from "./client"
 import { createExponentialFallofRetry } from "./exponential-fallof-retry"
 import { createJobLifecycleManagerComponent } from "./job-lifecycle-manager"
 import { CatalystDeploymentStreamOptions, IDeployerComponent, SnapshotsFetcherComponents, SynchronizerComponent } from "./types"
-import future from 'fp-future'
 
 type Snapshot = {
   snapshot: {
@@ -25,7 +24,7 @@ export async function createSynchronizer(
 ): Promise<SynchronizerComponent> {
   const logger = components.logs.getLogger('synchronizer')
   let initialBootstrapFinished = false
-  const initialBootstrapFinishedEventCallbacks: Array<() => void> = []
+  const initialBootstrapFinishedEventCallbacks: Array<() => Promise<void>> = []
   const syncingServers: Set<string> = new Set()
   const bootstsrappingServers: Set<string> = new Set()
   const lastEntityTimestampFromSnapshotsByServer: Map<string, number> = new Map()
@@ -34,21 +33,28 @@ export async function createSynchronizer(
     {
       jobManagerName: 'SynchronizationJobManager',
       createJob(contentServer) {
+        const lastEntityTimestamp = lastEntityTimestampFromSnapshotsByServer.get(contentServer)
+        if (!lastEntityTimestamp) {
+          throw new Error(`Can't start pointer changes stream without last entity timestamp. This should not happen.`)
+        }
+        const fromTimestamp = lastEntityTimestamp - 20 * 60_000
         return createCatalystPointerChangesDeploymentStream(
           components,
           contentServer,
           {
             ...options,
-            fromTimestamp: lastEntityTimestampFromSnapshotsByServer.get(contentServer) ? 0 - 20 * 60_000 : undefined
+            fromTimestamp
           }
         )
       }
     })
 
-  async function bootstrapFromSnapshots() {
+  async function syncFromSnapshots(serversToSync: Set<string>) {
     const serversSnapshotsBySnapshotHash: Map<string, Snapshot[]> = new Map()
     const serversToDeployFromSnapshots: Set<string> = new Set()
-    for (const server of bootstsrappingServers) {
+    const lastEntityTimestampFromSnapshotsByServer: Map<string, number> = new Map()
+    const genesisTimestamp = options.fromTimestamp || 0
+    for (const server of serversToSync) {
       try {
         const snapshots = await getSnapshots(components, server, options.requestMaxRetries)
         for (const snapshot of snapshots) {
@@ -56,36 +62,36 @@ export async function createSynchronizer(
           snapshotsWithServer.push({ snapshot, server })
           serversSnapshotsBySnapshotHash.set(snapshot.hash, snapshotsWithServer)
           serversToDeployFromSnapshots.add(server)
+          lastEntityTimestampFromSnapshotsByServer.set(server,
+            Math.max(lastEntityTimestampFromSnapshotsByServer.get(server) || genesisTimestamp, snapshot.lastIncludedDeploymentTimestamp))
         }
       } catch (error) {
         logger.error(`Error getting snapshots from ${server}.`)
       }
     }
 
-    const genesisTimestamp = options.fromTimestamp || 0
-    const stream = getDeployedEntitiesStreamFromSnapshots2(components, options, serversSnapshotsBySnapshotHash)
+    const stream = getDeployedEntitiesStreamFromSnapshots(components, options, serversSnapshotsBySnapshotHash)
     logger.info('Starting to deploy entities from snapshots.')
     for await (const entity of stream) {
       // schedule the deployment in the deployer. the await DOES NOT mean that the entity was deployed entirely
       // if the deployer is not synchronous. For example, the batchDeployer used in the catalyst just add it in a queue.
       await components.deployer.deployEntity(entity, entity.servers)
-      for (const server of entity.servers) {
-        const lastTimestamp = lastEntityTimestampFromSnapshotsByServer.get(server) ?? genesisTimestamp
-        const deploymentTimestamp = 'entityTimestamp' in entity ? entity.entityTimestamp : entity.localTimestamp
-        lastEntityTimestampFromSnapshotsByServer.set(server, Math.max(lastTimestamp, deploymentTimestamp))
-      }
     }
     logger.info('End deploying entities from snapshots.')
-    for (const bootstrappedServer of serversToDeployFromSnapshots) {
+    return serversToDeployFromSnapshots
+  }
+
+  async function bootstrap() {
+    const syncedFromSnapshotServers = await syncFromSnapshots(bootstsrappingServers)
+    for (const bootstrappedServer of syncedFromSnapshotServers) {
       syncingServers.add(bootstrappedServer)
       bootstsrappingServers.delete(bootstrappedServer)
     }
 
     if (!initialBootstrapFinished) {
       initialBootstrapFinished = true
-      for (const cb of initialBootstrapFinishedEventCallbacks) {
-        await cb()
-      }
+      const runningCallbacks = initialBootstrapFinishedEventCallbacks.map(cb => cb())
+      await Promise.all(runningCallbacks)
     }
   }
 
@@ -94,7 +100,7 @@ export async function createSynchronizer(
       async action() {
         try {
           // metrics start?
-          await bootstrapFromSnapshots()
+          await bootstrap()
           // now we start syncing from pointer changes, it internally managers new servers to start syncing
           deployPointerChangesjobManager.setDesiredJobs(syncingServers)
         } catch (e: any) {
@@ -122,19 +128,30 @@ export async function createSynchronizer(
         }
       }
 
-      // 2. Remote the syncing servers that must not be syncing anymore
+      // 2. a) Remove from bootstrapping servers that should stop syncing
+      for (const bootstappingServer of bootstsrappingServers) {
+        if (!serversToSync.has(bootstappingServer)) {
+          bootstsrappingServers.delete(bootstappingServer)
+        }
+      }
+
+      // 2. b) Remove from syncing servers that should stop syncing
       for (const syncingServer of syncingServers) {
         if (!serversToSync.has(syncingServer)) {
           syncingServers.delete(syncingServer)
         }
       }
+
       createSyncJob().start()
     },
-    onInitialBootstrapFinished(cb: () => void) {
+    async syncSnapshotsForSyncingServers() {
+      await syncFromSnapshots(syncingServers)
+    },
+    async onInitialBootstrapFinished(cb: () => Promise<void>) {
       if (!initialBootstrapFinished) {
         initialBootstrapFinishedEventCallbacks.push(cb)
       } else {
-        cb()
+        await cb()
       }
     }
   }

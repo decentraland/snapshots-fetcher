@@ -156,7 +156,7 @@ export async function downloadEntityAndContentFiles(
  *
  * @internal
  */
-export async function* getDeployedEntitiesStreamFromSnapshots2(
+export async function* getDeployedEntitiesStreamFromSnapshots(
   components: SnapshotsFetcherComponents,
   options: DeployedEntityStreamOptions,
   serversSnapshotsBySnapshotHash: Map<string, Snapshot[]>
@@ -231,7 +231,7 @@ export async function* getDeployedEntitiesStreamFromSnapshots2(
  *
  * @public
  */
-export async function* getDeployedEntitiesStreamFromSnapshots(
+export async function* getDeployedEntitiesInSnapshotsStreamFromServers(
   components: SnapshotsFetcherComponents,
   options: DeployedEntityStreamOptions,
   contentServers: string[]
