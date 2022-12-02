@@ -58,7 +58,7 @@ export async function createSynchronizer(
           serversToDeployFromSnapshots.add(server)
         }
       } catch (error) {
-        logger.error(`Error getting snapshots from ${server}. Will try later`)
+        logger.error(`Error getting snapshots from ${server}.`)
       }
     }
 
@@ -93,14 +93,18 @@ export async function createSynchronizer(
     return createExponentialFallofRetry(logger, {
       async action() {
         try {
-          // metrics?
+          // metrics start?
           await bootstrapFromSnapshots()
           // now we start syncing from pointer changes, it internally managers new servers to start syncing
           deployPointerChangesjobManager.setDesiredJobs(syncingServers)
-
         } catch (e: any) {
           // we don't log the exception here because createExponentialFallofRetry(logger, options) receives the logger
+          // increment metrics
           throw e
+        }
+        // If there are still some servers that didn't bootstrap, we throw an error so it runs later
+        if (bootstsrappingServers.size > 0) {
+          throw new Error(`There are servers that failed to bootstrap. Will try later. Servers: ${JSON.stringify(bootstsrappingServers)}`)
         }
       },
       retryTime: options.reconnectTime,
