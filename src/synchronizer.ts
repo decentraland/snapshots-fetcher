@@ -25,7 +25,7 @@ export async function createSynchronizer(
 ): Promise<SynchronizerComponent> {
   const logger = components.logs.getLogger('synchronizer')
   let initialBootstrapFinished = false
-  const intiialBootstrapFinishedEventCallbacks: Array<() => void> = []
+  const initialBootstrapFinishedEventCallbacks: Array<() => void> = []
   const syncingServers: Set<string> = new Set()
   const bootstsrappingServers: Set<string> = new Set()
   const lastEntityTimestampFromSnapshotsByServer: Map<string, number> = new Map()
@@ -83,8 +83,8 @@ export async function createSynchronizer(
 
     if (!initialBootstrapFinished) {
       initialBootstrapFinished = true
-      for (const cb of intiialBootstrapFinishedEventCallbacks) {
-        cb()
+      for (const cb of initialBootstrapFinishedEventCallbacks) {
+        await cb()
       }
     }
   }
@@ -130,9 +130,9 @@ export async function createSynchronizer(
       }
       createSyncJob().start()
     },
-    async onInitialBootstrapFinished(cb: () => void) {
+    onInitialBootstrapFinished(cb: () => void) {
       if (!initialBootstrapFinished) {
-        intiialBootstrapFinishedEventCallbacks.push(cb)
+        initialBootstrapFinishedEventCallbacks.push(cb)
       } else {
         cb()
       }
