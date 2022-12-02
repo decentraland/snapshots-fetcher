@@ -3,6 +3,7 @@ import { getSnapshots } from "./client"
 import { createExponentialFallofRetry } from "./exponential-fallof-retry"
 import { createJobLifecycleManagerComponent } from "./job-lifecycle-manager"
 import { CatalystDeploymentStreamOptions, IDeployerComponent, SnapshotsFetcherComponents, SynchronizerComponent } from "./types"
+import future from 'fp-future'
 
 type Snapshot = {
   snapshot: {
@@ -23,6 +24,8 @@ export async function createSynchronizer(
   options: CatalystDeploymentStreamOptions,
 ): Promise<SynchronizerComponent> {
   const logger = components.logs.getLogger('synchronizer')
+  let initialBootstrapFinished = false
+  const intiialBootstrapFinishedEventCallbacks: Array<() => void> = []
   const syncingServers: Set<string> = new Set()
   const bootstsrappingServers: Set<string> = new Set()
   const lastEntityTimestampFromSnapshotsByServer: Map<string, number> = new Map()
@@ -77,6 +80,13 @@ export async function createSynchronizer(
       syncingServers.add(bootstrappedServer)
       bootstsrappingServers.delete(bootstrappedServer)
     }
+
+    if (!initialBootstrapFinished) {
+      initialBootstrapFinished = true
+      for (const cb of intiialBootstrapFinishedEventCallbacks) {
+        cb()
+      }
+    }
   }
 
   function createSyncJob() {
@@ -101,18 +111,27 @@ export async function createSynchronizer(
 
   return {
     async syncWithServers(serversToSync: Set<string>) {
+      // 1. Add the new servers (not currently syncing) to the bootstrapping state
       for (const serverToSync of serversToSync) {
         if (!syncingServers.has(serverToSync)) {
           bootstsrappingServers.add(serverToSync)
         }
       }
 
+      // 2. Remote the syncing servers that must not be syncing anymore
       for (const syncingServer of syncingServers) {
         if (!serversToSync.has(syncingServer)) {
           syncingServers.delete(syncingServer)
         }
       }
       createSyncJob().start()
+    },
+    async onInitialBootstrapFinished(cb: () => void) {
+      if (!initialBootstrapFinished) {
+        intiialBootstrapFinishedEventCallbacks.push(cb)
+      } else {
+        cb()
+      }
     }
   }
 

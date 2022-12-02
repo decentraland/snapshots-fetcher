@@ -71,6 +71,7 @@ export const metricsDefinitions: IMetricsComponent<"dcl_content_download_bytes_t
 // @public (undocumented)
 export type SynchronizerComponent = {
     syncWithServers(contentServers: Set<string>): Promise<void>;
+    onInitialBootstrapFinished(cb: () => void): Promise<void>;
 };
 
 // (No @packageDocumentation comment for this package)

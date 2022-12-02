@@ -164,7 +164,7 @@ export async function* getDeployedEntitiesStreamFromSnapshots2(
   snapshotHash: string
   servers: string[]
 }> {
-  const logs = components.logs.getLogger('getDeployedEntitiesStream')
+  const logs = components.logs.getLogger('getDeployedEntitiesStreamFromSnapshots')
   // the minimum timestamp we are looking for
   const genesisTimestamp = options.fromTimestamp || 0
 
@@ -172,7 +172,7 @@ export async function* getDeployedEntitiesStreamFromSnapshots2(
     logs.debug('Snapshot found.', { hash: snapshotHash, contentServers: JSON.stringify(snapshotsWithServer.map(s => s.server)) })
     const snapshotIsAfterGensisTimestampInSomeServer = snapshotsWithServer.some(sn => sn.snapshot.lastIncludedDeploymentTimestamp > genesisTimestamp)
     const replacedSnapshotHashes = snapshotsWithServer.map(s => s.snapshot.replacedSnapshotHashes ?? [])
-    const serversWithThisSnapshot = snapshotsWithServer.map(s => s.server)
+    const serversWithThisSnapshot = Array.from(new Set(snapshotsWithServer.map(s => s.server)))
     const shouldStreamSnapshot =
       snapshotIsAfterGensisTimestampInSomeServer &&
       !await components.processedSnapshots.someGroupWasProcessed([[snapshotHash], ...replacedSnapshotHashes])
@@ -239,7 +239,7 @@ export async function* getDeployedEntitiesStreamFromSnapshots(
   snapshotHash: string
   servers: string[]
 }> {
-  const logs = components.logs.getLogger('getDeployedEntitiesStream')
+  const logs = components.logs.getLogger('getDeployedEntitiesStreamFromSnapshots')
   // the minimum timestamp we are looking for
   const genesisTimestamp = options.fromTimestamp || 0
 
@@ -372,7 +372,7 @@ export function createCatalystPointerChangesDeploymentStream(
   contentServer: string,
   options: CatalystDeploymentStreamOptions
 ): IJobWithLifecycle & CatalystDeploymentStreamComponent {
-  const logs = components.logs.getLogger(`CatalystDeploymentStream(${contentServer})`)
+  const logs = components.logs.getLogger(`pointerChangesDeploymentStream(${contentServer})`)
 
   let greatestProcessedTimestamp = options.fromTimestamp || 0
 
