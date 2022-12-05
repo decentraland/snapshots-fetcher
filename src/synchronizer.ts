@@ -52,7 +52,6 @@ export async function createSynchronizer(
   async function syncFromSnapshots(serversToSync: Set<string>) {
     const serversSnapshotsBySnapshotHash: Map<string, Snapshot[]> = new Map()
     const serversToDeployFromSnapshots: Set<string> = new Set()
-    const lastEntityTimestampFromSnapshotsByServer: Map<string, number> = new Map()
     const genesisTimestamp = options.fromTimestamp || 0
     for (const server of serversToSync) {
       try {
