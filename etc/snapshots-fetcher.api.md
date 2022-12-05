@@ -39,12 +39,6 @@ export function downloadEntityAndContentFiles(components: Pick<SnapshotsFetcherC
 
 // Warning: (ae-forgotten-export) The symbol "DeployedEntityStreamOptions" needs to be exported by the entry point index.d.ts
 //
-// @public
-export function getDeployedEntitiesInSnapshotsStreamFromServers(components: SnapshotsFetcherComponents, options: DeployedEntityStreamOptions, contentServers: string[]): AsyncIterable<SyncDeployment & {
-    snapshotHash: string;
-    servers: string[];
-}>;
-
 // @public (undocumented)
 export function getDeployedEntitiesStreamFromPointerChanges(components: SnapshotsFetcherComponents, options: DeployedEntityStreamOptions, contentServer: string): AsyncGenerator<PointerChangesSyncDeployment, void, unknown>;
 

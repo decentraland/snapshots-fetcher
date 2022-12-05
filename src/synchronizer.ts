@@ -26,7 +26,7 @@ export async function createSynchronizer(
   let initialBootstrapFinished = false
   const initialBootstrapFinishedEventCallbacks: Array<() => Promise<void>> = []
   const syncingServers: Set<string> = new Set()
-  const bootstsrappingServers: Set<string> = new Set()
+  const bootstrappingServers: Set<string> = new Set()
   const lastEntityTimestampFromSnapshotsByServer: Map<string, number> = new Map()
   const deployPointerChangesjobManager = createJobLifecycleManagerComponent(
     components,
@@ -82,10 +82,10 @@ export async function createSynchronizer(
   }
 
   async function bootstrap() {
-    const syncedFromSnapshotServers = await syncFromSnapshots(bootstsrappingServers)
+    const syncedFromSnapshotServers = await syncFromSnapshots(bootstrappingServers)
     for (const bootstrappedServer of syncedFromSnapshotServers) {
       syncingServers.add(bootstrappedServer)
-      bootstsrappingServers.delete(bootstrappedServer)
+      bootstrappingServers.delete(bootstrappedServer)
     }
 
     if (!initialBootstrapFinished) {
@@ -109,13 +109,13 @@ export async function createSynchronizer(
           throw e
         }
         // If there are still some servers that didn't bootstrap, we throw an error so it runs later
-        if (bootstsrappingServers.size > 0) {
-          throw new Error(`There are servers that failed to bootstrap. Will try later. Servers: ${JSON.stringify(bootstsrappingServers)}`)
+        if (bootstrappingServers.size > 0) {
+          throw new Error(`There are servers that failed to bootstrap. Will try later. Servers: ${JSON.stringify(bootstrappingServers)}`)
         }
       },
-      retryTime: options.reconnectTime,
-      retryTimeExponent: options.reconnectRetryTimeExponent ?? 1.1,
-      maxInterval: options.maxReconnectionTime,
+      retryTime: 600_000,
+      retryTimeExponent: 1.5,
+      maxInterval: 5 * 3_600_000,
     })
   }
 
@@ -124,14 +124,14 @@ export async function createSynchronizer(
       // 1. Add the new servers (not currently syncing) to the bootstrapping state
       for (const serverToSync of serversToSync) {
         if (!syncingServers.has(serverToSync)) {
-          bootstsrappingServers.add(serverToSync)
+          bootstrappingServers.add(serverToSync)
         }
       }
 
       // 2. a) Remove from bootstrapping servers that should stop syncing
-      for (const bootstappingServer of bootstsrappingServers) {
+      for (const bootstappingServer of bootstrappingServers) {
         if (!serversToSync.has(bootstappingServer)) {
-          bootstsrappingServers.delete(bootstappingServer)
+          bootstrappingServers.delete(bootstappingServer)
         }
       }
 
