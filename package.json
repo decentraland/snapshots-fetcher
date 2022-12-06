@@ -15,7 +15,7 @@
   "author": "Decentraland Contributors",
   "license": "Apache-2.0",
   "dependencies": {
-    "@dcl/catalyst-storage": "^1.0.0-20220604235145.commit-892b669",
+    "@dcl/catalyst-storage": "^2.0.0",
     "@dcl/hashing": "^1.0.0",
     "@dcl/schemas": "tag-fast-bootstrapping-5",
     "@well-known-components/interfaces": "^1.1.0",
