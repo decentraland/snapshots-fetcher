@@ -25,6 +25,7 @@ export type ExponentialFallofRetryOptions = {
    * @default 86_400_000 one day
    */
   maxInterval?: number
+  exitOnSuccess?: boolean
 }
 
 /**
@@ -41,6 +42,8 @@ export function createExponentialFallofRetry(
 
   if (options.maxInterval && options.maxInterval < 0) throw new Error('options.maxInterval must be >= 0')
 
+  const exitOnSuccess = options.exitOnSuccess || false
+
   let reconnectionCount = 0
 
   async function start() {
@@ -53,6 +56,10 @@ export function createExponentialFallofRetry(
 
       try {
         await options.action()
+        if (exitOnSuccess) {
+          logs.info('Breaking iteration. Action ended successfully')
+          return
+        }
       } catch (e: any) {
         logs.error(e)
         // increment reconnection time

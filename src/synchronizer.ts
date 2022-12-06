@@ -100,6 +100,7 @@ export async function createSynchronizer(
         try {
           // metrics start?
           await bootstrap()
+          logger.info('Bootstrap finished')
           // now we start syncing from pointer changes, it internally managers new servers to start syncing
           deployPointerChangesjobManager.setDesiredJobs(syncingServers)
         } catch (e: any) {
@@ -109,12 +110,13 @@ export async function createSynchronizer(
         }
         // If there are still some servers that didn't bootstrap, we throw an error so it runs later
         if (bootstrappingServers.size > 0) {
-          throw new Error(`There are servers that failed to bootstrap. Will try later. Servers: ${JSON.stringify(bootstrappingServers)}`)
+          throw new Error(`There are servers that failed to bootstrap. Will try later. Servers: ${JSON.stringify([...bootstrappingServers])}`)
         }
       },
       retryTime: 600_000,
       retryTimeExponent: 1.5,
       maxInterval: 5 * 3_600_000,
+      exitOnSuccess: true
     })
   }
 
