@@ -28,7 +28,7 @@ export async function getSnapshots(components: SnapshotsFetcherComponents, serve
       }))
   } catch (error) {
     components.logs.getLogger('snapshots-fetcher')
-      .info(`Error fetching new snapshots from ${server}. Will continue to fetch old one. Error: ${error}`)
+      .info(`Couldn't find new snapshots from ${server}. Will continue to fetch old one. Error: ${error}`)
   }
 
   const globalSnapshotUrl = new URL(`${server}/snapshot`).toString()

@@ -169,7 +169,7 @@ export async function* getDeployedEntitiesStreamFromSnapshots(
   const genesisTimestamp = options.fromTimestamp || 0
 
   for (const [snapshotHash, snapshotsWithServer] of serversSnapshotsBySnapshotHash.entries()) {
-    logs.debug('Snapshot found.', { hash: snapshotHash, contentServers: JSON.stringify(snapshotsWithServer.map(s => s.server)) })
+    logs.debug('Snapshot to be processed.', { hash: snapshotHash, contentServers: JSON.stringify(snapshotsWithServer.map(s => s.server)) })
     const snapshotIsAfterGensisTimestampInSomeServer = snapshotsWithServer.some(sn => sn.snapshot.lastIncludedDeploymentTimestamp > genesisTimestamp)
     const replacedSnapshotHashes = snapshotsWithServer.map(s => s.snapshot.replacedSnapshotHashes ?? [])
     const serversWithThisSnapshot = Array.from(new Set(snapshotsWithServer.map(s => s.server)))

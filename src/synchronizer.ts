@@ -35,6 +35,7 @@ export async function createSynchronizer(
       createJob(contentServer) {
         const lastEntityTimestamp = lastEntityTimestampFromSnapshotsByServer.get(contentServer)
         if (!lastEntityTimestamp) {
+          logger.debug(`lastEntityTimestampFromSnapshotsByServer: ${JSON.stringify(Array.from(lastEntityTimestampFromSnapshotsByServer.entries()))}. Server: ${contentServer}`)
           throw new Error(`Can't start pointer changes stream without last entity timestamp. This should not happen.`)
         }
         const fromTimestamp = lastEntityTimestamp - 20 * 60_000
@@ -61,11 +62,12 @@ export async function createSynchronizer(
           snapshotsWithServer.push({ snapshot, server })
           serversSnapshotsBySnapshotHash.set(snapshot.hash, snapshotsWithServer)
           serversToDeployFromSnapshots.add(server)
-          lastEntityTimestampFromSnapshotsByServer.set(server,
-            Math.max(lastEntityTimestampFromSnapshotsByServer.get(server) || genesisTimestamp, snapshot.lastIncludedDeploymentTimestamp))
+          const currentLastEntityTimestamp = lastEntityTimestampFromSnapshotsByServer.get(server) || genesisTimestamp
+          const lastEntityTimestamp = Math.max(currentLastEntityTimestamp, snapshot.lastIncludedDeploymentTimestamp)
+          lastEntityTimestampFromSnapshotsByServer.set(server, lastEntityTimestamp)
         }
       } catch (error) {
-        logger.error(`Error getting snapshots from ${server}.`)
+        logger.info(`Error getting snapshots from ${server}.`)
       }
     }
 
