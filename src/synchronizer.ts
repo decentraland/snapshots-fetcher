@@ -115,9 +115,9 @@ export async function createSynchronizer(
           throw new Error(`There are servers that failed to bootstrap. Will try later. Servers: ${JSON.stringify([...bootstrappingServers])}`)
         }
       },
-      retryTime: 600_000,
+      retryTime: 5000,
       retryTimeExponent: 1.5,
-      maxInterval: 5 * 3_600_000,
+      maxInterval: 3_600_000,
       exitOnSuccess: true
     })
   }
