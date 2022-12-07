@@ -27,10 +27,17 @@ export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetc
   const numberOfProcessedEntitiesBySnapshot: Map<string, number> = new Map()
 
   return {
-    async someGroupWasProcessed(snapshotReplacedGroups: string[][]) {
-      const allReplacedSnapshots = snapshotReplacedGroups.flat()
-      const processedSnapshots = await components.processedSnapshotStorage.processedFrom(allReplacedSnapshots)
-      return snapshotReplacedGroups.some(replacedGroup => replacedGroup.length > 0 && replacedGroup.every(s => processedSnapshots.has(s)))
+    async shouldProcessSnapshot(snapshotHash: string, snapshotReplacedGroups: string[][]) {
+      if (snapshotsBeingStreamed.has(snapshotHash) || snapshotsCompletelyStreamed.has(snapshotHash)) {
+        return false
+      }
+      const processedSnapshots = await components.processedSnapshotStorage.processedFrom(snapshotReplacedGroups.flat())
+      for (const replacedGroup of snapshotReplacedGroups) {
+        if (replacedGroup.length > 0 && replacedGroup.every(s => processedSnapshots.has(s))) {
+          return false
+        }
+      }
+      return true
     },
     async startStreamOf(snapshotHash: string) {
       snapshotsBeingStreamed.add(snapshotHash)

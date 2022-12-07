@@ -175,7 +175,7 @@ export async function* getDeployedEntitiesStreamFromSnapshots(
     const serversWithThisSnapshot = Array.from(new Set(snapshotsWithServer.map(s => s.server)))
     const shouldStreamSnapshot =
       snapshotIsAfterGensisTimestampInSomeServer &&
-      !await components.processedSnapshots.someGroupWasProcessed([[snapshotHash], ...replacedSnapshotHashes])
+      await components.processedSnapshots.shouldProcessSnapshot(snapshotHash, replacedSnapshotHashes)
 
     if (shouldStreamSnapshot) {
       try {
