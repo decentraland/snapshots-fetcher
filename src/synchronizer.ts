@@ -93,6 +93,7 @@ export async function createSynchronizer(
       const runningCallbacks = initialBootstrapFinishedEventCallbacks.map(cb => cb())
       await Promise.all(runningCallbacks)
     }
+    logger.info(`Bootstrap finished successfully for: ${syncedFromSnapshotServers}`)
   }
 
   function createSyncJob() {
@@ -101,7 +102,6 @@ export async function createSynchronizer(
         try {
           // metrics start?
           await bootstrap()
-          logger.info('Bootstrap finished')
           // now we start syncing from pointer changes, it internally managers new servers to start syncing
           deployPointerChangesjobManager.setDesiredJobs(syncingServers)
         } catch (e: any) {

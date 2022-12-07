@@ -17,7 +17,7 @@ export async function getSnapshots(components: SnapshotsFetcherComponents, serve
       hash: string,
       timeRange: { initTimestamp: number, endTimestamp: number },
       replacedSnapshotHashes?: string[]
-    }[] = await components.downloadQueue.scheduleJobWithRetries(() => fetchJson(incrementalSnapshotsUrl, components.fetcher), 1)
+    }[] = await components.downloadQueue.scheduleJobWithRetries(() => fetchJson(incrementalSnapshotsUrl, components.fetcher), 3)
     return newSnapshots
       // newest first
       .sort((s1, s2) => s2.timeRange.endTimestamp - s1.timeRange.endTimestamp)

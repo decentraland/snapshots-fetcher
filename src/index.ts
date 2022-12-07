@@ -1,5 +1,5 @@
 import { ILoggerComponent } from '@well-known-components/interfaces'
-import { fetchPointerChanges, getSnapshots } from './client'
+import { fetchPointerChanges } from './client'
 import { downloadFileWithRetries } from './downloader'
 import { createExponentialFallofRetry } from './exponential-fallof-retry'
 import { processDeploymentsInFile } from './file-processor'
