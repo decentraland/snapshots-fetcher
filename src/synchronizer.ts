@@ -52,7 +52,7 @@ export async function createSynchronizer(
 
   async function syncFromSnapshots(serversToSync: Set<string>) {
     const serversSnapshotsBySnapshotHash: Map<string, Snapshot[]> = new Map()
-    const serversToDeployFromSnapshots: Set<string> = new Set()
+    const serversToSyncFromSnapshots: Set<string> = new Set()
     const genesisTimestamp = options.fromTimestamp || 0
     for (const server of serversToSync) {
       try {
@@ -61,11 +61,11 @@ export async function createSynchronizer(
           const snapshotsWithServer = serversSnapshotsBySnapshotHash.get(snapshot.hash) ?? []
           snapshotsWithServer.push({ snapshot, server })
           serversSnapshotsBySnapshotHash.set(snapshot.hash, snapshotsWithServer)
-          serversToDeployFromSnapshots.add(server)
-          const currentLastEntityTimestamp = lastEntityTimestampFromSnapshotsByServer.get(server) || genesisTimestamp
-          const lastEntityTimestamp = Math.max(currentLastEntityTimestamp, snapshot.lastIncludedDeploymentTimestamp)
-          lastEntityTimestampFromSnapshotsByServer.set(server, lastEntityTimestamp)
         }
+        // If the server doesn't have snapshots yet (for example new servers), then we set to genesisTimestamp
+        const lastEntityTimestampOfThisServer = Math.max(...snapshots.map(s => s.lastIncludedDeploymentTimestamp), genesisTimestamp)
+        lastEntityTimestampFromSnapshotsByServer.set(server, lastEntityTimestampOfThisServer)
+        serversToSyncFromSnapshots.add(server)
       } catch (error) {
         logger.info(`Error getting snapshots from ${server}.`)
       }
@@ -79,7 +79,7 @@ export async function createSynchronizer(
       await components.deployer.deployEntity(entity, entity.servers)
     }
     logger.info('End deploying entities from snapshots.')
-    return serversToDeployFromSnapshots
+    return serversToSyncFromSnapshots
   }
 
   async function bootstrap() {
