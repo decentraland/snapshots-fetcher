@@ -34,9 +34,8 @@ export async function createSynchronizer(
       jobManagerName: 'SynchronizationJobManager',
       createJob(contentServer) {
         const lastEntityTimestamp = lastEntityTimestampFromSnapshotsByServer.get(contentServer)
-        if (!lastEntityTimestamp) {
-          logger.debug(`lastEntityTimestampFromSnapshotsByServer: ${JSON.stringify(Array.from(lastEntityTimestampFromSnapshotsByServer.entries()))}. Server: ${contentServer}`)
-          throw new Error(`Can't start pointer changes stream without last entity timestamp. This should not happen.`)
+        if (lastEntityTimestamp == undefined) {
+          throw new Error(`Can't start pointer changes stream without last entity timestamp for ${contentServer}. This should not happen.`)
         }
         const fromTimestamp = lastEntityTimestamp - 20 * 60_000
         return createCatalystPointerChangesDeploymentStream(
