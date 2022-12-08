@@ -1,4 +1,4 @@
-import { getDeployedEntitiesStreamFromPointerChanges, getDeployedEntitiesStreamFromSnapshots } from "."
+import { createProcessedSnapshotsComponent, getDeployedEntitiesStreamFromPointerChanges, getDeployedEntitiesStreamFromSnapshots } from "."
 import { getSnapshots } from "./client"
 import { createExponentialFallofRetry } from "./exponential-fallof-retry"
 import { createJobLifecycleManagerComponent } from "./job-lifecycle-manager"
@@ -57,12 +57,20 @@ export async function createSynchronizer(
       }
     }
 
-    const stream = getDeployedEntitiesStreamFromSnapshots(components, options, snapshotsByServer)
+    // Each time a new processedSnapshots is created because it has data that need to be ephimeral between multiple
+    // calls of this method, for example 'snapshotsBeingStreamed'. It's proper of an execution.
+    const processedSnapshots = createProcessedSnapshotsComponent(components)
+
+    const stream = getDeployedEntitiesStreamFromSnapshots({ ...components, processedSnapshots }, options, snapshotsByServer)
     logger.info('Starting to deploy entities from snapshots.')
     for await (const entity of stream) {
       // schedule the deployment in the deployer. the await DOES NOT mean that the entity was deployed entirely
       // if the deployer is not synchronous. For example, the batchDeployer used in the catalyst just add it in a queue.
-      await components.deployer.deployEntity(entity, entity.servers)
+      // Once the entity is truly deployed, it should call the method 'markAsDeployed'
+      await components.deployer.deployEntity({
+        ...entity,
+        markAsDeployed: () => processedSnapshots.entityProcessedFrom(entity.snapshotHash)
+      }, entity.servers)
     }
     logger.info('End deploying entities from snapshots.')
 

@@ -10,6 +10,7 @@ import {
   DeployedEntityStreamCommonOptions,
   EntityHash,
   IDeployerComponent,
+  IProcessedSnapshotsComponent,
   PointerChangesDeployedEntityStreamOptions,
   ReconnectionOptions,
   Server,
@@ -160,7 +161,9 @@ export async function downloadEntityAndContentFiles(
  * @internal
  */
 export async function* getDeployedEntitiesStreamFromSnapshots(
-  components: SnapshotsFetcherComponents,
+  components: SnapshotsFetcherComponents & {
+    processedSnapshots: IProcessedSnapshotsComponent
+  },
   options: SnapshotDeployedEntityStreamOptions,
   snapshotsByServer: Map<string, Snapshot[]>
 ): AsyncIterable<SyncDeployment & {
@@ -168,9 +171,6 @@ export async function* getDeployedEntitiesStreamFromSnapshots(
   servers: string[]
 }> {
   const logs = components.logs.getLogger('getDeployedEntitiesStreamFromSnapshots')
-  // Each time a new processedSnaphots is created because it has data that need to be ephimeral between multiple
-  // calls of this method, for example 'snapshotsBeingStreamed'. It's proper of an execution.
-  const processedSnapshots = createProcessedSnapshotsComponent(components)
   // The minimum timestamp we are looking for
   const genesisTimestamp = options.fromTimestamp || 0
   type SnapshotInfo = {
@@ -206,7 +206,7 @@ export async function* getDeployedEntitiesStreamFromSnapshots(
     logs.debug('Snapshot to be processed.', { hash: snapshotHash, contentServers: JSON.stringify(servers) })
     const shouldStreamSnapshot =
       greatestEndTimestamp > genesisTimestamp &&
-      await processedSnapshots.shouldProcessSnapshot(snapshotHash, replacedSnapshotHashes)
+      await components.processedSnapshots.shouldProcessSnapshot(snapshotHash, replacedSnapshotHashes)
 
     if (shouldStreamSnapshot) {
       try {
@@ -223,7 +223,7 @@ export async function* getDeployedEntitiesStreamFromSnapshots(
 
         // 2.2. open the snapshot file and process line by line
         const deploymentsInFile = processDeploymentsInFile(snapshotHash, components, logs)
-        await processedSnapshots.startStreamOf(snapshotHash)
+        await components.processedSnapshots.startStreamOf(snapshotHash)
         let numberOfStreamedEntities = 0
         for await (const deployment of deploymentsInFile) {
 
@@ -239,7 +239,7 @@ export async function* getDeployedEntitiesStreamFromSnapshots(
             }
           }
         }
-        await processedSnapshots.endStreamOf(snapshotHash, numberOfStreamedEntities)
+        await components.processedSnapshots.endStreamOf(snapshotHash, numberOfStreamedEntities)
       } finally {
         if (options.deleteSnapshotAfterUsage !== false) {
           try {
