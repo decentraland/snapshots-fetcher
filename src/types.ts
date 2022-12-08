@@ -37,7 +37,6 @@ export type SnapshotsFetcherComponents = {
   logs: ILoggerComponent
   storage: IContentStorageComponent
   processedSnapshotStorage: IProcessedSnapshotStorageComponent
-  processedSnapshots: IProcessedSnapshotsComponent
 }
 
 /**
@@ -184,7 +183,7 @@ export type IProcessedSnapshotStorageComponent = {
 }
 
 /**
- * @public
+ * @internal
  */
 export type IProcessedSnapshotsComponent = {
   shouldProcessSnapshot(snapshotHash: string, replacedSnapshotHashes: string[][]): Promise<boolean>

@@ -18,7 +18,7 @@ import { IProcessedSnapshotsComponent, SnapshotsFetcherComponents } from "./type
  * condition is met in order to save or not the snapshot as procesed.
  *
  *
- * @public
+ * @internal
  */
 export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage' | 'logs'>): IProcessedSnapshotsComponent {
   const logger = components.logs.getLogger('processed-snapshots-logic')
