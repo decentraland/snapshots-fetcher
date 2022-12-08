@@ -2,7 +2,7 @@ import { getDeployedEntitiesStreamFromPointerChanges, getDeployedEntitiesStreamF
 import { getSnapshots } from "./client"
 import { createExponentialFallofRetry } from "./exponential-fallof-retry"
 import { createJobLifecycleManagerComponent } from "./job-lifecycle-manager"
-import { CatalystDeploymentStreamOptions, IDeployerComponent, Snapshot, SnapshotsFetcherComponents, SynchronizerComponent } from "./types"
+import { IDeployerComponent, PointerChangesDeployedEntityStreamOptions, Snapshot, SnapshotsFetcherComponents, SynchronizerComponent, SynchronizerOptions } from "./types"
 import { contentServerMetricLabels } from "./utils"
 
 /**
@@ -12,7 +12,7 @@ export async function createSynchronizer(
   components: SnapshotsFetcherComponents & {
     deployer: IDeployerComponent
   },
-  options: CatalystDeploymentStreamOptions
+  options: SynchronizerOptions
 ): Promise<SynchronizerComponent> {
   const logger = components.logs.getLogger('synchronizer')
   let initialBootstrapFinished = false
@@ -28,7 +28,7 @@ export async function createSynchronizer(
     lastEntityTimestampFromSnapshotsByServer.set(contentServer, Math.max(currentLastTimestamp, ...newTimestamps))
   }
 
-  async function syncFromPointerChanges(contentServer: string, options: CatalystDeploymentStreamOptions, syncIsStopped: () => boolean) {
+  async function syncFromPointerChanges(contentServer: string, options: PointerChangesDeployedEntityStreamOptions, syncIsStopped: () => boolean) {
     const deployments = getDeployedEntitiesStreamFromPointerChanges(components, options, contentServer)
 
     for await (const deployment of deployments) {
@@ -44,39 +44,6 @@ export async function createSynchronizer(
       increaseLastTimestamp(contentServer, deployment.localTimestamp)
     }
   }
-
-  const deployPointerChangesAfterBootstrapJobManager = createJobLifecycleManagerComponent(
-    components,
-    {
-      jobManagerName: 'SynchronizationJobManager',
-      createJob(contentServer) {
-        const lastEntityTimestamp = lastEntityTimestampFromSnapshotsByServer.get(contentServer)
-        if (lastEntityTimestamp == undefined) {
-          throw new Error(`Can't start pointer changes stream without last entity timestamp for ${contentServer}. This should not happen.`)
-        }
-        const fromTimestamp = lastEntityTimestamp - 20 * 60_000
-        const logs = components.logs.getLogger(`pointerChangesDeploymentStream(${contentServer})`)
-
-        const metricsLabels = contentServerMetricLabels(contentServer)
-
-        const exponentialFallofRetryComponent = createExponentialFallofRetry(logs, {
-          async action() {
-            try {
-              components.metrics.increment('dcl_deployments_stream_reconnection_count', metricsLabels)
-              await syncFromPointerChanges(contentServer, { ...options, fromTimestamp }, () => exponentialFallofRetryComponent.isStopped())
-            } catch (e: any) {
-              // we don't log the exception here because createExponentialFallofRetry(logger, options) receives the logger
-              components.metrics.increment('dcl_deployments_stream_failure_count', metricsLabels)
-              throw e
-            }
-          },
-          retryTime: options.reconnectTime,
-          retryTimeExponent: options.reconnectRetryTimeExponent ?? 1.1,
-          maxInterval: options.maxReconnectionTime,
-        })
-        return exponentialFallofRetryComponent
-      }
-    })
 
   async function syncFromSnapshots(serversToSync: Set<string>): Promise<Set<string>> {
     const snapshotsByServer: Map<string, Snapshot[]> = new Map()
@@ -105,6 +72,40 @@ export async function createSynchronizer(
     // We only return servers that didn't fail to get its snapshots
     return new Set(snapshotsByServer.keys())
   }
+
+  const deployPointerChangesAfterBootstrapJobManager = createJobLifecycleManagerComponent(
+    components,
+    {
+      jobManagerName: 'SynchronizationJobManager',
+      createJob(contentServer) {
+        const lastEntityTimestamp = lastEntityTimestampFromSnapshotsByServer.get(contentServer)
+        if (lastEntityTimestamp == undefined) {
+          throw new Error(`Can't start pointer changes stream without last entity timestamp for ${contentServer}. This should not happen.`)
+        }
+        const fromTimestamp = lastEntityTimestamp - 20 * 60_000
+        const logs = components.logs.getLogger(`pointerChangesDeploymentStream(${contentServer})`)
+
+        const metricsLabels = contentServerMetricLabels(contentServer)
+
+        const exponentialFallofRetryComponent = createExponentialFallofRetry(logs, {
+          async action() {
+            try {
+              components.metrics.increment('dcl_deployments_stream_reconnection_count', metricsLabels)
+              await syncFromPointerChanges(contentServer, { ...options, fromTimestamp }, () => exponentialFallofRetryComponent.isStopped())
+            } catch (e: any) {
+              // we don't log the exception here because createExponentialFallofRetry(logger, options) receives the logger
+              components.metrics.increment('dcl_deployments_stream_failure_count', metricsLabels)
+              throw e
+            }
+          },
+          retryTime: options.syncingReconnection.reconnectTime,
+          retryTimeExponent: options.syncingReconnection.reconnectRetryTimeExponent ?? 1.1,
+          maxInterval: options.syncingReconnection.maxReconnectionTime,
+        })
+        return exponentialFallofRetryComponent
+      }
+    }
+  )
 
   async function bootstrap() {
     const syncedFromSnapshotServers = await syncFromSnapshots(bootstrappingServers)
@@ -139,9 +140,9 @@ export async function createSynchronizer(
           throw new Error(`There are servers that failed to bootstrap. Will try later. Servers: ${JSON.stringify([...bootstrappingServers])}`)
         }
       },
-      retryTime: 5000,
-      retryTimeExponent: 1.5,
-      maxInterval: 3_600_000,
+      retryTime: options.bootstrapReconnection.reconnectTime ?? 5000,
+      retryTimeExponent: options.bootstrapReconnection.reconnectRetryTimeExponent ?? 1.5,
+      maxInterval: options.bootstrapReconnection.maxReconnectionTime ?? 3_600_000,
       exitOnSuccess: true
     })
   }

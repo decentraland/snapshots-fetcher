@@ -4,7 +4,7 @@ import { ExponentialFallofRetryComponent } from './exponential-fallof-retry'
 import { IJobQueue } from './job-queue-port'
 import { metricsDefinitions } from './metrics'
 import { IContentStorageComponent } from '@dcl/catalyst-storage'
-import { SyncDeployment } from '@dcl/schemas'
+import { PointerChangesSyncDeployment, SyncDeployment } from '@dcl/schemas'
 
 /**
  * @public
@@ -55,7 +55,7 @@ export type IDeployerComponent = {
 }
 
 /**
- * @public
+ * @deprecated
  */
 export type DownloadEntitiesOptions = {
   catalystServers: string[]
@@ -71,7 +71,7 @@ export type DownloadEntitiesOptions = {
 }
 
 /**
- * @public
+ * @deprecated
  */
 export type DeployedEntityStreamOptions = {
   fromTimestamp?: number
@@ -101,12 +101,12 @@ export type CatalystDeploymentStreamComponent = ExponentialFallofRetryComponent 
 }
 
 /**
- * @public
+ * @deprecated
  */
 export type DeploymentHandler = (deployment: SyncDeployment, server: string) => Promise<void>
 
 /**
- * @public
+ * @deprecated
  */
 export type CatalystDeploymentStreamOptions = DeployedEntityStreamOptions & {
   reconnectTime: number
@@ -120,11 +120,72 @@ export type CatalystDeploymentStreamOptions = DeployedEntityStreamOptions & {
   maxReconnectionTime?: number
 }
 
+/**
+ * @public
+ */
+export type SynchronizerOptions =
+  SnapshotDeployedEntityStreamOptions &
+  PointerChangesDeployedEntityStreamOptions & {
+    bootstrapReconnection: ReconnectionOptions,
+    syncingReconnection: ReconnectionOptions
+  }
+
+/**
+* @public
+*/
+export type ReconnectionOptions = {
+  reconnectTime: number
+  /**
+   * 1.1 by default
+   */
+  reconnectRetryTimeExponent?: number
+  /**
+   * defaults to one day
+   */
+  maxReconnectionTime?: number
+}
+
+/**
+ * @public
+ */
+export type SnapshotDeployedEntityStreamOptions = DeployedEntityStreamCommonOptions & {
+  // retry http requests
+  requestRetryWaitTime: number
+  requestMaxRetries: number
+
+  tmpDownloadFolder: string
+  /**
+   * Delete downloaded snapshot files after usage
+   * Default: true
+   */
+  deleteSnapshotAfterUsage?: boolean
+}
+
+export type PointerChangesDeployedEntityStreamOptions = DeployedEntityStreamCommonOptions & {
+  // - Configures pointer-changes polling
+  // - When pointerChangesWaitTime == 0, the polling is disabled and the stream
+  //   ends right after finishing the first iteration
+  pointerChangesWaitTime: number
+}
+
+/**
+ * @public
+ */
+export type DeployedEntityStreamCommonOptions = {
+  fromTimestamp?: number
+}
+
+/**
+ * @public
+ */
 export type IProcessedSnapshotStorageComponent = {
   processedFrom(snapshotHashes: string[]): Promise<Set<string>>
   saveProcessed(snapshotHash: string): Promise<void>
 }
 
+/**
+ * @public
+ */
 export type IProcessedSnapshotsComponent = {
   shouldProcessSnapshot(snapshotHash: string, replacedSnapshotHashes: string[][]): Promise<boolean>
   startStreamOf(snapshotHash: string): Promise<void>

@@ -6,13 +6,15 @@ import { processDeploymentsInFile } from './file-processor'
 import { IJobWithLifecycle } from './job-lifecycle-manager'
 import {
   CatalystDeploymentStreamComponent,
-  CatalystDeploymentStreamOptions,
   ContentMapping,
-  DeployedEntityStreamOptions,
+  DeployedEntityStreamCommonOptions,
   EntityHash,
   IDeployerComponent,
+  PointerChangesDeployedEntityStreamOptions,
+  ReconnectionOptions,
   Server,
   Snapshot,
+  SnapshotDeployedEntityStreamOptions,
   SnapshotsFetcherComponents,
 } from './types'
 import { contentServerMetricLabels, sleep, streamToBuffer } from './utils'
@@ -158,7 +160,7 @@ export async function downloadEntityAndContentFiles(
  */
 export async function* getDeployedEntitiesStreamFromSnapshots(
   components: SnapshotsFetcherComponents,
-  options: DeployedEntityStreamOptions,
+  options: SnapshotDeployedEntityStreamOptions,
   snapshotsByServer: Map<string, Snapshot[]>
 ): AsyncIterable<SyncDeployment & {
   snapshotHash: string
@@ -254,7 +256,7 @@ export async function* getDeployedEntitiesStreamFromSnapshots(
  */
 export async function* getDeployedEntitiesStreamFromPointerChanges(
   components: SnapshotsFetcherComponents,
-  options: DeployedEntityStreamOptions,
+  options: PointerChangesDeployedEntityStreamOptions,
   contentServer: string
 ) {
   const logs = components.logs.getLogger(`pointerChangesStream(${contentServer})`)
@@ -297,7 +299,7 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
 export function createCatalystPointerChangesDeploymentStream(
   components: SnapshotsFetcherComponents & { deployer: IDeployerComponent },
   contentServer: string,
-  options: CatalystDeploymentStreamOptions
+  options: ReconnectionOptions & PointerChangesDeployedEntityStreamOptions
 ): IJobWithLifecycle & CatalystDeploymentStreamComponent {
   const logs = components.logs.getLogger(`pointerChangesDeploymentStream(${contentServer})`)
 
