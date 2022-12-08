@@ -18,8 +18,9 @@ export async function createSynchronizer(
   let initialBootstrapFinished = false
   const genesisTimestamp = options.fromTimestamp || 0
   const initialBootstrapFinishedEventCallbacks: Array<() => Promise<void>> = []
+  const bootstrappingServersFromSnapshots: Set<string> = new Set()
+  const bootstrappingServersFromPointerChanges: Set<string> = new Set()
   const syncingServers: Set<string> = new Set()
-  const bootstrappingServers: Set<string> = new Set()
   const lastEntityTimestampFromSnapshotsByServer: Map<string, number> = new Map()
 
   function increaseLastTimestamp(contentServer: string, ...newTimestamps: number[]) {
@@ -73,21 +74,60 @@ export async function createSynchronizer(
     return new Set(snapshotsByServer.keys())
   }
 
+  async function bootstrapFromSnapshots() {
+    const syncedServersFromSnapshot = await syncFromSnapshots(bootstrappingServersFromSnapshots)
+
+    for (const bootstrappedServer of syncedServersFromSnapshot) {
+      bootstrappingServersFromPointerChanges.add(bootstrappedServer)
+      bootstrappingServersFromSnapshots.delete(bootstrappedServer)
+    }
+  }
+
+  async function bootstrapFromPointerChanges() {
+    const pointerChangesBootstrappingJobs = []
+    for (const bootstrappingServersFromPointerChange of bootstrappingServersFromPointerChanges) {
+      pointerChangesBootstrappingJobs.push(async () => {
+        try {
+          const lastEntityTimestamp = lastEntityTimestampFromSnapshotsByServer.get(bootstrappingServersFromPointerChange)
+          if (lastEntityTimestamp == undefined) {
+            throw new Error(`Can't start pointer changes stream without last entity timestamp for ${bootstrappingServersFromPointerChange}. This should never happen.`)
+          }
+          const fromTimestamp = lastEntityTimestamp - 20 * 60_000
+          await syncFromPointerChanges(bootstrappingServersFromPointerChange, { ...options, fromTimestamp }, () => false)
+          syncingServers.add(bootstrappingServersFromPointerChange)
+          bootstrappingServersFromPointerChanges.delete(bootstrappingServersFromPointerChange)
+        } catch (error) {
+          // If there's an error, the server doesn't pass to syncing state
+          logger.info(`Error bootstrapping from pointer changes for server: ${bootstrappingServersFromPointerChange}`)
+        }
+      })
+    }
+
+    await Promise.all(pointerChangesBootstrappingJobs.map(job => job()))
+  }
+
+  async function bootstrap() {
+    await bootstrapFromSnapshots()
+    await bootstrapFromPointerChanges()
+    if (!initialBootstrapFinished) {
+      initialBootstrapFinished = true
+      const runningCallbacks = initialBootstrapFinishedEventCallbacks.map(cb => cb())
+      await Promise.all(runningCallbacks)
+    }
+    logger.info(`Bootstrap finished successfully`)
+  }
+
   const deployPointerChangesAfterBootstrapJobManager = createJobLifecycleManagerComponent(
     components,
     {
       jobManagerName: 'SynchronizationJobManager',
       createJob(contentServer) {
-        const lastEntityTimestamp = lastEntityTimestampFromSnapshotsByServer.get(contentServer)
-        if (lastEntityTimestamp == undefined) {
-          throw new Error(`Can't start pointer changes stream without last entity timestamp for ${contentServer}. This should not happen.`)
+        const fromTimestamp = lastEntityTimestampFromSnapshotsByServer.get(contentServer)
+        if (fromTimestamp == undefined) {
+          throw new Error(`Can't start pointer changes stream without last entity timestamp for ${contentServer}. This should never happen.`)
         }
-        const fromTimestamp = lastEntityTimestamp - 20 * 60_000
-        const logs = components.logs.getLogger(`pointerChangesDeploymentStream(${contentServer})`)
-
         const metricsLabels = contentServerMetricLabels(contentServer)
-
-        const exponentialFallofRetryComponent = createExponentialFallofRetry(logs, {
+        const exponentialFallofRetryComponent = createExponentialFallofRetry(logger, {
           async action() {
             try {
               components.metrics.increment('dcl_deployments_stream_reconnection_count', metricsLabels)
@@ -107,21 +147,6 @@ export async function createSynchronizer(
     }
   )
 
-  async function bootstrap() {
-    const syncedFromSnapshotServers = await syncFromSnapshots(bootstrappingServers)
-    for (const bootstrappedServer of syncedFromSnapshotServers) {
-      syncingServers.add(bootstrappedServer)
-      bootstrappingServers.delete(bootstrappedServer)
-    }
-
-    if (!initialBootstrapFinished) {
-      initialBootstrapFinished = true
-      const runningCallbacks = initialBootstrapFinishedEventCallbacks.map(cb => cb())
-      await Promise.all(runningCallbacks)
-    }
-    logger.info(`Bootstrap finished successfully for: ${syncedFromSnapshotServers}`)
-  }
-
   function createSyncJob() {
     return createExponentialFallofRetry(logger, {
       async action() {
@@ -136,8 +161,12 @@ export async function createSynchronizer(
           throw e
         }
         // If there are still some servers that didn't bootstrap, we throw an error so it runs later
-        if (bootstrappingServers.size > 0) {
-          throw new Error(`There are servers that failed to bootstrap. Will try later. Servers: ${JSON.stringify([...bootstrappingServers])}`)
+        if (bootstrappingServersFromSnapshots.size > 0 || bootstrappingServersFromPointerChanges.size > 0) {
+          throw new Error(
+            `There are servers that failed to bootstrap. Will try later. Servers: ${JSON.stringify([
+              ...bootstrappingServersFromSnapshots,
+              ...bootstrappingServersFromPointerChanges])
+            }`)
         }
       },
       retryTime: options.bootstrapReconnection.reconnectTime ?? 5000,
@@ -152,14 +181,14 @@ export async function createSynchronizer(
       // 1. Add the new servers (not currently syncing) to the bootstrapping state
       for (const serverToSync of serversToSync) {
         if (!syncingServers.has(serverToSync)) {
-          bootstrappingServers.add(serverToSync)
+          bootstrappingServersFromSnapshots.add(serverToSync)
         }
       }
 
       // 2. a) Remove from bootstrapping servers that should stop syncing
-      for (const bootstappingServer of bootstrappingServers) {
+      for (const bootstappingServer of bootstrappingServersFromSnapshots) {
         if (!serversToSync.has(bootstappingServer)) {
-          bootstrappingServers.delete(bootstappingServer)
+          bootstrappingServersFromSnapshots.delete(bootstappingServer)
         }
       }
 
