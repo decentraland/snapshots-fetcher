@@ -145,10 +145,7 @@ export type SynchronizerComponent = {
  * @internal
  */
 export type Snapshot = {
-  snapshot: {
-    hash: string
-    lastIncludedDeploymentTimestamp: number
-    replacedSnapshotHashes?: string[] | undefined
-  }
-  server: string
+  hash: string
+  lastIncludedDeploymentTimestamp: number
+  replacedSnapshotHashes?: string[] | undefined
 }

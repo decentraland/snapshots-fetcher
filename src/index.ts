@@ -159,7 +159,7 @@ export async function downloadEntityAndContentFiles(
 export async function* getDeployedEntitiesStreamFromSnapshots(
   components: SnapshotsFetcherComponents,
   options: DeployedEntityStreamOptions,
-  serversSnapshotsBySnapshotHash: Map<string, Snapshot[]>
+  snapshotsByServer: Map<string, Snapshot[]>
 ): AsyncIterable<SyncDeployment & {
   snapshotHash: string
   servers: string[]
@@ -167,14 +167,39 @@ export async function* getDeployedEntitiesStreamFromSnapshots(
   const logs = components.logs.getLogger('getDeployedEntitiesStreamFromSnapshots')
   // the minimum timestamp we are looking for
   const genesisTimestamp = options.fromTimestamp || 0
+  type SnapshotInfo = {
+    greatestEndTimestamp: number,
+    replacedSnapshotHashes: string[][],
+    servers: string[]
+  }
+  const snapshotInfoByHash: Map<string, SnapshotInfo> = new Map()
+  for (const [server, snapshots] of snapshotsByServer) {
+    for (const snapshot of snapshots) {
+      const snapshotInfo = snapshotInfoByHash.get(snapshot.hash)
 
-  for (const [snapshotHash, snapshotsWithServer] of serversSnapshotsBySnapshotHash.entries()) {
-    logs.debug('Snapshot to be processed.', { hash: snapshotHash, contentServers: JSON.stringify(snapshotsWithServer.map(s => s.server)) })
-    const snapshotIsAfterGensisTimestampInSomeServer = snapshotsWithServer.some(sn => sn.snapshot.lastIncludedDeploymentTimestamp > genesisTimestamp)
-    const replacedSnapshotHashes = snapshotsWithServer.map(s => s.snapshot.replacedSnapshotHashes ?? [])
-    const serversWithThisSnapshot = Array.from(new Set(snapshotsWithServer.map(s => s.server)))
+      const greatestEndTimestamp = snapshotInfo
+        ? Math.max(snapshotInfo.greatestEndTimestamp, snapshot.lastIncludedDeploymentTimestamp)
+        : snapshot.lastIncludedDeploymentTimestamp
+
+      const replacedSnapshotHashes = snapshotInfo?.replacedSnapshotHashes ?? []
+      if (snapshot.replacedSnapshotHashes) {
+        replacedSnapshotHashes.push(snapshot.replacedSnapshotHashes)
+      }
+      const servers = snapshotInfo?.servers ?? []
+      servers.push(server)
+
+      snapshotInfoByHash.set(snapshot.hash, {
+        greatestEndTimestamp,
+        replacedSnapshotHashes,
+        servers
+      })
+    }
+  }
+
+  for (const [snapshotHash, { greatestEndTimestamp, replacedSnapshotHashes, servers }] of snapshotInfoByHash) {
+    logs.debug('Snapshot to be processed.', { hash: snapshotHash, contentServers: JSON.stringify(servers) })
     const shouldStreamSnapshot =
-      snapshotIsAfterGensisTimestampInSomeServer &&
+      greatestEndTimestamp > genesisTimestamp &&
       await components.processedSnapshots.shouldProcessSnapshot(snapshotHash, replacedSnapshotHashes)
 
     if (shouldStreamSnapshot) {
@@ -184,7 +209,7 @@ export async function* getDeployedEntitiesStreamFromSnapshots(
           components,
           snapshotHash,
           options.tmpDownloadFolder,
-          serversWithThisSnapshot,
+          servers,
           new Map(),
           options.requestMaxRetries,
           options.requestRetryWaitTime
@@ -204,7 +229,7 @@ export async function* getDeployedEntitiesStreamFromSnapshots(
             yield {
               ...deployment,
               snapshotHash,
-              servers: serversWithThisSnapshot
+              servers
             }
           }
         }

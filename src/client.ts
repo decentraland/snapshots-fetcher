@@ -1,15 +1,11 @@
 import { PointerChangesSyncDeployment } from '@dcl/schemas'
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import { metricsDefinitions } from './metrics'
-import { SnapshotsFetcherComponents } from './types'
+import { Snapshot, SnapshotsFetcherComponents } from './types'
 import { contentServerMetricLabels, fetchJson, saveContentFileToDisk as saveContentFile } from './utils'
 
 export async function getSnapshots(components: SnapshotsFetcherComponents, server: string, retries: number):
-  Promise<{
-    hash: string,
-    lastIncludedDeploymentTimestamp: number
-    replacedSnapshotHashes?: string[]
-  }[]> {
+  Promise<Snapshot[]> {
   try {
     const incrementalSnapshotsUrl = new URL(`${server}/snapshots`).toString()
     // TODO: validate response

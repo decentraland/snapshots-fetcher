@@ -1,17 +1,9 @@
-import { createCatalystPointerChangesDeploymentStream, getDeployedEntitiesStreamFromSnapshots } from "."
+import { getDeployedEntitiesStreamFromPointerChanges, getDeployedEntitiesStreamFromSnapshots } from "."
 import { getSnapshots } from "./client"
 import { createExponentialFallofRetry } from "./exponential-fallof-retry"
 import { createJobLifecycleManagerComponent } from "./job-lifecycle-manager"
-import { CatalystDeploymentStreamOptions, IDeployerComponent, SnapshotsFetcherComponents, SynchronizerComponent } from "./types"
-
-type Snapshot = {
-  snapshot: {
-    hash: string
-    lastIncludedDeploymentTimestamp: number
-    replacedSnapshotHashes?: string[] | undefined
-  }
-  server: string
-}
+import { CatalystDeploymentStreamOptions, IDeployerComponent, Snapshot, SnapshotsFetcherComponents, SynchronizerComponent } from "./types"
+import { contentServerMetricLabels } from "./utils"
 
 /**
  * @public
@@ -20,15 +12,40 @@ export async function createSynchronizer(
   components: SnapshotsFetcherComponents & {
     deployer: IDeployerComponent
   },
-  options: CatalystDeploymentStreamOptions,
+  options: CatalystDeploymentStreamOptions
 ): Promise<SynchronizerComponent> {
   const logger = components.logs.getLogger('synchronizer')
   let initialBootstrapFinished = false
+  const genesisTimestamp = options.fromTimestamp || 0
   const initialBootstrapFinishedEventCallbacks: Array<() => Promise<void>> = []
   const syncingServers: Set<string> = new Set()
   const bootstrappingServers: Set<string> = new Set()
   const lastEntityTimestampFromSnapshotsByServer: Map<string, number> = new Map()
-  const deployPointerChangesjobManager = createJobLifecycleManagerComponent(
+
+  function increaseLastTimestamp(contentServer: string, ...newTimestamps: number[]) {
+    // If the server doesn't have snapshots yet (for example new servers), then we set to genesisTimestamp
+    const currentLastTimestamp = lastEntityTimestampFromSnapshotsByServer.get(contentServer) || genesisTimestamp
+    lastEntityTimestampFromSnapshotsByServer.set(contentServer, Math.max(currentLastTimestamp, ...newTimestamps))
+  }
+
+  async function syncFromPointerChanges(contentServer: string, options: CatalystDeploymentStreamOptions, syncIsStopped: () => boolean) {
+    const deployments = getDeployedEntitiesStreamFromPointerChanges(components, options, contentServer)
+
+    for await (const deployment of deployments) {
+      // if the stream is closed then we should not process more deployments
+      if (syncIsStopped()) {
+        logger.debug('Canceling running stream')
+        return
+      }
+
+      await components.deployer.deployEntity(deployment, [contentServer])
+
+      // update greatest processed timestamp
+      increaseLastTimestamp(contentServer, deployment.localTimestamp)
+    }
+  }
+
+  const deployPointerChangesAfterBootstrapJobManager = createJobLifecycleManagerComponent(
     components,
     {
       jobManagerName: 'SynchronizationJobManager',
@@ -38,39 +55,41 @@ export async function createSynchronizer(
           throw new Error(`Can't start pointer changes stream without last entity timestamp for ${contentServer}. This should not happen.`)
         }
         const fromTimestamp = lastEntityTimestamp - 20 * 60_000
-        return createCatalystPointerChangesDeploymentStream(
-          components,
-          contentServer,
-          {
-            ...options,
-            fromTimestamp
-          }
-        )
+        const logs = components.logs.getLogger(`pointerChangesDeploymentStream(${contentServer})`)
+
+        const metricsLabels = contentServerMetricLabels(contentServer)
+
+        const exponentialFallofRetryComponent = createExponentialFallofRetry(logs, {
+          async action() {
+            try {
+              components.metrics.increment('dcl_deployments_stream_reconnection_count', metricsLabels)
+              await syncFromPointerChanges(contentServer, { ...options, fromTimestamp }, () => exponentialFallofRetryComponent.isStopped())
+            } catch (e: any) {
+              // we don't log the exception here because createExponentialFallofRetry(logger, options) receives the logger
+              components.metrics.increment('dcl_deployments_stream_failure_count', metricsLabels)
+              throw e
+            }
+          },
+          retryTime: options.reconnectTime,
+          retryTimeExponent: options.reconnectRetryTimeExponent ?? 1.1,
+          maxInterval: options.maxReconnectionTime,
+        })
+        return exponentialFallofRetryComponent
       }
     })
 
-  async function syncFromSnapshots(serversToSync: Set<string>) {
-    const serversSnapshotsBySnapshotHash: Map<string, Snapshot[]> = new Map()
-    const serversToSyncFromSnapshots: Set<string> = new Set()
-    const genesisTimestamp = options.fromTimestamp || 0
+  async function syncFromSnapshots(serversToSync: Set<string>): Promise<Set<string>> {
+    const snapshotsByServer: Map<string, Snapshot[]> = new Map()
     for (const server of serversToSync) {
       try {
         const snapshots = await getSnapshots(components, server, options.requestMaxRetries)
-        for (const snapshot of snapshots) {
-          const snapshotsWithServer = serversSnapshotsBySnapshotHash.get(snapshot.hash) ?? []
-          snapshotsWithServer.push({ snapshot, server })
-          serversSnapshotsBySnapshotHash.set(snapshot.hash, snapshotsWithServer)
-        }
-        // If the server doesn't have snapshots yet (for example new servers), then we set to genesisTimestamp
-        const lastEntityTimestampOfThisServer = Math.max(...snapshots.map(s => s.lastIncludedDeploymentTimestamp), genesisTimestamp)
-        lastEntityTimestampFromSnapshotsByServer.set(server, lastEntityTimestampOfThisServer)
-        serversToSyncFromSnapshots.add(server)
+        snapshotsByServer.set(server, snapshots)
       } catch (error) {
         logger.info(`Error getting snapshots from ${server}.`)
       }
     }
 
-    const stream = getDeployedEntitiesStreamFromSnapshots(components, options, serversSnapshotsBySnapshotHash)
+    const stream = getDeployedEntitiesStreamFromSnapshots(components, options, snapshotsByServer)
     logger.info('Starting to deploy entities from snapshots.')
     for await (const entity of stream) {
       // schedule the deployment in the deployer. the await DOES NOT mean that the entity was deployed entirely
@@ -78,7 +97,13 @@ export async function createSynchronizer(
       await components.deployer.deployEntity(entity, entity.servers)
     }
     logger.info('End deploying entities from snapshots.')
-    return serversToSyncFromSnapshots
+
+    // Once the snapshots were correctly streamed, update the last entity timestamps
+    for (const [server, snapshots] of snapshotsByServer) {
+      increaseLastTimestamp(server, ...snapshots.map(s => s.lastIncludedDeploymentTimestamp))
+    }
+    // We only return servers that didn't fail to get its snapshots
+    return new Set(snapshotsByServer.keys())
   }
 
   async function bootstrap() {
@@ -103,7 +128,7 @@ export async function createSynchronizer(
           // metrics start?
           await bootstrap()
           // now we start syncing from pointer changes, it internally managers new servers to start syncing
-          deployPointerChangesjobManager.setDesiredJobs(syncingServers)
+          deployPointerChangesAfterBootstrapJobManager.setDesiredJobs(syncingServers)
         } catch (e: any) {
           // we don't log the exception here because createExponentialFallofRetry(logger, options) receives the logger
           // increment metrics

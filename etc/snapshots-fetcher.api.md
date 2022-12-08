@@ -46,7 +46,7 @@ export function getDeployedEntitiesStreamFromPointerChanges(components: Snapshot
 // Warning: (ae-internal-missing-underscore) The name "getDeployedEntitiesStreamFromSnapshots" should be prefixed with an underscore because the declaration is marked as @internal
 //
 // @internal
-export function getDeployedEntitiesStreamFromSnapshots(components: SnapshotsFetcherComponents, options: DeployedEntityStreamOptions, serversSnapshotsBySnapshotHash: Map<string, Snapshot[]>): AsyncIterable<SyncDeployment & {
+export function getDeployedEntitiesStreamFromSnapshots(components: SnapshotsFetcherComponents, options: DeployedEntityStreamOptions, snapshotsByServer: Map<string, Snapshot[]>): AsyncIterable<SyncDeployment & {
     snapshotHash: string;
     servers: string[];
 }>;
