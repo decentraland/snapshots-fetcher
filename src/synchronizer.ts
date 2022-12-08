@@ -69,7 +69,7 @@ export async function createSynchronizer(
       // Once the entity is truly deployed, it should call the method 'markAsDeployed'
       await components.deployer.deployEntity({
         ...entity,
-        markAsDeployed: () => processedSnapshots.entityProcessedFrom(entity.snapshotHash)
+        markAsDeployed: async () => await processedSnapshots.entityProcessedFrom(entity.snapshotHash)
       }, entity.servers)
     }
     logger.info('End deploying entities from snapshots.')

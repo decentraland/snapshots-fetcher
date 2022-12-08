@@ -45,9 +45,7 @@ export type SnapshotsFetcherComponents = {
  * @public
  */
 export type IDeployerComponent = {
-  deployEntity(entity: SyncDeployment & {
-    markAsDeployed?: () => {}
-  }, contentServers: string[]): Promise<void>
+  deployEntity(entity: SyncDeployment & { markAsDeployed?: () => Promise<void> }, contentServers: string[]): Promise<void>
   /**
    * onIdle returns a promise that should be resolved once every deployEntity(...) job has
    * finished and there are no more queued jobs.

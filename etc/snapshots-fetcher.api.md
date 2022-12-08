@@ -59,7 +59,7 @@ export function getDeployedEntitiesStreamFromSnapshots(components: SnapshotsFetc
 // @public
 export type IDeployerComponent = {
     deployEntity(entity: SyncDeployment & {
-        markAsDeployed?: () => {};
+        markAsDeployed?: () => Promise<void>;
     }, contentServers: string[]): Promise<void>;
     onIdle(): Promise<void>;
 };
