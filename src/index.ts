@@ -7,7 +7,6 @@ import { IJobWithLifecycle } from './job-lifecycle-manager'
 import {
   CatalystDeploymentStreamComponent,
   ContentMapping,
-  DeployedEntityStreamCommonOptions,
   EntityHash,
   IDeployerComponent,
   IProcessedSnapshotsComponent,
@@ -20,7 +19,6 @@ import {
 } from './types'
 import { contentServerMetricLabels, sleep, streamToBuffer } from './utils'
 import { SyncDeployment } from '@dcl/schemas'
-import { createProcessedSnapshotsComponent } from './processed-snapshots'
 
 export { metricsDefinitions } from './metrics'
 export { IDeployerComponent, SynchronizerComponent } from './types'
@@ -176,7 +174,7 @@ export async function* getDeployedEntitiesStreamFromSnapshots(
   type SnapshotInfo = {
     greatestEndTimestamp: number,
     replacedSnapshotHashes: string[][],
-    servers: string[]
+    servers: Set<string>
   }
   const snapshotInfoByHash: Map<string, SnapshotInfo> = new Map()
   for (const [server, snapshots] of snapshotsByServer) {
@@ -191,8 +189,8 @@ export async function* getDeployedEntitiesStreamFromSnapshots(
       if (snapshot.replacedSnapshotHashes) {
         replacedSnapshotHashes.push(snapshot.replacedSnapshotHashes)
       }
-      const servers = snapshotInfo?.servers ?? []
-      servers.push(server)
+      const servers = snapshotInfo?.servers ?? new Set()
+      servers.add(server)
 
       snapshotInfoByHash.set(snapshot.hash, {
         greatestEndTimestamp,
@@ -215,7 +213,7 @@ export async function* getDeployedEntitiesStreamFromSnapshots(
           components,
           snapshotHash,
           options.tmpDownloadFolder,
-          servers,
+          Array.from(servers),
           new Map(),
           options.requestMaxRetries,
           options.requestRetryWaitTime
@@ -235,7 +233,7 @@ export async function* getDeployedEntitiesStreamFromSnapshots(
             yield {
               ...deployment,
               snapshotHash,
-              servers
+              servers: Array.from(servers)
             }
           }
         }
