@@ -83,6 +83,7 @@ export async function createSynchronizer(
   }
 
   async function bootstrapFromSnapshots() {
+    logger.debug(`Bootstrapping servers (snapshots): ${Array.from(bootstrappingServersFromSnapshots)}`)
     const syncedServersFromSnapshot = await syncFromSnapshots(bootstrappingServersFromSnapshots)
 
     for (const bootstrappedServer of syncedServersFromSnapshot) {
@@ -92,6 +93,7 @@ export async function createSynchronizer(
   }
 
   async function bootstrapFromPointerChanges() {
+    logger.debug(`Bootstrapping servers (Pointer Changes): ${Array.from(bootstrappingServersFromPointerChanges)}`)
     const pointerChangesBootstrappingJobs = []
     for (const bootstrappingServersFromPointerChange of bootstrappingServersFromPointerChanges) {
       pointerChangesBootstrappingJobs.push(async () => {
@@ -101,7 +103,7 @@ export async function createSynchronizer(
             throw new Error(`Can't start pointer changes stream without last entity timestamp for ${bootstrappingServersFromPointerChange}. This should never happen.`)
           }
           const fromTimestamp = lastEntityTimestamp - 20 * 60_000
-          await syncFromPointerChanges(bootstrappingServersFromPointerChange, { ...options, fromTimestamp }, () => false)
+          await syncFromPointerChanges(bootstrappingServersFromPointerChange, { ...options, fromTimestamp, pointerChangesWaitTime: 0 }, () => false)
           syncingServers.add(bootstrappingServersFromPointerChange)
           bootstrappingServersFromPointerChanges.delete(bootstrappingServersFromPointerChange)
         } catch (error) {
@@ -122,7 +124,7 @@ export async function createSynchronizer(
       const runningCallbacks = initialBootstrapFinishedEventCallbacks.map(cb => cb())
       await Promise.all(runningCallbacks)
     }
-    logger.info(`Bootstrap finished successfully`)
+    logger.debug(`Bootstrap finished.`)
   }
 
   const deployPointerChangesAfterBootstrapJobManager = createJobLifecycleManagerComponent(
@@ -161,6 +163,7 @@ export async function createSynchronizer(
         try {
           // metrics start?
           await bootstrap()
+          logger.debug(`Syincing servers: ${Array.from(syncingServers)}`)
           // now we start syncing from pointer changes, it internally managers new servers to start syncing
           deployPointerChangesAfterBootstrapJobManager.setDesiredJobs(syncingServers)
         } catch (e: any) {
