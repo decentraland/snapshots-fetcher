@@ -1,6 +1,6 @@
 import { createProcessedSnapshotsComponent, getDeployedEntitiesStreamFromPointerChanges, getDeployedEntitiesStreamFromSnapshots } from "."
 import { getSnapshots } from "./client"
-import { createExponentialFallofRetry } from "./exponential-fallof-retry"
+import { createExponentialFallofRetry, ExponentialFallofRetryComponent } from "./exponential-fallof-retry"
 import { createJobLifecycleManagerComponent } from "./job-lifecycle-manager"
 import { IDeployerComponent, PointerChangesDeployedEntityStreamOptions, Snapshot, SnapshotsFetcherComponents, SynchronizerComponent, SynchronizerOptions } from "./types"
 import { contentServerMetricLabels } from "./utils"
@@ -22,6 +22,8 @@ export async function createSynchronizer(
   const bootstrappingServersFromPointerChanges: Set<string> = new Set()
   const syncingServers: Set<string> = new Set()
   const lastEntityTimestampFromSnapshotsByServer: Map<string, number> = new Map()
+  const syncJobs: ExponentialFallofRetryComponent[] = []
+  let isStopped = false
 
   function increaseLastTimestamp(contentServer: string, ...newTimestamps: number[]) {
     // If the server doesn't have snapshots yet (for example new servers), then we set to genesisTimestamp
@@ -57,7 +59,7 @@ export async function createSynchronizer(
       }
     }
 
-    // Each time a new processedSnapshots is created because it has data that need to be ephimeral between multiple
+    // Each time a new processedSnapshots is created because it has data that needs to be ephimeral between multiple
     // calls of this method, for example 'snapshotsBeingStreamed'. It's proper of an execution.
     const processedSnapshots = createProcessedSnapshotsComponent(components)
 
@@ -189,6 +191,9 @@ export async function createSynchronizer(
 
   return {
     async syncWithServers(serversToSync: Set<string>) {
+      if (isStopped) {
+        throw new Error('synchronizer is stopped.')
+      }
       // 1. Add the new servers (not currently syncing) to the bootstrapping state
       for (const serverToSync of serversToSync) {
         if (!syncingServers.has(serverToSync)) {
@@ -210,7 +215,20 @@ export async function createSynchronizer(
         }
       }
 
-      createSyncJob().start()
+      const newSyncJob = createSyncJob()
+      syncJobs.push(newSyncJob)
+      if (syncJobs.length == 1) {
+        syncJobs[0]
+          .start()
+          .finally(() => {
+            () => {
+              syncJobs.pop()
+              if (syncJobs.length > 0) {
+                syncJobs[0].start()
+              }
+            }
+          })
+      }
     },
     async syncSnapshotsForSyncingServers() {
       await syncFromSnapshots(syncingServers)
@@ -220,6 +238,20 @@ export async function createSynchronizer(
         initialBootstrapFinishedEventCallbacks.push(cb)
       } else {
         await cb()
+      }
+    },
+    async stop() {
+      // Component will not stop until the sync from snapshots is over.
+      if (!isStopped) {
+        isStopped = true
+        if (syncJobs.length > 0) {
+          await syncJobs[0].stop()
+          while (syncJobs.length > 0) {
+            syncJobs.pop()
+          }
+        }
+        syncingServers.clear()
+        deployPointerChangesAfterBootstrapJobManager.setDesiredJobs(new Set())
       }
     }
   }

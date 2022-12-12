@@ -1,5 +1,5 @@
 import { IFetchComponent } from '@well-known-components/http-server'
-import { ILoggerComponent, IMetricsComponent } from '@well-known-components/interfaces'
+import { IBaseComponent, ILoggerComponent, IMetricsComponent } from '@well-known-components/interfaces'
 import { ExponentialFallofRetryComponent } from './exponential-fallof-retry'
 import { IJobQueue } from './job-queue-port'
 import { metricsDefinitions } from './metrics'
@@ -195,7 +195,7 @@ export type IProcessedSnapshotsComponent = {
 /**
  * @public
  */
-export type SynchronizerComponent = {
+export type SynchronizerComponent = IBaseComponent & {
   syncWithServers(contentServers: Set<string>): Promise<void>
   syncSnapshotsForSyncingServers(): Promise<void>
   onInitialBootstrapFinished(cb: () => Promise<void>): Promise<void>

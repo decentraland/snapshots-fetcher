@@ -4,6 +4,7 @@
 
 ```ts
 
+import { IBaseComponent } from '@well-known-components/interfaces';
 import { IContentStorageComponent } from '@dcl/catalyst-storage';
 import { IFetchComponent } from '@well-known-components/http-server';
 import { ILoggerComponent } from '@well-known-components/interfaces';
@@ -68,7 +69,7 @@ export type IDeployerComponent = {
 export const metricsDefinitions: IMetricsComponent<"dcl_content_download_bytes_total" | "dcl_content_download_duration_seconds" | "dcl_content_download_errors_total" | "dcl_content_download_hash_errors_total" | "dcl_entities_deployments_processed_total" | "dcl_catalysts_pointer_changes_response_time_seconds" | "dcl_deployments_stream_reconnection_count" | "dcl_deployments_stream_failure_count" | "dcl_content_download_job_succeed_retries" | "dcl_available_servers_histogram">;
 
 // @public (undocumented)
-export type SynchronizerComponent = {
+export type SynchronizerComponent = IBaseComponent & {
     syncWithServers(contentServers: Set<string>): Promise<void>;
     syncSnapshotsForSyncingServers(): Promise<void>;
     onInitialBootstrapFinished(cb: () => Promise<void>): Promise<void>;
