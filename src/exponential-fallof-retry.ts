@@ -44,8 +44,6 @@ export function createExponentialFallofRetry(
 
   const exitOnSuccess = options.exitOnSuccess || false
 
-  let runningAction: Promise<void> | null = null
-
   let reconnectionCount = 0
 
   async function start() {
@@ -57,8 +55,7 @@ export function createExponentialFallofRetry(
       reconnectionCount++
 
       try {
-        runningAction = options.action()
-        await runningAction
+        await options.action()
         if (exitOnSuccess) {
           logs.info('Breaking iteration. Action ended successfully')
           return
@@ -109,9 +106,6 @@ export function createExponentialFallofRetry(
     },
     async stop() {
       started = false
-      if (runningAction) {
-        await runningAction
-      }
     },
   }
 }
