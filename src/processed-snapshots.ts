@@ -34,6 +34,7 @@ export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetc
       const processedSnapshots = await components.processedSnapshotStorage.processedFrom(snapshotReplacedGroups.flat())
       for (const replacedGroup of snapshotReplacedGroups) {
         if (replacedGroup.length > 0 && replacedGroup.every(s => processedSnapshots.has(s))) {
+          await components.processedSnapshotStorage.saveProcessed(snapshotHash)
           return false
         }
       }

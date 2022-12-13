@@ -45,6 +45,11 @@ export type SnapshotsFetcherComponents = {
  * @public
  */
 export type IDeployerComponent = {
+  /**
+   * awaitng deployEntity might not imply that the entity was deployed. To be marked the entity as deployed, it needs
+   * to be called the function #markAsDeployed. This is useful for asynchronous deployers that uses, for example,
+   * queues to deploy entities.
+   */
   deployEntity(entity: SyncDeployment & { markAsDeployed?: () => Promise<void> }, contentServers: string[]): Promise<void>
   /**
    * onIdle returns a promise that should be resolved once every deployEntity(...) job has
