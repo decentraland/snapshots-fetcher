@@ -32,13 +32,17 @@ export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetc
         return false
       }
       const processedSnapshots = await components.processedSnapshotStorage.processedFrom([snapshotHash, ...snapshotReplacedGroups.flat()])
+
+      if (processedSnapshots.has(snapshotHash)) {
+        return false
+      }
       for (const replacedGroup of snapshotReplacedGroups) {
         if (replacedGroup.length > 0 && replacedGroup.every(s => processedSnapshots.has(s))) {
           await components.processedSnapshotStorage.saveProcessed(snapshotHash)
           return false
         }
       }
-      return processedSnapshots.has(snapshotHash)
+      return true
     },
     async startStreamOf(snapshotHash: string) {
       snapshotsBeingStreamed.add(snapshotHash)
