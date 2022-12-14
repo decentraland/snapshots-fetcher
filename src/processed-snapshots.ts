@@ -31,14 +31,14 @@ export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetc
       if (snapshotsBeingStreamed.has(snapshotHash) || snapshotsCompletelyStreamed.has(snapshotHash)) {
         return false
       }
-      const processedSnapshots = await components.processedSnapshotStorage.processedFrom(snapshotReplacedGroups.flat())
+      const processedSnapshots = await components.processedSnapshotStorage.processedFrom([snapshotHash, ...snapshotReplacedGroups.flat()])
       for (const replacedGroup of snapshotReplacedGroups) {
         if (replacedGroup.length > 0 && replacedGroup.every(s => processedSnapshots.has(s))) {
           await components.processedSnapshotStorage.saveProcessed(snapshotHash)
           return false
         }
       }
-      return true
+      return processedSnapshots.has(snapshotHash)
     },
     async startStreamOf(snapshotHash: string) {
       snapshotsBeingStreamed.add(snapshotHash)
