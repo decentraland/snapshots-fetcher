@@ -228,7 +228,7 @@ export async function* getDeployedEntitiesStreamFromSnapshots(
           const deploymentTimestamp = 'entityTimestamp' in deployment ? deployment.entityTimestamp : deployment.localTimestamp
 
           if (deploymentTimestamp >= genesisTimestamp) {
-            components.metrics.increment('dcl_entities_deployments_processed_total')
+            components.metrics.increment('dcl_entities_deployments_streamed_total', { source: 'snapshots' })
             numberOfStreamedEntities++
             yield {
               ...deployment,
@@ -272,7 +272,7 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
 
       // selectively ignore deployments by localTimestamp
       if (deployment.localTimestamp >= genesisTimestamp) {
-        components.metrics.increment('dcl_entities_deployments_processed_total')
+        components.metrics.increment('dcl_entities_deployments_streamed_total', { source: 'pointer-changes' })
         yield deployment
       }
 

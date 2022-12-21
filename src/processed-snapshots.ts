@@ -4,9 +4,9 @@ import { IProcessedSnapshotsComponent, SnapshotsFetcherComponents } from "./type
  * Creates the component that signals the streaming and processing of a snapshot.
  * It decides wheter or not a snapshot should be streamed when syncing. In _index.ts_ the snapshots are fetched from
  * /snapshots or /snapshot. For each one of those, this component will be used to decide to stream the entities inside
- * it or not. It will return false if the snapshot was already processed or if it's currently being streamed in other
- * execution. Once the streaming starts, it will be signalized #startStreamOf so this component knows that a snapshot is
- * being currently streamed.
+ * it or not. It will return false if the snapshot was already processed (or the ones that it replaces) or if it's
+ * currently being streamed. Once the streaming starts, it will be signalized #startStreamOf so this component knows
+ * that a snapshot is being currently streamed.
  *
  * Each entity streamed within a snapshot will be processed by the {@link catalyst#batchDeployer}. It adds each one to a queue
  * and they are processed in background. Once a deploy in background finishes, it signals this component that one

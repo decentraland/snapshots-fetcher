@@ -48,6 +48,12 @@ export async function createSynchronizer(
     }
   }
 
+  function reportServerStateMetric() {
+    components.metrics.observe('dcl_bootstrapping_servers', { from: 'snapshots' }, bootstrappingServersFromSnapshots.size)
+    components.metrics.observe('dcl_bootstrapping_servers', { from: 'pointer-changes' }, bootstrappingServersFromPointerChanges.size)
+    components.metrics.observe('dcl_syncing_servers', {}, syncingServers.size)
+  }
+
   async function syncFromSnapshots(serversToSync: Set<string>): Promise<Set<string>> {
     const snapshotsByServer: Map<string, Snapshot[]> = new Map()
     for (const server of serversToSync) {
@@ -71,7 +77,10 @@ export async function createSynchronizer(
       // Once the entity is truly deployed, it should call the method 'markAsDeployed'
       await components.deployer.deployEntity({
         ...entity,
-        markAsDeployed: async () => await processedSnapshots.entityProcessedFrom(entity.snapshotHash)
+        markAsDeployed: async () => {
+          components.metrics.increment('dcl_entities_deployments_processed_total')
+          await processedSnapshots.entityProcessedFrom(entity.snapshotHash)
+        }
       }, entity.servers)
     }
     logger.info('End deploying entities from snapshots.')
@@ -92,6 +101,7 @@ export async function createSynchronizer(
       bootstrappingServersFromPointerChanges.add(bootstrappedServer)
       bootstrappingServersFromSnapshots.delete(bootstrappedServer)
     }
+    reportServerStateMetric()
   }
 
   async function bootstrapFromPointerChanges() {
@@ -116,6 +126,7 @@ export async function createSynchronizer(
     }
 
     await Promise.all(pointerChangesBootstrappingJobs.map(job => job()))
+    reportServerStateMetric()
   }
 
   async function bootstrap() {
@@ -214,6 +225,8 @@ export async function createSynchronizer(
           syncingServers.delete(syncingServer)
         }
       }
+
+      reportServerStateMetric()
 
       const newSyncJob = createSyncJob()
       syncJobs.push(newSyncJob)
