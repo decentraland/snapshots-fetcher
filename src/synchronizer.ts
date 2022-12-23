@@ -23,6 +23,21 @@ export async function createSynchronizer(
   const syncingServers: Set<string> = new Set()
   const lastEntityTimestampFromSnapshotsByServer: Map<string, number> = new Map()
   const syncJobs: ExponentialFallofRetryComponent[] = []
+  let snapshotsSyncTimeout: NodeJS.Timeout | undefined
+  const regularSyncFromSnapshotsAfterBootstrapJob = createExponentialFallofRetry(logger, {
+    async action() {
+      try {
+        await syncFromSnapshots(syncingServers)
+      } catch (e: any) {
+        // we don't log the exception here because createExponentialFallofRetry(logger, options) receives the logger
+        logger.error(`Error syncing snapshots: ${JSON.stringify(e)}`)
+        throw e
+      }
+    },
+    // every four hours
+    retryTime: 14_400_000,
+    retryTimeExponent: 1
+  })
   let isStopped = false
 
   function increaseLastTimestamp(contentServer: string, ...newTimestamps: number[]) {
@@ -77,7 +92,7 @@ export async function createSynchronizer(
       // Once the entity is truly deployed, it should call the method 'markAsDeployed'
       await components.deployer.deployEntity({
         ...entity,
-        markAsDeployed: async () => {
+        markAsDeployed: async function () {
           components.metrics.increment('dcl_entities_deployments_processed_total')
           await processedSnapshots.entityProcessedFrom(entity.snapshotHash)
         }
@@ -200,6 +215,14 @@ export async function createSynchronizer(
     })
   }
 
+  async function onInitialBootstrapFinished(cb: () => Promise<void>) {
+    if (!initialBootstrapFinished) {
+      initialBootstrapFinishedEventCallbacks.push(cb)
+    } else {
+      await cb()
+    }
+  }
+
   return {
     async syncWithServers(serversToSync: Set<string>) {
       if (isStopped) {
@@ -242,17 +265,14 @@ export async function createSynchronizer(
             }
           })
       }
+      onInitialBootstrapFinished(async () => {
+        snapshotsSyncTimeout = setTimeout(async () => await regularSyncFromSnapshotsAfterBootstrapJob.start(), 3_600_000)
+      })
     },
     async syncSnapshotsForSyncingServers() {
       await syncFromSnapshots(syncingServers)
     },
-    async onInitialBootstrapFinished(cb: () => Promise<void>) {
-      if (!initialBootstrapFinished) {
-        initialBootstrapFinishedEventCallbacks.push(cb)
-      } else {
-        await cb()
-      }
-    },
+    onInitialBootstrapFinished,
     async stop() {
       // Component will not stop until the sync from snapshots is over.
       if (!isStopped) {
@@ -265,6 +285,10 @@ export async function createSynchronizer(
         }
         syncingServers.clear()
         deployPointerChangesAfterBootstrapJobManager.setDesiredJobs(new Set())
+        if (snapshotsSyncTimeout) {
+          clearTimeout(snapshotsSyncTimeout)
+          await regularSyncFromSnapshotsAfterBootstrapJob.stop()
+        }
       }
     }
   }
