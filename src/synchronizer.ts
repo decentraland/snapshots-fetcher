@@ -1,4 +1,4 @@
-import { createProcessedSnapshotsComponent, getDeployedEntitiesStreamFromPointerChanges, getDeployedEntitiesStreamFromSnapshots } from "."
+import { createProcessedSnapshotsComponent, getDeployedEntitiesStreamFromPointerChanges, getDeployedEntitiesStreamFromSnapshots, getDeployedEntitiesStreamFromSnapshot, SnapshotInfo } from "."
 import { getSnapshots } from "./client"
 import { createExponentialFallofRetry, ExponentialFallofRetryComponent } from "./exponential-fallof-retry"
 import { createJobLifecycleManagerComponent } from "./job-lifecycle-manager"
@@ -70,11 +70,33 @@ export async function createSynchronizer(
   }
 
   async function syncFromSnapshots(serversToSync: Set<string>): Promise<Set<string>> {
-    const snapshotsByServer: Map<string, Snapshot[]> = new Map()
+    const snapshotInfoByHash: Map<string, SnapshotInfo> = new Map()
+    const snapshotLastTimestampByServer: Map<string, number> = new Map()
     for (const server of serversToSync) {
       try {
         const snapshots = await getSnapshots(components, server, options.requestMaxRetries)
-        snapshotsByServer.set(server, snapshots)
+        snapshotLastTimestampByServer.set(server, Math.max(...snapshots.map(s => s.lastIncludedDeploymentTimestamp)))
+        for (const snapshot of snapshots) {
+          const snapshotInfo = snapshotInfoByHash.get(snapshot.hash)
+
+          const greatestEndTimestamp = snapshotInfo
+            ? Math.max(snapshotInfo.greatestEndTimestamp, snapshot.lastIncludedDeploymentTimestamp)
+            : snapshot.lastIncludedDeploymentTimestamp
+
+          const replacedSnapshotHashes = snapshotInfo?.replacedSnapshotHashes ?? []
+          if (snapshot.replacedSnapshotHashes) {
+            replacedSnapshotHashes.push(snapshot.replacedSnapshotHashes)
+          }
+          const servers = snapshotInfo?.servers ?? new Set()
+          servers.add(server)
+
+          snapshotInfoByHash.set(snapshot.hash, {
+            snapshotHash: snapshot.hash,
+            greatestEndTimestamp,
+            replacedSnapshotHashes,
+            servers
+          })
+        }
       } catch (error) {
         logger.info(`Error getting snapshots from ${server}.`)
       }
@@ -84,28 +106,36 @@ export async function createSynchronizer(
     // calls of this method, for example 'snapshotsBeingStreamed'. It's proper of an execution.
     const processedSnapshots = createProcessedSnapshotsComponent(components)
 
-    const stream = getDeployedEntitiesStreamFromSnapshots({ ...components, processedSnapshots }, options, snapshotsByServer)
     logger.info('Starting to deploy entities from snapshots.')
-    for await (const entity of stream) {
-      // schedule the deployment in the deployer. the await DOES NOT mean that the entity was deployed entirely
-      // if the deployer is not synchronous. For example, the batchDeployer used in the catalyst just add it in a queue.
-      // Once the entity is truly deployed, it should call the method 'markAsDeployed'
-      await components.deployer.deployEntity({
-        ...entity,
-        markAsDeployed: async function () {
-          components.metrics.increment('dcl_entities_deployments_processed_total')
-          await processedSnapshots.entityProcessedFrom(entity.snapshotHash)
+    const deploymentsFromSnapshots: (() => Promise<void>)[] = []
+
+    for (const snapshotInfo of snapshotInfoByHash.values()) {
+      deploymentsFromSnapshots.push(async () => {
+        const stream = getDeployedEntitiesStreamFromSnapshot({ ...components, processedSnapshots }, options, snapshotInfo, genesisTimestamp)
+        for await (const entity of stream) {
+          // schedule the deployment in the deployer. the await DOES NOT mean that the entity was deployed entirely
+          // if the deployer is not synchronous. For example, the batchDeployer used in the catalyst just add it in a queue.
+          // Once the entity is truly deployed, it should call the method 'markAsDeployed'
+          await components.deployer.deployEntity({
+            ...entity,
+            markAsDeployed: async function () {
+              components.metrics.increment('dcl_entities_deployments_processed_total')
+              await processedSnapshots.entityProcessedFrom(entity.snapshotHash)
+            }
+          }, entity.servers)
         }
-      }, entity.servers)
+      })
     }
+
+    await Promise.all(deploymentsFromSnapshots.map(deployFromSnapshot => deployFromSnapshot()))
     logger.info('End deploying entities from snapshots.')
 
     // Once the snapshots were correctly streamed, update the last entity timestamps
-    for (const [server, snapshots] of snapshotsByServer) {
-      increaseLastTimestamp(server, ...snapshots.map(s => s.lastIncludedDeploymentTimestamp))
+    for (const [server, lastTimestamp] of snapshotLastTimestampByServer) {
+      increaseLastTimestamp(server, lastTimestamp)
     }
     // We only return servers that didn't fail to get its snapshots
-    return new Set(snapshotsByServer.keys())
+    return new Set(snapshotLastTimestampByServer.keys())
   }
 
   async function bootstrapFromSnapshots() {
