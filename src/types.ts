@@ -214,3 +214,13 @@ export type Snapshot = {
   lastIncludedDeploymentTimestamp: number
   replacedSnapshotHashes?: string[] | undefined
 }
+
+/**
+ * @internal
+ */
+export type SnapshotInfo = {
+  snapshotHash: string
+  greatestEndTimestamp: number,
+  replacedSnapshotHashes: string[][],
+  servers: Set<string>
+}

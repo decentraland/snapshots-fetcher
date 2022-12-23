@@ -1,8 +1,8 @@
-import { createProcessedSnapshotsComponent, getDeployedEntitiesStreamFromPointerChanges, getDeployedEntitiesStreamFromSnapshots, getDeployedEntitiesStreamFromSnapshot, SnapshotInfo } from "."
+import { createProcessedSnapshotsComponent, getDeployedEntitiesStreamFromPointerChanges, getDeployedEntitiesStreamFromSnapshot } from "."
 import { getSnapshots } from "./client"
 import { createExponentialFallofRetry, ExponentialFallofRetryComponent } from "./exponential-fallof-retry"
 import { createJobLifecycleManagerComponent } from "./job-lifecycle-manager"
-import { IDeployerComponent, PointerChangesDeployedEntityStreamOptions, Snapshot, SnapshotsFetcherComponents, SynchronizerComponent, SynchronizerOptions } from "./types"
+import { IDeployerComponent, PointerChangesDeployedEntityStreamOptions, Snapshot, SnapshotInfo, SnapshotsFetcherComponents, SynchronizerComponent, SynchronizerOptions } from "./types"
 import { contentServerMetricLabels } from "./utils"
 
 /**

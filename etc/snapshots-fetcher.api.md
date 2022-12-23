@@ -4,6 +4,7 @@
 
 ```ts
 
+import { AuthChain } from '@dcl/schemas';
 import { IBaseComponent } from '@well-known-components/interfaces';
 import { IContentStorageComponent } from '@dcl/catalyst-storage';
 import { IFetchComponent } from '@well-known-components/http-server';
@@ -46,16 +47,29 @@ export function downloadEntityAndContentFiles(components: Pick<SnapshotsFetcherC
 export function getDeployedEntitiesStreamFromPointerChanges(components: SnapshotsFetcherComponents, options: PointerChangesDeployedEntityStreamOptions, contentServer: string): AsyncGenerator<PointerChangesSyncDeployment, void, unknown>;
 
 // Warning: (ae-forgotten-export) The symbol "SnapshotDeployedEntityStreamOptions" needs to be exported by the entry point index.d.ts
-// Warning: (ae-forgotten-export) The symbol "Snapshot" needs to be exported by the entry point index.d.ts
-// Warning: (ae-internal-missing-underscore) The name "getDeployedEntitiesStreamFromSnapshots" should be prefixed with an underscore because the declaration is marked as @internal
+// Warning: (ae-forgotten-export) The symbol "SnapshotInfo" needs to be exported by the entry point index.d.ts
+// Warning: (ae-internal-missing-underscore) The name "getDeployedEntitiesStreamFromSnapshot" should be prefixed with an underscore because the declaration is marked as @internal
 //
 // @internal
-export function getDeployedEntitiesStreamFromSnapshots(components: SnapshotsFetcherComponents & {
+export function getDeployedEntitiesStreamFromSnapshot(components: SnapshotsFetcherComponents & {
     processedSnapshots: IProcessedSnapshotsComponent;
-}, options: SnapshotDeployedEntityStreamOptions, snapshotsByServer: Map<string, Snapshot[]>): AsyncIterable<SyncDeployment & {
+}, options: SnapshotDeployedEntityStreamOptions, snapshotInfo: SnapshotInfo, genesisTimestamp: number): AsyncGenerator<{
     snapshotHash: string;
     servers: string[];
-}>;
+    entityId: string;
+    entityType: string;
+    pointers: string[];
+    authChain: AuthChain;
+    entityTimestamp: number;
+} | {
+    snapshotHash: string;
+    servers: string[];
+    entityId: string;
+    entityType: string;
+    pointers: string[];
+    authChain: AuthChain;
+    localTimestamp: number;
+}, void, unknown>;
 
 // @public
 export type IDeployerComponent = {

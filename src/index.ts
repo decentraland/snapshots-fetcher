@@ -15,6 +15,7 @@ import {
   Server,
   Snapshot,
   SnapshotDeployedEntityStreamOptions,
+  SnapshotInfo,
   SnapshotsFetcherComponents,
 } from './types'
 import { contentServerMetricLabels, sleep, streamToBuffer } from './utils'
@@ -153,13 +154,11 @@ export async function downloadEntityAndContentFiles(
   return entityMetadata
 }
 
-export type SnapshotInfo = {
-  snapshotHash: string
-  greatestEndTimestamp: number,
-  replacedSnapshotHashes: string[][],
-  servers: Set<string>
-}
-
+/**
+ * Accepts a fromTimestamp option to filter out previous deployments.
+ *
+ * @internal
+ */
 export async function* getDeployedEntitiesStreamFromSnapshot(
   components: SnapshotsFetcherComponents & {
     processedSnapshots: IProcessedSnapshotsComponent
@@ -217,106 +216,6 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
       }
     }
   }
-}
-
-/**
- * Accepts a fromTimestamp option to filter out previous deployments.
- *
- * @internal
- */
-export async function* getDeployedEntitiesStreamFromSnapshots(
-  components: SnapshotsFetcherComponents & {
-    processedSnapshots: IProcessedSnapshotsComponent
-  },
-  options: SnapshotDeployedEntityStreamOptions,
-  snapshotsByServer: Map<string, Snapshot[]>
-): AsyncIterable<SyncDeployment & {
-  snapshotHash: string
-  servers: string[]
-}> {
-  const logs = components.logs.getLogger('getDeployedEntitiesStreamFromSnapshots')
-  // The minimum timestamp we are looking for
-  const genesisTimestamp = options.fromTimestamp || 0
-  type SnapshotInfo = {
-    greatestEndTimestamp: number,
-    replacedSnapshotHashes: string[][],
-    servers: Set<string>
-  }
-  const snapshotInfoByHash: Map<string, SnapshotInfo> = new Map()
-  for (const [server, snapshots] of snapshotsByServer) {
-    for (const snapshot of snapshots) {
-      const snapshotInfo = snapshotInfoByHash.get(snapshot.hash)
-
-      const greatestEndTimestamp = snapshotInfo
-        ? Math.max(snapshotInfo.greatestEndTimestamp, snapshot.lastIncludedDeploymentTimestamp)
-        : snapshot.lastIncludedDeploymentTimestamp
-
-      const replacedSnapshotHashes = snapshotInfo?.replacedSnapshotHashes ?? []
-      if (snapshot.replacedSnapshotHashes) {
-        replacedSnapshotHashes.push(snapshot.replacedSnapshotHashes)
-      }
-      const servers = snapshotInfo?.servers ?? new Set()
-      servers.add(server)
-
-      snapshotInfoByHash.set(snapshot.hash, {
-        greatestEndTimestamp,
-        replacedSnapshotHashes,
-        servers
-      })
-    }
-  }
-
-  for (const [snapshotHash, { greatestEndTimestamp, replacedSnapshotHashes, servers }] of snapshotInfoByHash) {
-    logs.debug('Snapshot to be processed.', { hash: snapshotHash, contentServers: JSON.stringify(Array.from(servers)) })
-    const shouldStreamSnapshot =
-      greatestEndTimestamp > genesisTimestamp &&
-      await components.processedSnapshots.shouldProcessSnapshot(snapshotHash, replacedSnapshotHashes)
-
-    if (shouldStreamSnapshot) {
-      try {
-        // 2.1. download the snapshot file if needed
-        await downloadFileWithRetries(
-          components,
-          snapshotHash,
-          options.tmpDownloadFolder,
-          Array.from(servers),
-          new Map(),
-          options.requestMaxRetries,
-          options.requestRetryWaitTime
-        )
-
-        // 2.2. open the snapshot file and process line by line
-        const deploymentsInFile = processDeploymentsInFile(snapshotHash, components, logs)
-        await components.processedSnapshots.startStreamOf(snapshotHash)
-        let numberOfStreamedEntities = 0
-        for await (const deployment of deploymentsInFile) {
-
-          const deploymentTimestamp = 'entityTimestamp' in deployment ? deployment.entityTimestamp : deployment.localTimestamp
-
-          if (deploymentTimestamp >= genesisTimestamp) {
-            components.metrics.increment('dcl_entities_deployments_streamed_total', { source: 'snapshots' })
-            numberOfStreamedEntities++
-            yield {
-              ...deployment,
-              snapshotHash,
-              servers: Array.from(servers)
-            }
-          }
-        }
-        await components.processedSnapshots.endStreamOf(snapshotHash, numberOfStreamedEntities)
-      } finally {
-        if (options.deleteSnapshotAfterUsage !== false) {
-          try {
-            await components.storage.delete([snapshotHash])
-          } catch (err: any) {
-            logs.error(err)
-          }
-        }
-      }
-    }
-  }
-
-  logs.info('End streaming snapshots.')
 }
 
 /**
