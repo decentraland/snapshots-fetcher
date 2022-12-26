@@ -295,9 +295,9 @@ export async function createSynchronizer(
             }
           })
       }
-      onInitialBootstrapFinished(async () => {
-        snapshotsSyncTimeout = setTimeout(async () => await regularSyncFromSnapshotsAfterBootstrapJob.start(), 3_600_000)
-      })
+      // onInitialBootstrapFinished(async () => {
+      //   snapshotsSyncTimeout = setTimeout(async () => await regularSyncFromSnapshotsAfterBootstrapJob.start(), 3_600_000)
+      // })
     },
     async syncSnapshotsForSyncingServers() {
       await syncFromSnapshots(syncingServers)
