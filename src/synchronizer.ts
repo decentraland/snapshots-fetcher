@@ -2,7 +2,7 @@ import { createProcessedSnapshotsComponent, getDeployedEntitiesStreamFromPointer
 import { getSnapshots } from "./client"
 import { createExponentialFallofRetry, ExponentialFallofRetryComponent } from "./exponential-fallof-retry"
 import { createJobLifecycleManagerComponent } from "./job-lifecycle-manager"
-import { IDeployerComponent, PointerChangesDeployedEntityStreamOptions, Snapshot, SnapshotInfo, SnapshotsFetcherComponents, SynchronizerComponent, SynchronizerOptions } from "./types"
+import { IDeployerComponent, PointerChangesDeployedEntityStreamOptions, SnapshotInfo, SnapshotsFetcherComponents, SynchronizerComponent, SynchronizerOptions } from "./types"
 import { contentServerMetricLabels } from "./utils"
 
 /**
@@ -303,9 +303,6 @@ export async function createSynchronizer(
       onInitialBootstrapFinished(async () => {
         snapshotsSyncTimeout = setTimeout(async () => await regularSyncFromSnapshotsAfterBootstrapJob.start(), 3_600_000)
       })
-    },
-    async syncSnapshotsForSyncingServers() {
-      await syncFromSnapshots(syncingServers)
     },
     onInitialBootstrapFinished,
     async stop() {

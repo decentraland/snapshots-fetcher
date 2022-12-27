@@ -13,13 +13,11 @@ import {
   PointerChangesDeployedEntityStreamOptions,
   ReconnectionOptions,
   Server,
-  Snapshot,
   SnapshotDeployedEntityStreamOptions,
   SnapshotInfo,
   SnapshotsFetcherComponents,
 } from './types'
 import { contentServerMetricLabels, sleep, streamToBuffer } from './utils'
-import { SyncDeployment } from '@dcl/schemas'
 
 export { metricsDefinitions } from './metrics'
 export { IDeployerComponent, SynchronizerComponent } from './types'
