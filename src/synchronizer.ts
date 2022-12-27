@@ -56,7 +56,12 @@ export async function createSynchronizer(
         return
       }
 
-      await components.deployer.deployEntity(deployment, [contentServer])
+      await components.deployer.deployEntity({
+        ...deployment,
+        markAsDeployed: async function () {
+          components.metrics.increment('dcl_entities_deployments_processed_total', { source: 'pointer-changes' })
+        }
+      }, [contentServer])
 
       // update greatest processed timestamp
       increaseLastTimestamp(contentServer, deployment.localTimestamp)
@@ -119,7 +124,7 @@ export async function createSynchronizer(
           await components.deployer.deployEntity({
             ...entity,
             markAsDeployed: async function () {
-              components.metrics.increment('dcl_entities_deployments_processed_total')
+              components.metrics.increment('dcl_entities_deployments_processed_total', { source: 'snapshots' })
               await processedSnapshots.entityProcessedFrom(entity.snapshotHash)
             }
           }, entity.servers)

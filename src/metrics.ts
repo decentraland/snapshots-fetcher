@@ -32,7 +32,7 @@ export const metricsDefinitions = validateMetricsDeclaration({
   dcl_entities_deployments_processed_total: {
     help: 'Entities processed from remote catalysts',
     type: 'counter',
-    labelNames: ['remote_server'],
+    labelNames: ['remote_server', 'source'],
   },
 
   dcl_entities_deployments_streamed_total: {
