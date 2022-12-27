@@ -20,11 +20,19 @@ import { IProcessedSnapshotsComponent, SnapshotsFetcherComponents } from "./type
  *
  * @internal
  */
-export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage' | 'logs'>): IProcessedSnapshotsComponent {
+export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage' | 'logs' | 'metrics'>): IProcessedSnapshotsComponent {
   const logger = components.logs.getLogger('processed-snapshots-logic')
   const snapshotsBeingStreamed = new Set()
   const snapshotsCompletelyStreamed = new Set()
   const numberOfProcessedEntitiesBySnapshot: Map<string, number> = new Map()
+
+  async function saveIfStreamEndedAndAllEntitiesWereProcessed(snapshotHash: string) {
+    const numberOfEntities = numberOfProcessedEntitiesBySnapshot.get(snapshotHash)
+    if (snapshotsCompletelyStreamed.has(snapshotHash) && numberOfEntities == 0) {
+      await components.processedSnapshotStorage.saveProcessed(snapshotHash)
+      components.metrics.increment('dcl_processed_snapshots_total', { state: 'saved' })
+    }
+  }
 
   return {
     async shouldProcessSnapshot(snapshotHash: string, snapshotReplacedGroups: string[][]) {
@@ -47,24 +55,22 @@ export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetc
     async startStreamOf(snapshotHash: string) {
       snapshotsBeingStreamed.add(snapshotHash)
       logger.info('Starting stream...', { snapshotHash })
+      components.metrics.increment('dcl_processed_snapshots_total', { state: 'stream_start' })
     },
     async endStreamOf(snapshotHash: string, numberOfStreamedEntities: number) {
       snapshotsCompletelyStreamed.add(snapshotHash)
       let numberOfEntities = numberOfProcessedEntitiesBySnapshot.get(snapshotHash) ?? 0
       numberOfEntities = numberOfEntities - numberOfStreamedEntities
       numberOfProcessedEntitiesBySnapshot.set(snapshotHash, numberOfEntities)
+      components.metrics.increment('dcl_processed_snapshots_total', { state: 'stream_end' })
       logger.info('Stream ended.', { snapshotHash })
-      if (numberOfEntities == 0) {
-        await components.processedSnapshotStorage.saveProcessed(snapshotHash)
-      }
+      await saveIfStreamEndedAndAllEntitiesWereProcessed(snapshotHash)
     },
     async entityProcessedFrom(snapshotHash: string) {
       let numberOfEntities = numberOfProcessedEntitiesBySnapshot.get(snapshotHash) ?? 0
       numberOfEntities = numberOfEntities + 1
       numberOfProcessedEntitiesBySnapshot.set(snapshotHash, numberOfEntities)
-      if (snapshotsCompletelyStreamed.has(snapshotHash) && numberOfEntities == 0) {
-        await components.processedSnapshotStorage.saveProcessed(snapshotHash)
-      }
+      await saveIfStreamEndedAndAllEntitiesWereProcessed(snapshotHash)
     }
   }
 }

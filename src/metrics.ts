@@ -83,5 +83,11 @@ export const metricsDefinitions = validateMetricsDeclaration({
   dcl_syncing_servers: {
     help: 'Servers that are in bootstrapping state',
     type: 'gauge'
+  },
+
+  dcl_processed_snapshots_total: {
+    help: 'asdf',
+    type: 'counter',
+    labelNames: ['state'] // state='stream_start'|'stream_end'|'saved'
   }
 })
