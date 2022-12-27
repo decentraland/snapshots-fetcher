@@ -34,8 +34,8 @@ export async function createSynchronizer(
         throw e
       }
     },
-    // every four hours
-    retryTime: 14_400_000,
+    // every 14 days
+    retryTime: 86_400_000 * 14,
     retryTimeExponent: 1
   })
   let isStopped = false
@@ -295,9 +295,9 @@ export async function createSynchronizer(
             }
           })
       }
-      // onInitialBootstrapFinished(async () => {
-      //   snapshotsSyncTimeout = setTimeout(async () => await regularSyncFromSnapshotsAfterBootstrapJob.start(), 3_600_000)
-      // })
+      onInitialBootstrapFinished(async () => {
+        snapshotsSyncTimeout = setTimeout(async () => await regularSyncFromSnapshotsAfterBootstrapJob.start(), 3_600_000)
+      })
     },
     async syncSnapshotsForSyncingServers() {
       await syncFromSnapshots(syncingServers)
