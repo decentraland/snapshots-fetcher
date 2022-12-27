@@ -28,7 +28,7 @@ export function createCatalystPointerChangesDeploymentStream(components: Snapsho
 // Warning: (ae-internal-missing-underscore) The name "createProcessedSnapshotsComponent" should be prefixed with an underscore because the declaration is marked as @internal
 //
 // @internal
-export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage' | 'logs'>): IProcessedSnapshotsComponent;
+export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage' | 'logs' | 'metrics'>): IProcessedSnapshotsComponent;
 
 // Warning: (ae-forgotten-export) The symbol "SynchronizerOptions" needs to be exported by the entry point index.d.ts
 //
@@ -80,7 +80,7 @@ export type IDeployerComponent = {
 };
 
 // @public (undocumented)
-export const metricsDefinitions: IMetricsComponent<"dcl_content_download_bytes_total" | "dcl_content_download_duration_seconds" | "dcl_content_download_errors_total" | "dcl_content_download_hash_errors_total" | "dcl_entities_deployments_processed_total" | "dcl_entities_deployments_streamed_total" | "dcl_catalysts_pointer_changes_response_time_seconds" | "dcl_deployments_stream_reconnection_count" | "dcl_deployments_stream_failure_count" | "dcl_content_download_job_succeed_retries" | "dcl_available_servers_histogram" | "dcl_bootstrapping_servers" | "dcl_syncing_servers">;
+export const metricsDefinitions: IMetricsComponent<"dcl_content_download_bytes_total" | "dcl_content_download_duration_seconds" | "dcl_content_download_errors_total" | "dcl_content_download_hash_errors_total" | "dcl_entities_deployments_processed_total" | "dcl_entities_deployments_streamed_total" | "dcl_catalysts_pointer_changes_response_time_seconds" | "dcl_deployments_stream_reconnection_count" | "dcl_deployments_stream_failure_count" | "dcl_content_download_job_succeed_retries" | "dcl_available_servers_histogram" | "dcl_bootstrapping_servers" | "dcl_syncing_servers" | "dcl_processed_snapshots_total">;
 
 // @public (undocumented)
 export type SynchronizerComponent = IBaseComponent & {
