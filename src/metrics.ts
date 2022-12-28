@@ -86,7 +86,7 @@ export const metricsDefinitions = validateMetricsDeclaration({
   },
 
   dcl_processed_snapshots_total: {
-    help: 'asdf',
+    help: 'Total number of processed snapshots that started being streamed.',
     type: 'counter',
     labelNames: ['state'] // state='stream_start'|'stream_end'|'saved'
   }
