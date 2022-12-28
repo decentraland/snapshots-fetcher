@@ -116,7 +116,7 @@ export async function createSynchronizer(
 
     for (const snapshotInfo of snapshotInfoByHash.values()) {
       deploymentsFromSnapshots.push(async () => {
-        const stream = getDeployedEntitiesStreamFromSnapshot({ ...components, processedSnapshots }, options, snapshotInfo, genesisTimestamp)
+        const stream = getDeployedEntitiesStreamFromSnapshot({ ...components, processedSnapshots }, options, snapshotInfo)
         for await (const entity of stream) {
           // schedule the deployment in the deployer. the await DOES NOT mean that the entity was deployed entirely
           // if the deployer is not synchronous. For example, the batchDeployer used in the catalyst just add it in a queue.

@@ -43,17 +43,16 @@ export function createSynchronizer(components: SnapshotsFetcherComponents & {
 // @public
 export function downloadEntityAndContentFiles(components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'logs' | 'metrics' | 'storage'>, entityId: EntityHash, presentInServers: string[], _serverMapLRU: Map<Server, number>, targetFolder: string, maxRetries: number, waitTimeBetweenRetries: number): Promise<unknown>;
 
-// @public (undocumented)
+// @public
 export function getDeployedEntitiesStreamFromPointerChanges(components: SnapshotsFetcherComponents, options: PointerChangesDeployedEntityStreamOptions, contentServer: string): AsyncGenerator<PointerChangesSyncDeployment, void, unknown>;
 
 // Warning: (ae-forgotten-export) The symbol "SnapshotDeployedEntityStreamOptions" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "SnapshotInfo" needs to be exported by the entry point index.d.ts
-// Warning: (ae-internal-missing-underscore) The name "getDeployedEntitiesStreamFromSnapshot" should be prefixed with an underscore because the declaration is marked as @internal
 //
-// @internal
+// @public
 export function getDeployedEntitiesStreamFromSnapshot(components: SnapshotsFetcherComponents & {
     processedSnapshots: IProcessedSnapshotsComponent;
-}, options: SnapshotDeployedEntityStreamOptions, snapshotInfo: SnapshotInfo, genesisTimestamp: number): AsyncGenerator<{
+}, options: SnapshotDeployedEntityStreamOptions, snapshotInfo: SnapshotInfo): AsyncGenerator<{
     snapshotHash: string;
     servers: string[];
     entityId: string;
@@ -85,7 +84,6 @@ export const metricsDefinitions: IMetricsComponent<"dcl_content_download_bytes_t
 // @public (undocumented)
 export type SynchronizerComponent = IBaseComponent & {
     syncWithServers(contentServers: Set<string>): Promise<void>;
-    syncSnapshotsForSyncingServers(): Promise<void>;
     onInitialBootstrapFinished(cb: () => Promise<void>): Promise<void>;
 };
 

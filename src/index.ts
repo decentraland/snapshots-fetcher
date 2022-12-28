@@ -155,17 +155,17 @@ export async function downloadEntityAndContentFiles(
 /**
  * Accepts a fromTimestamp option to filter out previous deployments.
  *
- * @internal
+ * @public
  */
 export async function* getDeployedEntitiesStreamFromSnapshot(
   components: SnapshotsFetcherComponents & {
     processedSnapshots: IProcessedSnapshotsComponent
   },
   options: SnapshotDeployedEntityStreamOptions,
-  snapshotInfo: SnapshotInfo,
-  genesisTimestamp: number
+  snapshotInfo: SnapshotInfo
 ) {
   const { greatestEndTimestamp, replacedSnapshotHashes, servers, snapshotHash } = snapshotInfo
+  const genesisTimestamp = options.fromTimestamp || 0
   const logs = components.logs.getLogger('getDeployedEntitiesStreamFromSnapshot')
   logs.info('Snapshot to be processed.', { hash: snapshotHash, contentServers: JSON.stringify(Array.from(servers)) })
   const shouldStreamSnapshot =
@@ -217,6 +217,8 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
 }
 
 /**
+ * Accepts a fromTimestamp option to filter out previous deployments.
+ *
  * @public
  */
 export async function* getDeployedEntitiesStreamFromPointerChanges(
