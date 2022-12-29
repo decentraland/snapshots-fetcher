@@ -126,7 +126,8 @@ export async function createSynchronizer(
             markAsDeployed: async function () {
               components.metrics.increment('dcl_entities_deployments_processed_total', { source: 'snapshots' })
               await processedSnapshots.entityProcessedFrom(entity.snapshotHash)
-            }
+            },
+            snapshotHash: snapshotInfo.snapshotHash
           }, entity.servers)
         }
       })

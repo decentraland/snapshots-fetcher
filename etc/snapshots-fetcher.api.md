@@ -72,9 +72,7 @@ export function getDeployedEntitiesStreamFromSnapshot(components: SnapshotsFetch
 
 // @public
 export type IDeployerComponent = {
-    deployEntity(entity: SyncDeployment & {
-        markAsDeployed?: () => Promise<void>;
-    }, contentServers: string[]): Promise<void>;
+    deployEntity(entity: DeployableEntity, contentServers: string[]): Promise<void>;
     onIdle(): Promise<void>;
 };
 
@@ -86,6 +84,10 @@ export type SynchronizerComponent = IBaseComponent & {
     syncWithServers(contentServers: Set<string>): Promise<void>;
     onInitialBootstrapFinished(cb: () => Promise<void>): Promise<void>;
 };
+
+// Warnings were encountered during analysis:
+//
+// src/types.ts:58:3 - (ae-forgotten-export) The symbol "DeployableEntity" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

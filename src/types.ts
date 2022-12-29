@@ -4,7 +4,7 @@ import { ExponentialFallofRetryComponent } from './exponential-fallof-retry'
 import { IJobQueue } from './job-queue-port'
 import { metricsDefinitions } from './metrics'
 import { IContentStorageComponent } from '@dcl/catalyst-storage'
-import { PointerChangesSyncDeployment, SyncDeployment } from '@dcl/schemas'
+import { SyncDeployment } from '@dcl/schemas'
 
 /**
  * @public
@@ -39,6 +39,11 @@ export type SnapshotsFetcherComponents = {
   processedSnapshotStorage: IProcessedSnapshotStorageComponent
 }
 
+export type DeployableEntity = SyncDeployment & {
+  markAsDeployed?: () => Promise<void>,
+  snapshotHash?: string
+}
+
 /**
  * A component that handles deployments. The deployEntity function should be idempotent, since
  * it can be called several times with the same entity.
@@ -50,7 +55,7 @@ export type IDeployerComponent = {
    * to be called the function #markAsDeployed. This is useful for asynchronous deployers that uses, for example,
    * queues to deploy entities.
    */
-  deployEntity(entity: SyncDeployment & { markAsDeployed?: () => Promise<void> }, contentServers: string[]): Promise<void>
+  deployEntity(entity: DeployableEntity, contentServers: string[]): Promise<void>
   /**
    * onIdle returns a promise that should be resolved once every deployEntity(...) job has
    * finished and there are no more queued jobs.
