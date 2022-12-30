@@ -227,9 +227,9 @@ export async function createSynchronizer(
         try {
           // metrics start?
           await bootstrap()
-          logger.debug(`Syincing servers: ${Array.from(syncingServers)}`)
           // now we start syncing from pointer changes, it internally managers new servers to start syncing
           deployPointerChangesAfterBootstrapJobManager.setDesiredJobs(syncingServers)
+          logger.debug(`Syncing servers: ${Array.from(syncingServers)}`)
         } catch (e: any) {
           // we don't log the exception here because createExponentialFallofRetry(logger, options) receives the logger
           // increment metrics
@@ -259,31 +259,34 @@ export async function createSynchronizer(
     }
   }
 
+  function removeServersNotToSyncFromStateSet(serversToSync: Set<string>, syncStateSet: Set<string>) {
+    for (const syncServerInSomeState of syncStateSet) {
+      if (!serversToSync.has(syncServerInSomeState)) {
+        bootstrappingServersFromSnapshots.delete(syncServerInSomeState)
+      }
+    }
+  }
+
   return {
     async syncWithServers(serversToSync: Set<string>) {
       if (isStopped) {
         throw new Error('synchronizer is stopped.')
       }
-      // 1. Add the new servers (not currently syncing) to the bootstrapping state
+      // 1. Add the new servers (not currently syncing) to the bootstrapping state from snapshots
       for (const serverToSync of serversToSync) {
-        if (!syncingServers.has(serverToSync)) {
+        if (!syncingServers.has(serverToSync) && !(bootstrappingServersFromPointerChanges.has(serverToSync))) {
           bootstrappingServersFromSnapshots.add(serverToSync)
         }
       }
 
-      // 2. a) Remove from bootstrapping servers that should stop syncing
-      for (const bootstappingServer of bootstrappingServersFromSnapshots) {
-        if (!serversToSync.has(bootstappingServer)) {
-          bootstrappingServersFromSnapshots.delete(bootstappingServer)
-        }
-      }
+      // 2. a) Remove from bootstrapping servers (snapshots) that should stop syncing
+      removeServersNotToSyncFromStateSet(serversToSync, bootstrappingServersFromSnapshots)
 
-      // 2. b) Remove from syncing servers that should stop syncing
-      for (const syncingServer of syncingServers) {
-        if (!serversToSync.has(syncingServer)) {
-          syncingServers.delete(syncingServer)
-        }
-      }
+      // 2. b) Remove from bootstrapping servers (pointer-changes) that should stop syncing
+      removeServersNotToSyncFromStateSet(serversToSync, bootstrappingServersFromPointerChanges)
+
+      // 2. c) Remove from syncing servers that should stop syncing
+      removeServersNotToSyncFromStateSet(serversToSync, syncingServers)
 
       reportServerStateMetric()
 
@@ -294,7 +297,7 @@ export async function createSynchronizer(
           .start()
           .finally(() => {
             () => {
-              syncJobs.pop()
+              syncJobs.shift()
               if (syncJobs.length > 0) {
                 syncJobs[0].start()
               }
