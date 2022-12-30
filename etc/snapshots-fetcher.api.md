@@ -81,14 +81,13 @@ export const metricsDefinitions: IMetricsComponent<"dcl_content_download_bytes_t
 
 // @public (undocumented)
 export type SynchronizerComponent = IBaseComponent & {
-    syncWithServers(contentServers: Set<string>): Promise<{
-        onSyncJobFinished(cb: () => Promise<void>): Promise<void>;
-    }>;
+    syncWithServers(contentServers: Set<string>): Promise<SyncJob>;
 };
 
 // Warnings were encountered during analysis:
 //
 // src/types.ts:58:3 - (ae-forgotten-export) The symbol "DeployableEntity" needs to be exported by the entry point index.d.ts
+// src/types.ts:214:3 - (ae-forgotten-export) The symbol "SyncJob" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 
