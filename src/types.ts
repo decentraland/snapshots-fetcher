@@ -202,13 +202,16 @@ export type IProcessedSnapshotsComponent = {
   entityProcessedFrom(snapshotHash: string): Promise<void>
 }
 
+export type SyncJob = {
+  onInitialBootstrapFinished(cb: () => Promise<void>): Promise<void>
+  onSyncFinished(): Promise<void>
+}
+
 /**
  * @public
  */
 export type SynchronizerComponent = IBaseComponent & {
-  syncWithServers(contentServers: Set<string>): Promise<{
-    onSyncJobFinished(cb: () => Promise<void>): Promise<void>
-  }>
+  syncWithServers(contentServers: Set<string>): Promise<SyncJob>
 }
 
 /**

@@ -4,6 +4,7 @@ import { createExponentialFallofRetry, ExponentialFallofRetryComponent } from ".
 import { createJobLifecycleManagerComponent } from "./job-lifecycle-manager"
 import { IDeployerComponent, PointerChangesDeployedEntityStreamOptions, SnapshotInfo, SnapshotsFetcherComponents, SynchronizerComponent, SynchronizerOptions } from "./types"
 import { contentServerMetricLabels } from "./utils"
+import future from 'fp-future'
 
 /**
  * @public
@@ -15,14 +16,12 @@ export async function createSynchronizer(
   options: SynchronizerOptions
 ): Promise<SynchronizerComponent> {
   const logger = components.logs.getLogger('synchronizer')
-  let firstSyncJobStarted = false
   const genesisTimestamp = options.fromTimestamp || 0
   const bootstrappingServersFromSnapshots: Set<string> = new Set()
   const bootstrappingServersFromPointerChanges: Set<string> = new Set()
   const syncingServers: Set<string> = new Set()
   const lastEntityTimestampFromSnapshotsByServer: Map<string, number> = new Map()
   const syncJobs: ExponentialFallofRetryComponent[] = []
-  let snapshotsSyncTimeout: NodeJS.Timeout | undefined
   const regularSyncFromSnapshotsAfterBootstrapJob = createExponentialFallofRetry(logger, {
     async action() {
       try {
@@ -37,6 +36,8 @@ export async function createSynchronizer(
     retryTime: 86_400_000 * 14,
     retryTimeExponent: 1
   })
+  let firstSyncJobStarted = false
+  let snapshotsSyncTimeout: NodeJS.Timeout | undefined
   let isStopped = false
 
   function increaseLastTimestamp(contentServer: string, ...newTimestamps: number[]) {
@@ -190,7 +191,9 @@ export async function createSynchronizer(
   }
 
   async function bootstrap() {
+    logger.info(`Bootstrap (snapshots): ${Array.from(bootstrappingServersFromSnapshots)}`)
     await bootstrapFromSnapshots()
+    logger.info(`Bootstrap (pointer-changes): ${Array.from(bootstrappingServersFromPointerChanges)}`)
     await bootstrapFromPointerChanges()
     logger.debug(`Bootstrap finished.`)
   }
@@ -226,19 +229,24 @@ export async function createSynchronizer(
   )
 
   function createSyncJob() {
-    return createExponentialFallofRetry(logger, {
+    const onFirstBootstrapFinishedCallbacks: Array<() => Promise<void>> = []
+    let firstBootstrapTryFinished = false
+    const syncFinished = future<void>()
+    const syncRetry = createExponentialFallofRetry(logger, {
       async action() {
-        try {
-          // metrics start?
-          await bootstrap()
-          // now we start syncing from pointer changes, it internally managers new servers to start syncing
-          deployPointerChangesAfterBootstrapJobManager.setDesiredJobs(syncingServers)
-          logger.debug(`Syncing servers: ${Array.from(syncingServers)}`)
-        } catch (e: any) {
-          // we don't log the exception here because createExponentialFallofRetry(logger, options) receives the logger
-          // increment metrics
-          throw e
+        // try {
+        await bootstrap()
+        logger.info('Bootstrap finished')
+        if (!isStopped && !firstBootstrapTryFinished) {
+          firstBootstrapTryFinished = true
+          if (onFirstBootstrapFinishedCallbacks.length > 0) {
+            const runningCallbacks = onFirstBootstrapFinishedCallbacks.map(cb => cb())
+            await Promise.all(runningCallbacks)
+          }
         }
+        // now we start syncing from pointer changes, it internally managers new servers to start syncing
+        deployPointerChangesAfterBootstrapJobManager.setDesiredJobs(syncingServers)
+        logger.info(`Syncing servers: ${Array.from(syncingServers)}`)
         // If there are still some servers that didn't bootstrap, we throw an error so it runs later
         if (bootstrappingServersFromSnapshots.size > 0 || bootstrappingServersFromPointerChanges.size > 0) {
           throw new Error(
@@ -247,12 +255,31 @@ export async function createSynchronizer(
               ...bootstrappingServersFromPointerChanges])
             }`)
         }
+        syncFinished.resolve()
+        // } catch (e: any) {
+        //   // we don't log the exception here because createExponentialFallofRetry(logger, options) receives the logger
+        //   // increment metrics
+        //   throw e
+        // }
       },
       retryTime: options.bootstrapReconnection.reconnectTime ?? 5000,
       retryTimeExponent: options.bootstrapReconnection.reconnectRetryTimeExponent ?? 1.5,
       maxInterval: options.bootstrapReconnection.maxReconnectionTime ?? 3_600_000,
       exitOnSuccess: true
     })
+    return {
+      ...syncRetry,
+      async onInitialBootstrapFinished(cb: () => Promise<void>) {
+        if (!firstBootstrapTryFinished) {
+          onFirstBootstrapFinishedCallbacks.push(cb)
+        } else {
+          await cb()
+        }
+      },
+      async onSyncFinished() {
+        await syncFinished
+      }
+    }
   }
 
   function removeServersNotToSyncFromStateSet(serversToSync: Set<string>, syncStateSet: Set<string>) {
@@ -287,11 +314,9 @@ export async function createSynchronizer(
       reportServerStateMetric()
 
       const newSyncJob = createSyncJob()
-      const onSyncJobFinishedCallbacks: Array<() => Promise<void>> = []
-      let syncJobFinished = false
-      if (firstSyncJobStarted) {
+      if (!firstSyncJobStarted) {
         firstSyncJobStarted = true
-        onSyncJobFinishedCallbacks.push(async () => {
+        newSyncJob.onInitialBootstrapFinished(async () => {
           snapshotsSyncTimeout = setTimeout(async () => await regularSyncFromSnapshotsAfterBootstrapJob.start(), 3_600_000)
         })
       }
@@ -301,29 +326,13 @@ export async function createSynchronizer(
           .start()
           .finally(
             async () => {
-              syncJobFinished = true
-              if (!isStopped) {
-                if (onSyncJobFinishedCallbacks.length > 0) {
-                  const runningCallbacks = onSyncJobFinishedCallbacks.map(cb => cb())
-                  await Promise.all(runningCallbacks)
-                }
-              }
               syncJobs.shift()
               if (syncJobs.length > 0) {
                 syncJobs[0].start()
               }
             })
       }
-
-      return {
-        async onSyncJobFinished(cb: () => Promise<void>) {
-          if (!syncJobFinished) {
-            onSyncJobFinishedCallbacks.push(cb)
-          } else {
-            await cb()
-          }
-        }
-      }
+      return newSyncJob
     },
     async stop() {
       // Component will not stop until the sync from snapshots is over.
