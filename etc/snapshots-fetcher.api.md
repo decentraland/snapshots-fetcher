@@ -81,8 +81,9 @@ export const metricsDefinitions: IMetricsComponent<"dcl_content_download_bytes_t
 
 // @public (undocumented)
 export type SynchronizerComponent = IBaseComponent & {
-    syncWithServers(contentServers: Set<string>): Promise<void>;
-    onInitialBootstrapFinished(cb: () => Promise<void>): Promise<void>;
+    syncWithServers(contentServers: Set<string>): Promise<{
+        onSyncJobFinished(cb: () => Promise<void>): Promise<void>;
+    }>;
 };
 
 // Warnings were encountered during analysis:
