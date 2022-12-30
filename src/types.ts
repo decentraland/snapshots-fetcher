@@ -206,8 +206,9 @@ export type IProcessedSnapshotsComponent = {
  * @public
  */
 export type SynchronizerComponent = IBaseComponent & {
-  syncWithServers(contentServers: Set<string>): Promise<void>
-  onInitialBootstrapFinished(cb: () => Promise<void>): Promise<void>
+  syncWithServers(contentServers: Set<string>): Promise<{
+    onSyncJobFinished(cb: () => Promise<void>): Promise<void>
+  }>
 }
 
 /**

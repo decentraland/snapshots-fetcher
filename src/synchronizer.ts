@@ -15,9 +15,8 @@ export async function createSynchronizer(
   options: SynchronizerOptions
 ): Promise<SynchronizerComponent> {
   const logger = components.logs.getLogger('synchronizer')
-  let initialBootstrapFinished = false
+  let firstSyncJobStarted = false
   const genesisTimestamp = options.fromTimestamp || 0
-  const initialBootstrapFinishedEventCallbacks: Array<() => Promise<void>> = []
   const bootstrappingServersFromSnapshots: Set<string> = new Set()
   const bootstrappingServersFromPointerChanges: Set<string> = new Set()
   const syncingServers: Set<string> = new Set()
@@ -193,14 +192,6 @@ export async function createSynchronizer(
   async function bootstrap() {
     await bootstrapFromSnapshots()
     await bootstrapFromPointerChanges()
-    if (!initialBootstrapFinished && !isStopped) {
-      initialBootstrapFinished = true
-      if (initialBootstrapFinishedEventCallbacks.length > 0) {
-        const runningCallbacks = initialBootstrapFinishedEventCallbacks.map(cb => cb())
-        await Promise.all(runningCallbacks)
-        snapshotsSyncTimeout = setTimeout(async () => await regularSyncFromSnapshotsAfterBootstrapJob.start(), 3_600_000)
-      }
-    }
     logger.debug(`Bootstrap finished.`)
   }
 
@@ -296,24 +287,42 @@ export async function createSynchronizer(
       reportServerStateMetric()
 
       const newSyncJob = createSyncJob()
+      const onSyncJobFinishedCallbacks: Array<() => Promise<void>> = []
+      let syncJobFinished = false
+      if (firstSyncJobStarted) {
+        firstSyncJobStarted = true
+        onSyncJobFinishedCallbacks.push(async () => {
+          snapshotsSyncTimeout = setTimeout(async () => await regularSyncFromSnapshotsAfterBootstrapJob.start(), 3_600_000)
+        })
+      }
       syncJobs.push(newSyncJob)
       if (syncJobs.length == 1) {
         syncJobs[0]
           .start()
           .finally(
-            () => {
+            async () => {
+              syncJobFinished = true
+              if (!isStopped) {
+                if (onSyncJobFinishedCallbacks.length > 0) {
+                  const runningCallbacks = onSyncJobFinishedCallbacks.map(cb => cb())
+                  await Promise.all(runningCallbacks)
+                }
+              }
               syncJobs.shift()
               if (syncJobs.length > 0) {
                 syncJobs[0].start()
               }
             })
       }
-    },
-    async onInitialBootstrapFinished(cb: () => Promise<void>) {
-      if (!initialBootstrapFinished) {
-        initialBootstrapFinishedEventCallbacks.push(cb)
-      } else {
-        await cb()
+
+      return {
+        async onSyncJobFinished(cb: () => Promise<void>) {
+          if (!syncJobFinished) {
+            onSyncJobFinishedCallbacks.push(cb)
+          } else {
+            await cb()
+          }
+        }
       }
     },
     async stop() {
