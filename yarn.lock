@@ -297,9 +297,9 @@
     "@jridgewell/trace-mapping" "0.3.9"
 
 "@dcl/catalyst-storage@^2.0.0":
-  version "2.0.0"
-  resolved "https://registry.yarnpkg.com/@dcl/catalyst-storage/-/catalyst-storage-2.0.0.tgz#e41376fd652ecdb23a8525d6a5abddadca5ddbb8"
-  integrity sha512-wwSxjaF0gXMIoH9DaBY+y7pNstrGf0YM21lEvQ6KWGFdseli3E4QSv1o1T8j1GeUY0nfH735yClSr07P02dW3g==
+  version "2.0.2"
+  resolved "https://registry.yarnpkg.com/@dcl/catalyst-storage/-/catalyst-storage-2.0.2.tgz#238f73408000528d6a8b3849e26a6c87604978b2"
+  integrity sha512-fL4xNCwqMIGB7nvhV7UTqOpEEF8Unub3nOMvstjjG6mS7tpUVoeIbXFY8to16awdOShcHNHoi5GvI4WaBKgbnw==
   dependencies:
     "@types/destroy" "^1.0.0"
     "@types/node" "^18.6.3"
