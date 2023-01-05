@@ -1,7 +1,7 @@
 import { SnapshotsFetcherComponents } from './types'
 import { createInterface } from 'readline'
-import { coerceEntityDeployment } from './utils'
-import { DeploymentWithAuthChain } from '@dcl/schemas'
+import { PointerChangesSyncDeployment, SnapshotSyncDeployment, SyncDeployment } from '@dcl/schemas'
+import { ILoggerComponent } from '@well-known-components/interfaces'
 
 async function* processLineByLine(input: NodeJS.ReadableStream) {
   yield* createInterface({
@@ -17,8 +17,9 @@ async function* processLineByLine(input: NodeJS.ReadableStream) {
  */
 export async function* processDeploymentsInFile(
   file: string,
-  components: Pick<SnapshotsFetcherComponents, 'storage'>
-): AsyncIterable<DeploymentWithAuthChain> {
+  components: Pick<SnapshotsFetcherComponents, 'storage'>,
+  logger: ILoggerComponent.ILogger
+): AsyncIterable<SyncDeployment> {
   const fileContent = await components.storage.retrieve(file)
 
   if (!fileContent) {
@@ -28,7 +29,7 @@ export async function* processDeploymentsInFile(
   const stream = await fileContent!.asStream()
 
   try {
-    yield* processDeploymentsInStream(stream)
+    yield* processDeploymentsInStream(stream, logger)
   } finally {
     stream.destroy()
   }
@@ -40,14 +41,26 @@ export async function* processDeploymentsInFile(
  * @public
  */
 export async function* processDeploymentsInStream(
-  stream: NodeJS.ReadableStream
-): AsyncIterable<DeploymentWithAuthChain> {
+  stream: NodeJS.ReadableStream,
+  logger: ILoggerComponent.ILogger
+): AsyncIterable<SyncDeployment> {
   for await (const line of processLineByLine(stream)) {
     const theLine = line.trim()
     if (theLine.startsWith('{') && theLine.endsWith('}')) {
-      const deployment = coerceEntityDeployment(JSON.parse(theLine))
-      if (deployment) {
-        yield deployment
+      const parsedLine = JSON.parse(theLine)
+      if (SnapshotSyncDeployment.validate(parsedLine)) {
+        yield parsedLine
+      } else if (PointerChangesSyncDeployment.validate(parsedLine)) {
+        yield parsedLine
+      } else {
+        const errors = {
+          ...SnapshotSyncDeployment.validate.errors,
+          ...PointerChangesSyncDeployment.validate.errors
+        }
+        logger.error('ERROR: Invalid entity deployment in snapshot file', {
+          deployment: parsedLine,
+          error: JSON.stringify(errors)
+        })
       }
     }
   }

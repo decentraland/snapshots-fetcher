@@ -32,7 +32,13 @@ export const metricsDefinitions = validateMetricsDeclaration({
   dcl_entities_deployments_processed_total: {
     help: 'Entities processed from remote catalysts',
     type: 'counter',
-    labelNames: ['remote_server'],
+    labelNames: ['remote_server', 'source'],
+  },
+
+  dcl_entities_deployments_streamed_total: {
+    help: 'Entities streamed from remote catalysts',
+    type: 'counter',
+    labelNames: ['remote_server', 'source'], // source=snapshots|pointer-changes
   },
 
   dcl_catalysts_pointer_changes_response_time_seconds: {
@@ -67,4 +73,21 @@ export const metricsDefinitions = validateMetricsDeclaration({
     buckets: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
     labelNames: [],
   },
+
+  dcl_bootstrapping_servers: {
+    help: 'Servers that are in bootstrapping state',
+    type: 'gauge',
+    labelNames: ['from'] // from='snapshots'|'pointer-changes'
+  },
+
+  dcl_syncing_servers: {
+    help: 'Servers that are in bootstrapping state',
+    type: 'gauge'
+  },
+
+  dcl_processed_snapshots_total: {
+    help: 'Total number of processed snapshots that started being streamed.',
+    type: 'counter',
+    labelNames: ['state'] // state='stream_start'|'stream_end'|'saved'
+  }
 })

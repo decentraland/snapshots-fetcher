@@ -3,8 +3,9 @@
 
 import { createRunner } from '@well-known-components/test-helpers'
 import { createJobQueue } from '../src/job-queue-port'
+import { createProcessedSnapshotsComponent } from '../src/processed-snapshots'
 import { SnapshotsFetcherComponents } from '../src/types'
-import { createFetchComponent, createStorageComponent } from './test-component'
+import { createFetchComponent, createProcessedSnapshotStorageComponent, createStorageComponent } from './test-component'
 
 import {
   initTestServerComponents,
@@ -14,8 +15,8 @@ import {
 import { createLogComponent } from '@well-known-components/logger'
 import { createTestMetricsComponent } from '@well-known-components/metrics'
 import { metricsDefinitions } from '../src'
-import {IConfigComponent} from "@well-known-components/interfaces";
-import {createConfigComponent} from "@well-known-components/env-config-provider";
+import { IConfigComponent } from "@well-known-components/interfaces"
+import { createConfigComponent } from "@well-known-components/env-config-provider"
 
 // Record of components
 export type TestComponents = SnapshotsFetcherComponents & TestServerComponents<SnapshotsFetcherComponents>
@@ -44,6 +45,8 @@ export const test = createRunner<TestComponents>({
     const metrics = createTestMetricsComponent(metricsDefinitions)
     const testServerComponents = await initTestServerComponents()
     const storage = await createStorageComponent()
+    const processedSnapshotStorage = createProcessedSnapshotStorageComponent()
+    const processedSnapshots = createProcessedSnapshotsComponent({ processedSnapshotStorage, logs, metrics })
 
     return {
       ...testServerComponents,
@@ -52,6 +55,8 @@ export const test = createRunner<TestComponents>({
       downloadQueue,
       fetcher,
       storage,
+      processedSnapshotStorage,
+      processedSnapshots
     }
   },
 })

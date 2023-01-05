@@ -5,6 +5,7 @@ import { readdir, stat } from 'fs/promises'
 import { resolve } from 'path'
 import { MockedStorage } from '@dcl/catalyst-storage/dist/MockedStorage'
 import { IContentStorageComponent } from '@dcl/catalyst-storage'
+import { IProcessedSnapshotStorageComponent } from '../src/types'
 
 export function createFetchComponent() {
   const fetch: IFetchComponent = {
@@ -17,6 +18,7 @@ export function createFetchComponent() {
 }
 
 export async function createStorageComponent(): Promise<IContentStorageComponent> {
+
   const rootFixturesDir = 'test/fixtures'
 
   const files = await readdir(rootFixturesDir)
@@ -38,4 +40,17 @@ export async function createStorageComponent(): Promise<IContentStorageComponent
   await reset()
 
   return mockFileSystem
+}
+
+export function createProcessedSnapshotStorageComponent(): IProcessedSnapshotStorageComponent {
+  const processedSnapshots = new Set()
+
+  return {
+    async processedFrom(snapshotHashes: string[]) {
+      return new Set(snapshotHashes.filter(h => processedSnapshots.has(h)))
+    },
+    async saveProcessed(snapshotHash: string) {
+      processedSnapshots.add(snapshotHash)
+    }
+  }
 }

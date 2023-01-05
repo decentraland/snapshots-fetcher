@@ -1,50 +1,61 @@
 import { AuthLinkType } from '@dcl/schemas'
 import { processDeploymentsInFile } from '../src/file-processor'
 import { createStorageComponent } from './test-component'
+import { test } from './components'
+import { ILoggerComponent } from '@well-known-components/interfaces'
 
-describe('processor', () => {
-  const authChain = [
-    {
-      type: AuthLinkType.SIGNER,
-      payload: '0x3b21028719a4aca7ebee35b0157a6f1b0cf0d0c5',
-      signature: '',
-    },
-  ]
+test('processor', ({ components, stubComponents }) => {
 
-  it('emits every deployment ignoring empty lines', async () => {
-    const r = []
-    const stream = processDeploymentsInFile('bafkreico6luxnkk5vxuxvmpsg7hva4upamyz3br2b6ucc7rf3hdlcaehha', {
-      storage: await createStorageComponent(),
+  describe('processor', () => {
+    const authChain = [
+      {
+        type: AuthLinkType.SIGNER,
+        payload: '0x3b21028719a4aca7ebee35b0157a6f1b0cf0d0c5',
+        signature: '',
+      },
+    ]
+    let logger: ILoggerComponent.ILogger
+
+    beforeAll(() => {
+      logger = components.logs.getLogger('processor-test-logger')
     })
 
-    for await (const deployment of stream) {
-      r.push(deployment)
-    }
-
-    expect(r).toEqual([
-      { entityType: 'profile', entityId: 'Qm000001', localTimestamp: 1, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000002', localTimestamp: 2, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000003', localTimestamp: 3, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000004', localTimestamp: 4, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000005', localTimestamp: 5, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000006', localTimestamp: 6, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000007', localTimestamp: 7, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000008', localTimestamp: 8, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000009', localTimestamp: 9, authChain, pointers: ['0x1'] },
-    ])
-  })
-
-  it('fails on unexistent file', async () => {
-    await expect(async () => {
+    it('emits every deployment ignoring empty lines', async () => {
+      const r = []
       const stream = processDeploymentsInFile(
-        'bafkreico6luxnkk5vxuxvmpsg7hva4upamyz3br2b6ucc7rf3hdlcaehha' + Math.random(),
-        {
-          storage: await createStorageComponent(),
-        }
+        'bafkreibivsdakhiouzuth2nr7c4d3iiolbobj32xhat3nzm5uwyi4raxwu',
+        { storage: await createStorageComponent() },
+        logger
       )
-      for await (const c of stream) {
-        // noop
+
+      for await (const deployment of stream) {
+        r.push(deployment)
       }
-    }).rejects.toThrow('does not exist')
+
+      expect(r).toEqual([
+        { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000001', entityTimestamp: 1, authChain, pointers: ['0x1'] },
+        { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000002', entityTimestamp: 2, authChain, pointers: ['0x1'] },
+        { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000003', entityTimestamp: 3, authChain, pointers: ['0x1'] },
+        { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000004', entityTimestamp: 4, authChain, pointers: ['0x1'] },
+        { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000005', entityTimestamp: 5, authChain, pointers: ['0x1'] },
+        { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000006', entityTimestamp: 6, authChain, pointers: ['0x1'] },
+        { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000007', entityTimestamp: 7, authChain, pointers: ['0x1'] },
+        { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000008', entityTimestamp: 8, authChain, pointers: ['0x1'] },
+        { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000009', entityTimestamp: 9, authChain, pointers: ['0x1'] },
+      ])
+    })
+
+    it('fails on unexistent file', async () => {
+      await expect(async () => {
+        const stream = processDeploymentsInFile(
+          'bafkreibivsdakhiouzuth2nr7c4d3iiolbobj32xhat3nzm5uwyi4raxwu' + Math.random(),
+          { storage: await createStorageComponent() },
+          logger
+        )
+        for await (const c of stream) {
+          // noop
+        }
+      }).rejects.toThrow('does not exist')
+    })
   })
 })

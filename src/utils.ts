@@ -9,7 +9,6 @@ import { IFetchComponent } from '@well-known-components/http-server'
 import { Server, SnapshotsFetcherComponents } from './types'
 import { ContentServerMetricLabels } from './metrics'
 import { hashV0, hashV1 } from '@dcl/hashing'
-import { DeploymentWithAuthChain } from '@dcl/schemas'
 
 const streamPipeline = promisify(pipeline)
 
@@ -101,7 +100,7 @@ export async function saveContentFileToDisk(
           if (await checkFileExists(tmpFileName)) {
             await fs.promises.unlink(tmpFileName)
           }
-        } catch {}
+        } catch { }
         throw e
       }
     }
@@ -180,16 +179,6 @@ function downloadFile(
 
     requestWithRedirects(originalUrlString, 0)
   })
-}
-
-export function coerceEntityDeployment(value: any): DeploymentWithAuthChain | null {
-  if (DeploymentWithAuthChain.validate(value)) {
-    return value
-  }
-
-  console.error('ERROR: Invalid entity deployment', value, DeploymentWithAuthChain.validate.errors)
-
-  return null
 }
 
 export function pickLeastRecentlyUsedServer(serversToPickFrom: Server[]): string {
