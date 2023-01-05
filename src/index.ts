@@ -170,7 +170,7 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
   logs.info('Snapshot to be processed.', { hash: snapshotHash, contentServers: JSON.stringify(Array.from(servers)) })
   const shouldStreamSnapshot =
     greatestEndTimestamp > genesisTimestamp &&
-    await components.processedSnapshots.shouldProcessSnapshot(snapshotHash, replacedSnapshotHashes)
+    await components.processedSnapshots.shouldProcessSnapshotAndMarkAsProcessedIfNeeded(snapshotHash, replacedSnapshotHashes)
 
   if (shouldStreamSnapshot) {
     try {

@@ -36,7 +36,7 @@ describe('processed snapshots', () => {
   describe('shouldStream', () => {
     it('should return false when the snapshot was processed', async () => {
       processedSnapshotStorage.saveProcessed(processedSnapshotHash)
-      expect(await processedSnapshots.shouldProcessSnapshot(processedSnapshotHash, [])).toBeFalsy()
+      expect(await processedSnapshots.shouldProcessSnapshotAndMarkAsProcessedIfNeeded(processedSnapshotHash, [])).toBeFalsy()
     })
 
     it('should return false when the replaced hashes where processed (in the same group)', async () => {
@@ -44,7 +44,7 @@ describe('processed snapshots', () => {
       processedSnapshotStorage.saveProcessed(h2)
       processedSnapshotStorage.saveProcessed(h3)
 
-      expect(await processedSnapshots.shouldProcessSnapshot(processedSnapshotHash, [[h1, h2, h3]])).toBeFalsy()
+      expect(await processedSnapshots.shouldProcessSnapshotAndMarkAsProcessedIfNeeded(processedSnapshotHash, [[h1, h2, h3]])).toBeFalsy()
     })
 
     it('should save the snapshot as processed when all the hashes of any replaced-hashes group were processed', async () => {
@@ -52,7 +52,7 @@ describe('processed snapshots', () => {
       processedSnapshotStorage.saveProcessed(h2)
       processedSnapshotStorage.saveProcessed(h3)
 
-      expect(await processedSnapshots.shouldProcessSnapshot(processedSnapshotHash, [[h1, h2, h3], ['non-processed']])).toBeFalsy()
+      expect(await processedSnapshots.shouldProcessSnapshotAndMarkAsProcessedIfNeeded(processedSnapshotHash, [[h1, h2, h3], ['non-processed']])).toBeFalsy()
       const processed = await processedSnapshotStorage.processedFrom([processedSnapshotHash])
       expect(processed.has(processedSnapshotHash)).toBeTruthy()
     })
@@ -62,20 +62,20 @@ describe('processed snapshots', () => {
       processedSnapshotStorage.saveProcessed(h2)
       processedSnapshotStorage.saveProcessed(h3)
 
-      expect(await processedSnapshots.shouldProcessSnapshot(processedSnapshotHash, [[h1, h2, 'non-processed'], [h3, 'non-processed']])).toBeTruthy()
+      expect(await processedSnapshots.shouldProcessSnapshotAndMarkAsProcessedIfNeeded(processedSnapshotHash, [[h1, h2, 'non-processed'], [h3, 'non-processed']])).toBeTruthy()
       const processed = await processedSnapshotStorage.processedFrom([processedSnapshotHash, 'non-processed'])
       expect(processed.size).toEqual(0)
     })
 
     it('should return false when the snapshot is being streamed', async () => {
       processedSnapshots.startStreamOf(processedSnapshotHash)
-      expect(await processedSnapshots.shouldProcessSnapshot(processedSnapshotHash, [])).toBeFalsy()
+      expect(await processedSnapshots.shouldProcessSnapshotAndMarkAsProcessedIfNeeded(processedSnapshotHash, [])).toBeFalsy()
     })
 
     it('should return false when the snapshot was completely streamed', async () => {
       processedSnapshots.startStreamOf(processedSnapshotHash)
       processedSnapshots.endStreamOf(processedSnapshotHash, 0)
-      expect(await processedSnapshots.shouldProcessSnapshot(processedSnapshotHash, [])).toBeFalsy()
+      expect(await processedSnapshots.shouldProcessSnapshotAndMarkAsProcessedIfNeeded(processedSnapshotHash, [])).toBeFalsy()
     })
   })
 

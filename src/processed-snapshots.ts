@@ -35,7 +35,7 @@ export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetc
   }
 
   return {
-    async shouldProcessSnapshot(snapshotHash: string, snapshotReplacedGroups: string[][]) {
+    async shouldProcessSnapshotAndMarkAsProcessedIfNeeded(snapshotHash: string, snapshotReplacedGroups: string[][]) {
       if (snapshotsBeingStreamed.has(snapshotHash) || snapshotsCompletelyStreamed.has(snapshotHash)) {
         return false
       }
