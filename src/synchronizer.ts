@@ -282,6 +282,7 @@ export async function createSynchronizer(
     }
   }
 
+  // Remove a server from sync list when it was removed from the Servers DAO
   function removeServersNotToSyncFromStateSet(serversToSync: Set<string>, syncStateSet: Set<string>) {
     for (const syncServerInSomeState of syncStateSet) {
       if (!serversToSync.has(syncServerInSomeState)) {

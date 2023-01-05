@@ -51,7 +51,7 @@ export type DeployableEntity = SyncDeployment & {
  */
 export type IDeployerComponent = {
   /**
-   * awaitng deployEntity might not imply that the entity was deployed. To be marked the entity as deployed, it needs
+   * awaiting deployEntity might not imply that the entity was deployed. To be marked the entity as deployed, it needs
    * to be called the function #markAsDeployed. This is useful for asynchronous deployers that uses, for example,
    * queues to deploy entities.
    */
