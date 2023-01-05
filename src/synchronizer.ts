@@ -172,7 +172,7 @@ export async function createSynchronizer(
           if (lastEntityTimestamp == undefined) {
             throw new Error(`Can't start pointer changes stream without last entity timestamp for ${bootstrappingServersFromPointerChange}. This should never happen.`)
           }
-          const fromTimestamp = lastEntityTimestamp - 20 * 60_000
+          const fromTimestamp = Math.max(lastEntityTimestamp - 20 * 60_000, 0)
           await syncFromPointerChanges(bootstrappingServersFromPointerChange, { ...options, fromTimestamp, pointerChangesWaitTime: 0 })
           syncingServers.add(bootstrappingServersFromPointerChange)
           bootstrappingServersFromPointerChanges.delete(bootstrappingServersFromPointerChange)
