@@ -17,7 +17,7 @@
   "dependencies": {
     "@dcl/catalyst-storage": "^2.0.0",
     "@dcl/hashing": "^1.0.0",
-    "@dcl/schemas": "tag-fast-bootstrapping-5",
+    "@dcl/schemas": "^6.2.0",
     "@well-known-components/interfaces": "^1.1.0",
     "@well-known-components/metrics": "^2.0.0",
     "p-queue": "^6.6.2"

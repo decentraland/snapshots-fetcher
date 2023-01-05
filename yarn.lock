@@ -316,10 +316,10 @@
     ipfs-unixfs-importer "^7.0.3"
     multiformats "^9.6.3"
 
-"@dcl/schemas@tag-fast-bootstrapping-5":
-  version "5.29.1-20221110202018.commit-b02a4b7"
-  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-5.29.1-20221110202018.commit-b02a4b7.tgz#15691992f8f34b07a63e91cbab74701655e9f0e7"
-  integrity sha512-B37SGTVVBWcmRwmaWQt3boH902vrAHJKDHZWZZRSjIAyg9kwJG1mFOoE6EFUXkI0a79+d2MNdrEwa3OA9kT1iw==
+"@dcl/schemas@^6.2.0":
+  version "6.2.0"
+  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-6.2.0.tgz#0ce52cc92050097804cd46b058969b4bb122301f"
+  integrity sha512-/6st9o23cUWM6fSUBa1fVt193Fm8fhTGlGJdJnanK3094/ab5lr8lT0HSO5bscKqjwwWlaKpTEfKHMYsCmMnhg==
   dependencies:
     ajv "^8.11.0"
     ajv-errors "^3.0.0"

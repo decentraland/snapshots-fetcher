@@ -6,9 +6,10 @@ import { sleep } from '../src/utils'
 import Sinon from 'sinon'
 import { AuthLinkType } from '@dcl/schemas'
 
+const downloadedSnapshotFile = 'bafkreibivsdakhiouzuth2nr7c4d3iiolbobj32xhat3nzm5uwyi4raxwu'
+
 test('fetches a stream from snapshots deleting the downloaded file', ({ components, stubComponents }) => {
   const contentFolder = resolve('downloads')
-  const downloadedSnapshotFile = 'bafkreicgygsdjrgyrs6dld3ft2cu2anvwzno3ahjjukohpi3lqkz54ei7y'
   const authChain = [
     {
       type: AuthLinkType.SIGNER,
@@ -28,7 +29,7 @@ test('fetches a stream from snapshots deleting the downloaded file', ({ componen
       }
 
       return {
-        body: createReadStream('test/fixtures/bafkreicgygsdjrgyrs6dld3ft2cu2anvwzno3ahjjukohpi3lqkz54ei7y'),
+        body: createReadStream(`test/fixtures/${downloadedSnapshotFile}`),
       }
     })
 
@@ -62,7 +63,7 @@ test('fetches a stream from snapshots deleting the downloaded file', ({ componen
         tmpDownloadFolder: contentFolder
       },
       {
-        snapshotHash: 'bafkreicgygsdjrgyrs6dld3ft2cu2anvwzno3ahjjukohpi3lqkz54ei7y',
+        snapshotHash: downloadedSnapshotFile,
         greatestEndTimestamp: 9,
         replacedSnapshotHashes: [],
         servers: new Set(servers)
@@ -79,22 +80,21 @@ test('fetches a stream from snapshots deleting the downloaded file', ({ componen
     Sinon.assert.calledOnce(storage.delete)
 
     expect(r).toEqual([
-      { entityType: 'profile', entityId: 'Qm000001', entityTimestamp: 1, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile, servers },
-      { entityType: 'profile', entityId: 'Qm000002', entityTimestamp: 2, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile, servers },
-      { entityType: 'profile', entityId: 'Qm000003', entityTimestamp: 3, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile, servers },
-      { entityType: 'profile', entityId: 'Qm000004', entityTimestamp: 4, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile, servers },
-      { entityType: 'profile', entityId: 'Qm000005', entityTimestamp: 5, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile, servers },
-      { entityType: 'profile', entityId: 'Qm000006', entityTimestamp: 6, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile, servers },
-      { entityType: 'profile', entityId: 'Qm000007', entityTimestamp: 7, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile, servers },
-      { entityType: 'profile', entityId: 'Qm000008', entityTimestamp: 8, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile, servers },
-      { entityType: 'profile', entityId: 'Qm000009', entityTimestamp: 9, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile, servers },
+      { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000001', entityTimestamp: 1, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile, servers },
+      { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000002', entityTimestamp: 2, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile, servers },
+      { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000003', entityTimestamp: 3, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile, servers },
+      { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000004', entityTimestamp: 4, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile, servers },
+      { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000005', entityTimestamp: 5, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile, servers },
+      { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000006', entityTimestamp: 6, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile, servers },
+      { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000007', entityTimestamp: 7, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile, servers },
+      { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000008', entityTimestamp: 8, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile, servers },
+      { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000009', entityTimestamp: 9, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile, servers },
     ])
   })
 })
 
 test('fetches a stream without deleting the downloaded file', ({ components, stubComponents }) => {
   const contentFolder = resolve('downloads')
-  const downloadedSnapshotFile = 'bafkreicgygsdjrgyrs6dld3ft2cu2anvwzno3ahjjukohpi3lqkz54ei7y'
 
   it('prepares the endpoints', () => {
     // serve the snapshot file
@@ -107,7 +107,7 @@ test('fetches a stream without deleting the downloaded file', ({ components, stu
       }
 
       return {
-        body: createReadStream('test/fixtures/bafkreicgygsdjrgyrs6dld3ft2cu2anvwzno3ahjjukohpi3lqkz54ei7y'),
+        body: createReadStream(`test/fixtures/${downloadedSnapshotFile}`),
       }
     })
 
@@ -142,7 +142,7 @@ test('fetches a stream without deleting the downloaded file', ({ components, stu
         deleteSnapshotAfterUsage: false
       },
       {
-        snapshotHash: 'bafkreicgygsdjrgyrs6dld3ft2cu2anvwzno3ahjjukohpi3lqkz54ei7y',
+        snapshotHash: downloadedSnapshotFile,
         greatestEndTimestamp: 9,
         replacedSnapshotHashes: [],
         servers: new Set(servers)
@@ -162,7 +162,6 @@ test('fetches a stream without deleting the downloaded file', ({ components, stu
 
 test('when successfully process a snapshot file', ({ components, stubComponents }) => {
   const contentFolder = resolve('downloads')
-  const downloadedSnapshotFile = 'bafkreicgygsdjrgyrs6dld3ft2cu2anvwzno3ahjjukohpi3lqkz54ei7y'
 
   it('prepares the endpoints', () => {
     // serve the snapshot file
@@ -175,7 +174,7 @@ test('when successfully process a snapshot file', ({ components, stubComponents 
       }
 
       return {
-        body: createReadStream('test/fixtures/bafkreicgygsdjrgyrs6dld3ft2cu2anvwzno3ahjjukohpi3lqkz54ei7y'),
+        body: createReadStream(`test/fixtures/${downloadedSnapshotFile}`),
       }
     })
 
@@ -208,7 +207,7 @@ test('when successfully process a snapshot file', ({ components, stubComponents 
         tmpDownloadFolder: contentFolder
       },
       {
-        snapshotHash: 'bafkreicgygsdjrgyrs6dld3ft2cu2anvwzno3ahjjukohpi3lqkz54ei7y',
+        snapshotHash: downloadedSnapshotFile,
         greatestEndTimestamp: 9,
         replacedSnapshotHashes: [],
         servers: new Set(servers)
@@ -225,7 +224,6 @@ test('when successfully process a snapshot file', ({ components, stubComponents 
 
 test('does not fetch a stream if fromTimestamp is after the snapshot endTimestamp', ({ components, stubComponents }) => {
   const contentFolder = resolve('downloads')
-  const downloadedSnapshotFile = 'bafkreicgygsdjrgyrs6dld3ft2cu2anvwzno3ahjjukohpi3lqkz54ei7y'
 
   it('prepares the endpoints', () => {
     // serve the snapshot file
@@ -238,7 +236,7 @@ test('does not fetch a stream if fromTimestamp is after the snapshot endTimestam
       }
 
       return {
-        body: createReadStream('test/fixtures/bafkreicgygsdjrgyrs6dld3ft2cu2anvwzno3ahjjukohpi3lqkz54ei7y'),
+        body: createReadStream(`test/fixtures/${downloadedSnapshotFile}`),
       }
     })
 
@@ -274,7 +272,7 @@ test('does not fetch a stream if fromTimestamp is after the snapshot endTimestam
         fromTimestamp: 10
       },
       {
-        snapshotHash: 'bafkreicgygsdjrgyrs6dld3ft2cu2anvwzno3ahjjukohpi3lqkz54ei7y',
+        snapshotHash: downloadedSnapshotFile,
         greatestEndTimestamp: 9,
         replacedSnapshotHashes: [],
         servers: new Set(servers)

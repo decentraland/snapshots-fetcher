@@ -19,25 +19,25 @@ test('fetches a stream from pointer-changes after specific timestamp', ({ compon
         return {
           body: {
             deltas: [
-              { entityType: 'profile', entityId: 'Qm000010', localTimestamp: 10, authChain, pointers: ['0x1'] },
-              { entityType: 'profile', entityId: 'Qm000011', localTimestamp: 11, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000010', localTimestamp: 10, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000011', localTimestamp: 11, authChain, pointers: ['0x1'] },
             ],
             pagination: {
-              next: '?from=11&entityId=Qm000011',
+              next: '?from=11&entityId=ba000000000000000000000000000000000000000000000000000000011',
             },
           },
         }
       }
 
-      if (ctx.url.searchParams.get('from') != '11' && ctx.url.searchParams.get('entityId') != 'Qm000011') {
+      if (ctx.url.searchParams.get('from') != '11' && ctx.url.searchParams.get('entityId') != 'ba000000000000000000000000000000000000000000000000000000011') {
         throw new Error('pagination is not working properly')
       }
 
       return {
         body: {
           deltas: [
-            { entityType: 'profile', entityId: 'Qm000012', localTimestamp: 12, authChain, pointers: ['0x1'] },
-            { entityType: 'profile', entityId: 'Qm000013', localTimestamp: 13, authChain, pointers: ['0x1'] },
+            { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000012', localTimestamp: 12, authChain, pointers: ['0x1'] },
+            { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000013', localTimestamp: 13, authChain, pointers: ['0x1'] },
           ],
           pagination: {},
         },
@@ -60,10 +60,10 @@ test('fetches a stream from pointer-changes after specific timestamp', ({ compon
     }
 
     expect(r).toEqual([
-      { entityType: 'profile', entityId: 'Qm000010', localTimestamp: 10, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000011', localTimestamp: 11, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000012', localTimestamp: 12, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000013', localTimestamp: 13, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000010', localTimestamp: 10, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000011', localTimestamp: 11, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000012', localTimestamp: 12, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000013', localTimestamp: 13, authChain, pointers: ['0x1'] },
     ])
   })
 })
@@ -85,25 +85,25 @@ test('fetches a stream from pointer-changes from 0 if timestamp is not specified
         return {
           body: {
             deltas: [
-              { entityType: 'profile', entityId: 'Qm000000', localTimestamp: 0, authChain, pointers: ['0x1'] },
-              { entityType: 'profile', entityId: 'Qm000001', localTimestamp: 1, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000000', localTimestamp: 0, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000001', localTimestamp: 1, authChain, pointers: ['0x1'] },
             ],
             pagination: {
-              next: '?from=1&entityId=Qm000001',
+              next: '?from=1&entityId=ba000000000000000000000000000000000000000000000000000000001',
             },
           },
         }
       }
 
-      if (ctx.url.searchParams.get('from') != '1' && ctx.url.searchParams.get('entityId') != 'Qm000001') {
+      if (ctx.url.searchParams.get('from') != '1' && ctx.url.searchParams.get('entityId') != 'ba000000000000000000000000000000000000000000000000000000001') {
         throw new Error('pagination is not working properly')
       }
 
       return {
         body: {
           deltas: [
-            { entityType: 'profile', entityId: 'Qm000002', localTimestamp: 2, authChain, pointers: ['0x1'] },
-            { entityType: 'profile', entityId: 'Qm000003', localTimestamp: 3, authChain, pointers: ['0x1'] },
+            { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000002', localTimestamp: 2, authChain, pointers: ['0x1'] },
+            { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000003', localTimestamp: 3, authChain, pointers: ['0x1'] },
           ],
           pagination: {},
         },
@@ -125,10 +125,10 @@ test('fetches a stream from pointer-changes from 0 if timestamp is not specified
     }
 
     expect(r).toEqual([
-      { entityType: 'profile', entityId: 'Qm000000', localTimestamp: 0, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000001', localTimestamp: 1, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000002', localTimestamp: 2, authChain, pointers: ['0x1'] },
-      { entityType: 'profile', entityId: 'Qm000003', localTimestamp: 3, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000000', localTimestamp: 0, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000001', localTimestamp: 1, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000002', localTimestamp: 2, authChain, pointers: ['0x1'] },
+      { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000003', localTimestamp: 3, authChain, pointers: ['0x1'] },
     ])
   })
 })
