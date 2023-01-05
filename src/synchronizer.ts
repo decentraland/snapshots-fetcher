@@ -234,7 +234,6 @@ export async function createSynchronizer(
     const syncFinished = future<void>()
     const syncRetry = createExponentialFallofRetry(logger, {
       async action() {
-        // try {
         await bootstrap()
         logger.info('Bootstrap finished')
         if (!isStopped && !firstBootstrapTryFinished) {
@@ -256,11 +255,6 @@ export async function createSynchronizer(
             }`)
         }
         syncFinished.resolve()
-        // } catch (e: any) {
-        //   // we don't log the exception here because createExponentialFallofRetry(logger, options) receives the logger
-        //   // increment metrics
-        //   throw e
-        // }
       },
       retryTime: options.bootstrapReconnection.reconnectTime ?? 5000,
       retryTimeExponent: options.bootstrapReconnection.reconnectRetryTimeExponent ?? 1.5,
