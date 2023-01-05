@@ -174,7 +174,7 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
 
   if (shouldStreamSnapshot) {
     try {
-      // 2.1. download the snapshot file if needed
+      // 1. download the snapshot file if needed
       await downloadFileWithRetries(
         components,
         snapshotHash,
@@ -185,7 +185,7 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
         options.requestRetryWaitTime
       )
 
-      // 2.2. open the snapshot file and process line by line
+      // 2. open the snapshot file and process line by line
       const deploymentsInFile = processDeploymentsInFile(snapshotHash, components, logs)
       await components.processedSnapshots.startStreamOf(snapshotHash)
       let numberOfStreamedEntities = 0
