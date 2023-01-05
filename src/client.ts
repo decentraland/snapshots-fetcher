@@ -8,7 +8,6 @@ export async function getSnapshots(components: SnapshotsFetcherComponents, serve
   Promise<Snapshot[]> {
   try {
     const incrementalSnapshotsUrl = new URL(`${server}/snapshots`).toString()
-    // TODO: validate response
     const newSnapshots: {
       hash: string,
       timeRange: { initTimestamp: number, endTimestamp: number },
