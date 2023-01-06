@@ -55,6 +55,7 @@ test('fetches a stream from snapshots deleting the downloaded file', ({ componen
         logs: components.logs,
         storage: components.storage,
         processedSnapshotStorage: components.processedSnapshotStorage,
+        snapshotStorage: components.snapshotStorage,
         processedSnapshots: createProcessedSnapshotsComponent(components)
       },
       {
@@ -133,6 +134,7 @@ test('fetches a stream without deleting the downloaded file', ({ components, stu
         logs: components.logs,
         storage: components.storage,
         processedSnapshotStorage: components.processedSnapshotStorage,
+        snapshotStorage: components.snapshotStorage,
         processedSnapshots: createProcessedSnapshotsComponent(components)
       },
       {
@@ -199,6 +201,7 @@ test('when successfully process a snapshot file', ({ components, stubComponents 
         logs: components.logs,
         storage: components.storage,
         processedSnapshotStorage: components.processedSnapshotStorage,
+        snapshotStorage: components.snapshotStorage,
         processedSnapshots
       },
       {
@@ -262,6 +265,7 @@ test('does not fetch a stream if fromTimestamp is after the snapshot endTimestam
         logs: components.logs,
         storage: components.storage,
         processedSnapshotStorage: components.processedSnapshotStorage,
+        snapshotStorage: components.snapshotStorage,
         processedSnapshots: createProcessedSnapshotsComponent(components)
       },
       {
