@@ -52,6 +52,7 @@ export function getDeployedEntitiesStreamFromPointerChanges(components: Snapshot
 // @public
 export function getDeployedEntitiesStreamFromSnapshot(components: SnapshotsFetcherComponents & {
     processedSnapshots: IProcessedSnapshotsComponent;
+    snapshotStorage: ISnapshotStorageComponent;
 }, options: SnapshotDeployedEntityStreamOptions, snapshotInfo: SnapshotInfo): AsyncGenerator<{
     snapshotHash: string;
     servers: string[];
@@ -86,8 +87,9 @@ export type SynchronizerComponent = IBaseComponent & {
 
 // Warnings were encountered during analysis:
 //
-// src/types.ts:58:3 - (ae-forgotten-export) The symbol "DeployableEntity" needs to be exported by the entry point index.d.ts
-// src/types.ts:214:3 - (ae-forgotten-export) The symbol "SyncJob" needs to be exported by the entry point index.d.ts
+// src/index.ts:164:5 - (ae-forgotten-export) The symbol "ISnapshotStorageComponent" needs to be exported by the entry point index.d.ts
+// src/types.ts:59:3 - (ae-forgotten-export) The symbol "DeployableEntity" needs to be exported by the entry point index.d.ts
+// src/types.ts:222:3 - (ae-forgotten-export) The symbol "SyncJob" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

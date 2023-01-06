@@ -10,6 +10,7 @@ import {
   EntityHash,
   IDeployerComponent,
   IProcessedSnapshotsComponent,
+  ISnapshotStorageComponent,
   PointerChangesDeployedEntityStreamOptions,
   ReconnectionOptions,
   Server,
@@ -160,6 +161,7 @@ export async function downloadEntityAndContentFiles(
 export async function* getDeployedEntitiesStreamFromSnapshot(
   components: SnapshotsFetcherComponents & {
     processedSnapshots: IProcessedSnapshotsComponent
+    snapshotStorage: ISnapshotStorageComponent
   },
   options: SnapshotDeployedEntityStreamOptions,
   snapshotInfo: SnapshotInfo
@@ -170,7 +172,8 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
   logs.info('Snapshot to be processed.', { hash: snapshotHash, contentServers: JSON.stringify(Array.from(servers)) })
   const shouldStreamSnapshot =
     greatestEndTimestamp > genesisTimestamp &&
-    await components.processedSnapshots.shouldProcessSnapshotAndMarkAsProcessedIfNeeded(snapshotHash, replacedSnapshotHashes)
+    await components.processedSnapshots.shouldProcessSnapshotAndMarkAsProcessedIfNeeded(snapshotHash, replacedSnapshotHashes) &&
+    !(await components.snapshotStorage.has(snapshotHash))
 
   if (shouldStreamSnapshot) {
     try {

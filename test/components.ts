@@ -47,6 +47,11 @@ export const test = createRunner<TestComponents>({
     const storage = await createStorageComponent()
     const processedSnapshotStorage = createProcessedSnapshotStorageComponent()
     const processedSnapshots = createProcessedSnapshotsComponent({ processedSnapshotStorage, logs, metrics })
+    const snapshotStorage = {
+      async has(snapshotHash: string) {
+        return false
+      }
+    }
 
     return {
       ...testServerComponents,
@@ -56,7 +61,8 @@ export const test = createRunner<TestComponents>({
       fetcher,
       storage,
       processedSnapshotStorage,
-      processedSnapshots
+      processedSnapshots,
+      snapshotStorage
     }
   },
 })
