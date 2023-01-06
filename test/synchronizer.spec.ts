@@ -70,7 +70,7 @@ test('synchronizer deploys entities from snapshots and pointer-changes at bootst
   })
 
   it('deploys entities from snapshots and pointer-changes', async () => {
-    const { fetcher, downloadQueue, logs, storage, metrics, processedSnapshotStorage } = components
+    const { fetcher, downloadQueue, logs, storage, metrics, processedSnapshotStorage, snapshotStorage } = components
     const deployedEntities = new Set()
     const synchronizer = await createSynchronizer(
       {
@@ -79,6 +79,7 @@ test('synchronizer deploys entities from snapshots and pointer-changes at bootst
         logs,
         storage,
         processedSnapshotStorage,
+        snapshotStorage,
         metrics,
         deployer: {
           async deployEntity(entity: DeployableEntity, contentServers: string[]) {

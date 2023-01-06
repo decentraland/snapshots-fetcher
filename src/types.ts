@@ -37,6 +37,7 @@ export type SnapshotsFetcherComponents = {
   logs: ILoggerComponent
   storage: IContentStorageComponent
   processedSnapshotStorage: IProcessedSnapshotStorageComponent
+  snapshotStorage: ISnapshotStorageComponent
 }
 
 export type DeployableEntity = SyncDeployment & {
@@ -182,6 +183,13 @@ export type PointerChangesDeployedEntityStreamOptions = DeployedEntityStreamComm
  */
 export type DeployedEntityStreamCommonOptions = {
   fromTimestamp?: number
+}
+
+/**
+ * @public
+ */
+export type ISnapshotStorageComponent = {
+  has(snapshotHash: string): Promise<boolean>
 }
 
 /**
