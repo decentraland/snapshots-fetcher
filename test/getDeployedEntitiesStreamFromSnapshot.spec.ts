@@ -361,3 +361,145 @@ test('does not fetch a stream if its own snapshot', ({ components, stubComponent
 
   })
 })
+
+test('does not delete snapshot if its own snapshot', ({ components, stubComponents }) => {
+  const contentFolder = resolve('downloads')
+
+  it('prepares the endpoints', () => {
+    // serve the snapshot file
+    let downloadAttempts = 0
+    components.router.get(`/contents/${downloadedSnapshotFile}`, async () => {
+      if (downloadAttempts == 0) {
+        await sleep(100)
+        downloadAttempts++
+        return { status: 503 }
+      }
+
+      return {
+        body: createReadStream(`test/fixtures/${downloadedSnapshotFile}`),
+      }
+    })
+
+    try {
+      unlinkSync(resolve(contentFolder, downloadedSnapshotFile))
+    } catch { }
+  })
+
+  it('fetch stream', async () => {
+    const { storage } = stubComponents
+
+    storage.storeStream.callThrough()
+    storage.retrieve.callThrough()
+
+    const storageDeleteSpy = jest.spyOn(storage, 'delete')
+
+    const servers = [await components.getBaseUrl()]
+
+    const r = []
+    const stream = getDeployedEntitiesStreamFromSnapshot(
+      {
+        metrics: components.metrics,
+        fetcher: components.fetcher,
+        downloadQueue: components.downloadQueue,
+        logs: components.logs,
+        storage: components.storage,
+        processedSnapshotStorage: components.processedSnapshotStorage,
+        snapshotStorage: {
+          async has(snapshotHash: string) {
+            return snapshotHash == downloadedSnapshotFile
+          }
+        },
+        processedSnapshots: createProcessedSnapshotsComponent(components)
+      },
+      {
+        requestRetryWaitTime: 0,
+        requestMaxRetries: 10,
+        tmpDownloadFolder: contentFolder,
+        deleteSnapshotAfterUsage: true
+      },
+      {
+        snapshotHash: downloadedSnapshotFile,
+        greatestEndTimestamp: 9,
+        replacedSnapshotHashes: [],
+        servers: new Set(servers)
+      }
+    )
+
+    for await (const deployment of stream) {
+      r.push(deployment)
+    }
+
+    expect(storageDeleteSpy).not.toBeCalled()
+  })
+})
+
+test('does delete snapshot after usage if its not own snapshot', ({ components, stubComponents }) => {
+  const contentFolder = resolve('downloads')
+
+  it('prepares the endpoints', () => {
+    // serve the snapshot file
+    let downloadAttempts = 0
+    components.router.get(`/contents/${downloadedSnapshotFile}`, async () => {
+      if (downloadAttempts == 0) {
+        await sleep(100)
+        downloadAttempts++
+        return { status: 503 }
+      }
+
+      return {
+        body: createReadStream(`test/fixtures/${downloadedSnapshotFile}`),
+      }
+    })
+
+    try {
+      unlinkSync(resolve(contentFolder, downloadedSnapshotFile))
+    } catch { }
+  })
+
+  it('fetch stream', async () => {
+    const { storage } = stubComponents
+
+    storage.storeStream.callThrough()
+    storage.retrieve.callThrough()
+
+    const storageDeleteSpy = jest.spyOn(storage, 'delete')
+
+    const servers = [await components.getBaseUrl()]
+
+    const r = []
+    const stream = getDeployedEntitiesStreamFromSnapshot(
+      {
+        metrics: components.metrics,
+        fetcher: components.fetcher,
+        downloadQueue: components.downloadQueue,
+        logs: components.logs,
+        storage: components.storage,
+        processedSnapshotStorage: components.processedSnapshotStorage,
+        snapshotStorage: {
+          async has(snapshotHash: string) {
+            return false
+          }
+        },
+        processedSnapshots: createProcessedSnapshotsComponent(components)
+      },
+      {
+        requestRetryWaitTime: 0,
+        requestMaxRetries: 10,
+        tmpDownloadFolder: contentFolder,
+        deleteSnapshotAfterUsage: true
+      },
+      {
+        snapshotHash: downloadedSnapshotFile,
+        greatestEndTimestamp: 9,
+        replacedSnapshotHashes: [],
+        servers: new Set(servers)
+      }
+    )
+
+    for await (const deployment of stream) {
+      r.push(deployment)
+    }
+
+    expect(storageDeleteSpy).toBeCalledWith([downloadedSnapshotFile])
+  })
+})
