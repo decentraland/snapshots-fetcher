@@ -10,6 +10,11 @@ export type IJobQueue = {
    * Schedules a job.
    */
   scheduleJob<T>(fn: () => Promise<T>): Promise<T>
+  /*
+   * Returns a promise that settles when the queue size is less than the given limit:
+   * queue.size < limit.
+    */
+  onSizeLessThan(limit: number): Promise<void>
   /**
    * Schedules a job with retries. If it fails (throws), then the job goes back to the end of the queue to be processed later.
    */
@@ -38,6 +43,23 @@ export function createJobQueue(options: createJobQueue.Options): IJobQueue & IBa
     },
     scheduleJob<T>(fn: () => Promise<T>): Promise<T> {
       return realQueue.add(fn)
+    },
+    async onSizeLessThan(limit: number): Promise<void> {
+        // Instantly resolve if the queue is empty.
+        if (realQueue.size < limit) {
+            return;
+        }
+
+        return new Promise((resolve) => {
+            const listener = () => {
+                if (realQueue.size < limit) {
+                    realQueue.off('next', listener);
+                    resolve();
+                }
+            }
+
+            realQueue.on('next', listener);
+		    });
     },
     scheduleJobWithPriority<T>(fn: () => Promise<T>, priority: number): Promise<T> {
       return realQueue.add(fn, {
