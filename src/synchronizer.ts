@@ -120,7 +120,7 @@ export async function createSynchronizer(
     })
 
     for (const snapshotInfo of snapshotInfoByHash.values()) {
-      await deploymentsProcessorsQueue.add(async () => {
+      deploymentsProcessorsQueue.add(async () => {
         const stream = getDeployedEntitiesStreamFromSnapshot(
           { ...components, processedSnapshots },
           options,
@@ -146,7 +146,7 @@ export async function createSynchronizer(
             entity.servers
           )
         }
-      })
+      }).catch(logger.error)
     }
 
     await deploymentsProcessorsQueue.onEmpty()
