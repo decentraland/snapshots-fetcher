@@ -149,7 +149,7 @@ export async function createSynchronizer(
       }).catch(logger.error)
     }
 
-    await deploymentsProcessorsQueue.onEmpty()
+    await deploymentsProcessorsQueue.onIdle()
 
     logger.info('End deploying entities from snapshots.')
 
