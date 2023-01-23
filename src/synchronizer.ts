@@ -5,6 +5,7 @@ import { createJobLifecycleManagerComponent } from "./job-lifecycle-manager"
 import { IDeployerComponent, PointerChangesDeployedEntityStreamOptions, SnapshotInfo, SnapshotsFetcherComponents, SynchronizerComponent, SynchronizerOptions } from "./types"
 import { contentServerMetricLabels } from "./utils"
 import future from 'fp-future'
+import PQueue from 'p-queue'
 
 /**
  * @public
@@ -112,11 +113,19 @@ export async function createSynchronizer(
     const processedSnapshots = createProcessedSnapshotsComponent(components)
 
     logger.info('Starting to deploy entities from snapshots.')
-    const deploymentsFromSnapshots: (() => Promise<void>)[] = []
+
+    const deploymentsProcessorsQueue = new PQueue({
+      concurrency: 10,
+      autoStart: true
+    })
 
     for (const snapshotInfo of snapshotInfoByHash.values()) {
-      deploymentsFromSnapshots.push(async () => {
-        const stream = getDeployedEntitiesStreamFromSnapshot({ ...components, processedSnapshots }, options, snapshotInfo)
+      deploymentsProcessorsQueue.add(async () => {
+        const stream = getDeployedEntitiesStreamFromSnapshot(
+          { ...components, processedSnapshots },
+          options,
+          snapshotInfo
+        )
         for await (const entity of stream) {
           if (isStopped) {
             logger.debug('Canceling running sync snapshots stream')
@@ -125,21 +134,22 @@ export async function createSynchronizer(
           // schedule the deployment in the deployer. the await DOES NOT mean that the entity was deployed entirely
           // if the deployer is not synchronous. For example, the batchDeployer used in the catalyst just add it in a queue.
           // Once the entity is truly deployed, it should call the method 'markAsDeployed'
-          await components.deployer.deployEntity({
-            ...entity,
-            markAsDeployed: async function () {
-              components.metrics.increment('dcl_entities_deployments_processed_total', { source: 'snapshots' })
-              await processedSnapshots.entityProcessedFrom(entity.snapshotHash)
+          await components.deployer.deployEntity(
+            {
+              ...entity,
+              markAsDeployed: async function () {
+                components.metrics.increment('dcl_entities_deployments_processed_total', { source: 'snapshots' })
+                await processedSnapshots.entityProcessedFrom(entity.snapshotHash)
+              },
+              snapshotHash: snapshotInfo.snapshotHash
             },
-            snapshotHash: snapshotInfo.snapshotHash
-          }, entity.servers)
+            entity.servers
+          )
         }
-      })
+      }).catch(logger.error)
     }
 
-    if (deploymentsFromSnapshots.length > 0) {
-      await Promise.all(deploymentsFromSnapshots.map(deployFromSnapshot => deployFromSnapshot()))
-    }
+    await deploymentsProcessorsQueue.onIdle()
 
     logger.info('End deploying entities from snapshots.')
 
