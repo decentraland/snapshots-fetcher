@@ -80,7 +80,7 @@ export async function saveContentFileToDisk(
   } while (await checkFileExists(tmpFileName))
 
   const metricsLabels: ContentServerMetricLabels = {
-    remote_server: '',
+    remote_server: ''
   }
 
   try {
@@ -100,7 +100,7 @@ export async function saveContentFileToDisk(
           if (await checkFileExists(tmpFileName)) {
             await fs.promises.unlink(tmpFileName)
           }
-        } catch { }
+        } catch {}
         throw e
       }
     }
@@ -195,7 +195,7 @@ export function pickLeastRecentlyUsedServer(serversToPickFrom: Server[]): string
 export function contentServerMetricLabels(contentServer: string): ContentServerMetricLabels {
   const url = new URL(contentServer)
   return {
-    remote_server: url.origin,
+    remote_server: url.origin
   }
 }
 

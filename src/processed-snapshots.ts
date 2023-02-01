@@ -1,4 +1,4 @@
-import { IProcessedSnapshotsComponent, SnapshotsFetcherComponents } from "./types"
+import { IProcessedSnapshotsComponent, SnapshotsFetcherComponents } from './types'
 
 /**
  * Creates the component that signals the streaming and processing of a snapshot.
@@ -20,7 +20,9 @@ import { IProcessedSnapshotsComponent, SnapshotsFetcherComponents } from "./type
  *
  * @internal
  */
-export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage' | 'logs' | 'metrics'>): IProcessedSnapshotsComponent {
+export function createProcessedSnapshotsComponent(
+  components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage' | 'logs' | 'metrics'>
+): IProcessedSnapshotsComponent {
   const logger = components.logs.getLogger('processed-snapshots-logic')
   const snapshotsBeingStreamed = new Set()
   const snapshotsCompletelyStreamed = new Set()
@@ -39,13 +41,16 @@ export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetc
       if (snapshotsBeingStreamed.has(snapshotHash) || snapshotsCompletelyStreamed.has(snapshotHash)) {
         return false
       }
-      const processedSnapshots = await components.processedSnapshotStorage.processedFrom([snapshotHash, ...snapshotReplacedGroups.flat()])
+      const processedSnapshots = await components.processedSnapshotStorage.processedFrom([
+        snapshotHash,
+        ...snapshotReplacedGroups.flat()
+      ])
 
       if (processedSnapshots.has(snapshotHash)) {
         return false
       }
       for (const replacedGroup of snapshotReplacedGroups) {
-        if (replacedGroup.length > 0 && replacedGroup.every(s => processedSnapshots.has(s))) {
+        if (replacedGroup.length > 0 && replacedGroup.every((s) => processedSnapshots.has(s))) {
           await components.processedSnapshotStorage.saveProcessed(snapshotHash)
           return false
         }

@@ -106,6 +106,6 @@ export function createExponentialFallofRetry(
     },
     async stop() {
       started = false
-    },
+    }
   }
 }
