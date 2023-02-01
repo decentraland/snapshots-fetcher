@@ -353,7 +353,7 @@ export async function createSynchronizer(
       const newSyncJob = createSyncJob()
       if (!firstSyncJobStarted) {
         firstSyncJobStarted = true
-        newSyncJob.onInitialBootstrapFinished(async () => {
+        await newSyncJob.onInitialBootstrapFinished(async () => {
           snapshotsSyncTimeout = setTimeout(
             async () => await regularSyncFromSnapshotsAfterBootstrapJob.start(),
             3_600_000
@@ -365,7 +365,7 @@ export async function createSynchronizer(
         syncJobs[0].start().finally(async () => {
           syncJobs.shift()
           if (syncJobs.length > 0) {
-            syncJobs[0].start()
+            syncJobs[0].start().catch(logger.error)
           }
         })
       }
@@ -384,10 +384,10 @@ export async function createSynchronizer(
         }
         syncingServers.clear()
         if (deployPointerChangesAfterBootstrapJobManager.stop) {
-          deployPointerChangesAfterBootstrapJobManager.stop()
+          await deployPointerChangesAfterBootstrapJobManager.stop()
         }
         if (regularSyncFromSnapshotsAfterBootstrapJob.stop) {
-          regularSyncFromSnapshotsAfterBootstrapJob.stop()
+          await regularSyncFromSnapshotsAfterBootstrapJob.stop()
         }
         if (snapshotsSyncTimeout) {
           clearTimeout(snapshotsSyncTimeout)

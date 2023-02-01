@@ -72,17 +72,19 @@ export function createJobQueue(options: createJobQueue.Options): IJobQueue & IBa
       }
       return new Promise<T>((resolve, reject) => {
         function schedule(retries: number) {
-          realQueue.add(async () => {
-            try {
-              resolve(await fn())
-            } catch (e: any) {
-              if (retries <= 0) {
-                reject(e)
-              } else {
-                schedule(retries - 1)
+          realQueue
+            .add(async () => {
+              try {
+                resolve(await fn())
+              } catch (e: any) {
+                if (retries <= 0) {
+                  reject(e)
+                } else {
+                  schedule(retries - 1)
+                }
               }
-            }
-          })
+            })
+            .catch(reject)
         }
 
         schedule(retries)
