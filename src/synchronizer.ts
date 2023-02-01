@@ -205,7 +205,7 @@ export async function createSynchronizer(
           const lastEntityTimestamp = lastEntityTimestampFromSnapshotsByServer.get(
             bootstrappingServersFromPointerChange
           )
-          if (lastEntityTimestamp == undefined) {
+          if (lastEntityTimestamp === undefined) {
             throw new Error(
               `Can't start pointer changes stream without last entity timestamp for ${bootstrappingServersFromPointerChange}. This should never happen.`
             )
@@ -244,7 +244,7 @@ export async function createSynchronizer(
     jobManagerName: 'SynchronizationJobManager',
     createJob(contentServer) {
       const fromTimestamp = lastEntityTimestampFromSnapshotsByServer.get(contentServer)
-      if (fromTimestamp == undefined) {
+      if (fromTimestamp === undefined) {
         throw new Error(
           `Can't start pointer changes stream without last entity timestamp for ${contentServer}. This should never happen.`
         )
@@ -361,7 +361,7 @@ export async function createSynchronizer(
         })
       }
       syncJobs.push(newSyncJob)
-      if (syncJobs.length == 1) {
+      if (syncJobs.length === 1) {
         syncJobs[0].start().finally(async () => {
           syncJobs.shift()
           if (syncJobs.length > 0) {

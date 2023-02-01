@@ -16,6 +16,13 @@
   "keywords": [],
   "author": "Decentraland Contributors",
   "license": "Apache-2.0",
+  "prettier": {
+    "printWidth": 120,
+    "semi": false,
+    "singleQuote": true,
+    "trailingComma": "none",
+    "tabWidth": 2
+  },
   "dependencies": {
     "@dcl/catalyst-storage": "^2.0.0",
     "@dcl/hashing": "^1.0.0",

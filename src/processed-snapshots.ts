@@ -30,7 +30,7 @@ export function createProcessedSnapshotsComponent(
 
   async function saveIfStreamEndedAndAllEntitiesWereProcessed(snapshotHash: string) {
     const numberOfEntities = numberOfProcessedEntitiesBySnapshot.get(snapshotHash)
-    if (snapshotsCompletelyStreamed.has(snapshotHash) && numberOfEntities == 0) {
+    if (snapshotsCompletelyStreamed.has(snapshotHash) && numberOfEntities === 0) {
       await components.processedSnapshotStorage.saveProcessed(snapshotHash)
       components.metrics.increment('dcl_processed_snapshots_total', { state: 'saved' })
     }
