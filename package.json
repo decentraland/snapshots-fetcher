@@ -5,15 +5,24 @@
   "main": "dist/index.js",
   "typings": "dist/index.d.ts",
   "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint:check": "eslint '**/*.{js,ts}'",
+    "lint:fix": "eslint '**/*.{js,ts}' --fix",
     "clean-api-extractor": "rm -rf node_modules/@microsoft/api-extractor/node_modules/typescript || true",
     "api-extractor": "yarn clean-api-extractor && api-extractor run --local --verbose --diagnostics --typescript-compiler-folder ./node_modules/typescript",
     "api-extractor-ci": "yarn clean-api-extractor && api-extractor run --verbose --typescript-compiler-folder ./node_modules/typescript",
-    "build": "tsc -p tsconfig.json",
     "test": "jest --runInBand --forceExit --detectOpenHandles --coverage"
   },
   "keywords": [],
   "author": "Decentraland Contributors",
   "license": "Apache-2.0",
+  "prettier": {
+    "printWidth": 120,
+    "semi": false,
+    "singleQuote": true,
+    "trailingComma": "none",
+    "tabWidth": 2
+  },
   "dependencies": {
     "@dcl/catalyst-storage": "^2.0.0",
     "@dcl/hashing": "^1.0.0",
@@ -27,16 +36,12 @@
   },
   "engineStrict": true,
   "devDependencies": {
+    "@dcl/eslint-config": "^1.1.0",
     "@microsoft/api-extractor": "^7.19.4",
     "@well-known-components/env-config-provider": "^1.1.1",
     "@well-known-components/http-server": "^1.1.1",
     "@well-known-components/logger": "^3.0.0",
     "@well-known-components/test-helpers": "^1.2.1",
-    "@typescript-eslint/eslint-plugin": "5.33.0",
-    "@typescript-eslint/parser": "5.33.0",
-    "eslint": "8.21.0",
-    "eslint-plugin-prettier": "4.2.1",
-    "prettier": "2.7.1",
     "node-fetch": "^2.6.7",
     "ts-node": "^10.5.0",
     "typescript": "^4.5.5"

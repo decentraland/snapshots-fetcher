@@ -97,7 +97,7 @@ export function createExponentialFallofRetry(
       return reconnectionCount
     },
     isStopped() {
-      return started != true
+      return !started
     },
     async start() {
       if (started === true) return
@@ -106,6 +106,6 @@ export function createExponentialFallofRetry(
     },
     async stop() {
       started = false
-    },
+    }
   }
 }

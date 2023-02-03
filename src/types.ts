@@ -41,7 +41,7 @@ export type SnapshotsFetcherComponents = {
 }
 
 export type DeployableEntity = SyncDeployment & {
-  markAsDeployed?: () => Promise<void>,
+  markAsDeployed?: () => Promise<void>
   snapshotHash?: string
 }
 
@@ -133,16 +133,15 @@ export type CatalystDeploymentStreamOptions = DeployedEntityStreamOptions & {
 /**
  * @public
  */
-export type SynchronizerOptions =
-  SnapshotDeployedEntityStreamOptions &
+export type SynchronizerOptions = SnapshotDeployedEntityStreamOptions &
   PointerChangesDeployedEntityStreamOptions & {
-    bootstrapReconnection: ReconnectionOptions,
+    bootstrapReconnection: ReconnectionOptions
     syncingReconnection: ReconnectionOptions
   }
 
 /**
-* @public
-*/
+ * @public
+ */
 export type ReconnectionOptions = {
   reconnectTime: number
   /**
@@ -204,7 +203,10 @@ export type IProcessedSnapshotStorageComponent = {
  * @internal
  */
 export type IProcessedSnapshotsComponent = {
-  shouldProcessSnapshotAndMarkAsProcessedIfNeeded(snapshotHash: string, replacedSnapshotHashes: string[][]): Promise<boolean>
+  shouldProcessSnapshotAndMarkAsProcessedIfNeeded(
+    snapshotHash: string,
+    replacedSnapshotHashes: string[][]
+  ): Promise<boolean>
   startStreamOf(snapshotHash: string): Promise<void>
   endStreamOf(snapshotHash: string, numberOfEntitiesStreamed: number): Promise<void>
   entityProcessedFrom(snapshotHash: string): Promise<void>
@@ -236,7 +238,7 @@ export type Snapshot = {
  */
 export type SnapshotInfo = {
   snapshotHash: string
-  greatestEndTimestamp: number,
-  replacedSnapshotHashes: string[][],
+  greatestEndTimestamp: number
+  replacedSnapshotHashes: string[][]
   servers: Set<string>
 }
