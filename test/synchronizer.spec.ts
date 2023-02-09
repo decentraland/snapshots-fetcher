@@ -137,7 +137,7 @@ test('synchronizer deploys entities from snapshots and pointer-changes at bootst
       expect(deployedEntities.has(id)).toBeTruthy()
     }
 
-    const processed = await processedSnapshotStorage.processedFrom([downloadedSnapshotFile])
+    const processed = await processedSnapshotStorage.filterProcessedSnapshotsFrom([downloadedSnapshotFile])
 
     expect(processed.has(downloadedSnapshotFile)).toBeTruthy()
   })

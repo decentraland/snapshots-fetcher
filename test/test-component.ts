@@ -46,10 +46,10 @@ export function createProcessedSnapshotStorageComponent(): IProcessedSnapshotSto
   const processedSnapshots = new Set()
 
   return {
-    async processedFrom(snapshotHashes: string[]) {
+    async filterProcessedSnapshotsFrom(snapshotHashes: string[]) {
       return new Set(snapshotHashes.filter(h => processedSnapshots.has(h)))
     },
-    async saveProcessed(snapshotHash: string) {
+    async saveAsProcessed(snapshotHash: string) {
       processedSnapshots.add(snapshotHash)
     }
   }

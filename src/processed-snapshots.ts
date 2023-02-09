@@ -29,7 +29,7 @@ export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetc
   async function saveIfStreamEndedAndAllEntitiesWereProcessed(snapshotHash: string) {
     const numberOfEntities = numberOfProcessedEntitiesBySnapshot.get(snapshotHash)
     if (snapshotsCompletelyStreamed.has(snapshotHash) && numberOfEntities == 0) {
-      await components.processedSnapshotStorage.saveProcessed(snapshotHash)
+      await components.processedSnapshotStorage.saveAsProcessed(snapshotHash)
       components.metrics.increment('dcl_processed_snapshots_total', { state: 'saved' })
     }
   }
@@ -39,14 +39,14 @@ export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetc
       if (snapshotsBeingStreamed.has(snapshotHash) || snapshotsCompletelyStreamed.has(snapshotHash)) {
         return false
       }
-      const processedSnapshots = await components.processedSnapshotStorage.processedFrom([snapshotHash, ...snapshotReplacedGroups.flat()])
+      const processedSnapshots = await components.processedSnapshotStorage.filterProcessedSnapshotsFrom([snapshotHash, ...snapshotReplacedGroups.flat()])
 
       if (processedSnapshots.has(snapshotHash)) {
         return false
       }
       for (const replacedGroup of snapshotReplacedGroups) {
         if (replacedGroup.length > 0 && replacedGroup.every(s => processedSnapshots.has(s))) {
-          await components.processedSnapshotStorage.saveProcessed(snapshotHash)
+          await components.processedSnapshotStorage.saveAsProcessed(snapshotHash)
           return false
         }
       }

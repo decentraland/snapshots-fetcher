@@ -196,8 +196,16 @@ export type ISnapshotStorageComponent = {
  * @public
  */
 export type IProcessedSnapshotStorageComponent = {
-  processedFrom(snapshotHashes: string[]): Promise<Set<string>>
-  saveProcessed(snapshotHash: string): Promise<void>
+  /**
+   * It receives a list of snapshot hashes L and returns a set with hashes of the snapshots that were processed from L.
+   * @param snapshotHashes - The list of snapshots hashes to be filtered.
+   */
+  filterProcessedSnapshotsFrom(snapshotHashes: string[]): Promise<Set<string>>
+  /**
+   * It receives a snapshot hash and saves it as processed.
+   * @param snapshotHash - The snapshot hash to be saved as processed
+   */
+  saveAsProcessed(snapshotHash: string): Promise<void>
 }
 
 /**

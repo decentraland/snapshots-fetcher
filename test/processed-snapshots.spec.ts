@@ -35,35 +35,35 @@ describe('processed snapshots', () => {
 
   describe('shouldStream', () => {
     it('should return false when the snapshot was processed', async () => {
-      processedSnapshotStorage.saveProcessed(processedSnapshotHash)
+      processedSnapshotStorage.saveAsProcessed(processedSnapshotHash)
       expect(await processedSnapshots.shouldProcessSnapshotAndMarkAsProcessedIfNeeded(processedSnapshotHash, [])).toBeFalsy()
     })
 
     it('should return false when the replaced hashes where processed (in the same group)', async () => {
-      processedSnapshotStorage.saveProcessed(h1)
-      processedSnapshotStorage.saveProcessed(h2)
-      processedSnapshotStorage.saveProcessed(h3)
+      processedSnapshotStorage.saveAsProcessed(h1)
+      processedSnapshotStorage.saveAsProcessed(h2)
+      processedSnapshotStorage.saveAsProcessed(h3)
 
       expect(await processedSnapshots.shouldProcessSnapshotAndMarkAsProcessedIfNeeded(processedSnapshotHash, [[h1, h2, h3]])).toBeFalsy()
     })
 
     it('should save the snapshot as processed when all the hashes of any replaced-hashes group were processed', async () => {
-      processedSnapshotStorage.saveProcessed(h1)
-      processedSnapshotStorage.saveProcessed(h2)
-      processedSnapshotStorage.saveProcessed(h3)
+      processedSnapshotStorage.saveAsProcessed(h1)
+      processedSnapshotStorage.saveAsProcessed(h2)
+      processedSnapshotStorage.saveAsProcessed(h3)
 
       expect(await processedSnapshots.shouldProcessSnapshotAndMarkAsProcessedIfNeeded(processedSnapshotHash, [[h1, h2, h3], ['non-processed']])).toBeFalsy()
-      const processed = await processedSnapshotStorage.processedFrom([processedSnapshotHash])
+      const processed = await processedSnapshotStorage.filterProcessedSnapshotsFrom([processedSnapshotHash])
       expect(processed.has(processedSnapshotHash)).toBeTruthy()
     })
 
     it('should return true when not all the replaced hashes of any group were processed', async () => {
-      processedSnapshotStorage.saveProcessed(h1)
-      processedSnapshotStorage.saveProcessed(h2)
-      processedSnapshotStorage.saveProcessed(h3)
+      processedSnapshotStorage.saveAsProcessed(h1)
+      processedSnapshotStorage.saveAsProcessed(h2)
+      processedSnapshotStorage.saveAsProcessed(h3)
 
       expect(await processedSnapshots.shouldProcessSnapshotAndMarkAsProcessedIfNeeded(processedSnapshotHash, [[h1, h2, 'non-processed'], [h3, 'non-processed']])).toBeTruthy()
-      const processed = await processedSnapshotStorage.processedFrom([processedSnapshotHash, 'non-processed'])
+      const processed = await processedSnapshotStorage.filterProcessedSnapshotsFrom([processedSnapshotHash, 'non-processed'])
       expect(processed.size).toEqual(0)
     })
 
@@ -84,7 +84,7 @@ describe('processed snapshots', () => {
       processedSnapshots.startStreamOf(processedSnapshotHash)
       processedSnapshots.endStreamOf(processedSnapshotHash, 1)
 
-      const processedSnapshotsInDB = await processedSnapshotStorage.processedFrom([processedSnapshotHash])
+      const processedSnapshotsInDB = await processedSnapshotStorage.filterProcessedSnapshotsFrom([processedSnapshotHash])
       expect(processedSnapshotsInDB.size).toEqual(0)
     })
 
@@ -93,7 +93,7 @@ describe('processed snapshots', () => {
       processedSnapshots.entityProcessedFrom(processedSnapshotHash)
       processedSnapshots.endStreamOf(processedSnapshotHash, 1)
 
-      const processedSnapshotsInDB = await processedSnapshotStorage.processedFrom([processedSnapshotHash])
+      const processedSnapshotsInDB = await processedSnapshotStorage.filterProcessedSnapshotsFrom([processedSnapshotHash])
       expect(processedSnapshotsInDB.size).toEqual(1)
     })
   })
@@ -104,7 +104,7 @@ describe('processed snapshots', () => {
       processedSnapshots.entityProcessedFrom(processedSnapshotHash)
       processedSnapshots.entityProcessedFrom(processedSnapshotHash)
 
-      const processedSnapshotsInDB = await processedSnapshotStorage.processedFrom([processedSnapshotHash])
+      const processedSnapshotsInDB = await processedSnapshotStorage.filterProcessedSnapshotsFrom([processedSnapshotHash])
       expect(processedSnapshotsInDB.size).toEqual(0)
     })
 
@@ -115,7 +115,7 @@ describe('processed snapshots', () => {
       processedSnapshots.entityProcessedFrom(processedSnapshotHash)
 
 
-      const processedSnapshotsInDB = await processedSnapshotStorage.processedFrom([processedSnapshotHash])
+      const processedSnapshotsInDB = await processedSnapshotStorage.filterProcessedSnapshotsFrom([processedSnapshotHash])
       expect(processedSnapshotsInDB.size).toEqual(0)
     })
 
@@ -126,7 +126,7 @@ describe('processed snapshots', () => {
       processedSnapshots.endStreamOf(processedSnapshotHash, 3)
       processedSnapshots.entityProcessedFrom(processedSnapshotHash)
 
-      const processedSnapshotsInDB = await processedSnapshotStorage.processedFrom([processedSnapshotHash])
+      const processedSnapshotsInDB = await processedSnapshotStorage.filterProcessedSnapshotsFrom([processedSnapshotHash])
       expect(processedSnapshotsInDB.has(processedSnapshotHash)).toBeTruthy()
     })
   })
