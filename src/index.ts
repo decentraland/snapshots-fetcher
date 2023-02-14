@@ -4,26 +4,24 @@ import { downloadFileWithRetries } from './downloader'
 import { createExponentialFallofRetry } from './exponential-fallof-retry'
 import { processDeploymentsInFile } from './file-processor'
 import { IJobWithLifecycle } from './job-lifecycle-manager'
+import { getDeployedEntitiesStreamFromPointerChanges, getDeployedEntitiesStreamFromSnapshot } from './stream-entities'
 import {
   CatalystDeploymentStreamComponent,
   ContentMapping,
   EntityHash,
   IDeployerComponent,
-  IProcessedSnapshotsComponent,
-  ISnapshotStorageComponent,
   PointerChangesDeployedEntityStreamOptions,
   ReconnectionOptions,
   Server,
   SnapshotDeployedEntityStreamOptions,
-  SnapshotInfo,
   SnapshotsFetcherComponents,
 } from './types'
 import { contentServerMetricLabels, sleep, streamToBuffer } from './utils'
 
 export { metricsDefinitions } from './metrics'
 export { IDeployerComponent, SynchronizerComponent } from './types'
-export { createProcessedSnapshotsComponent } from './processed-snapshots'
 export { createSynchronizer } from './synchronizer'
+export { getDeployedEntitiesStreamFromSnapshot, getDeployedEntitiesStreamFromPointerChanges } from './stream-entities'
 
 if (parseInt(process.version.split('.')[0]) < 16) {
   const { name } = require('../package.json')
@@ -154,104 +152,52 @@ export async function downloadEntityAndContentFiles(
 }
 
 /**
- * Accepts a fromTimestamp option to filter out previous deployments.
- *
+ * This function streams and deploys the entities of a snapshot. When the deployer marks all the entities as deployed,
+ * it saved the snapshot as processed.
  * @public
  */
-export async function* getDeployedEntitiesStreamFromSnapshot(
-  components: SnapshotsFetcherComponents & {
-    processedSnapshots: IProcessedSnapshotsComponent
-    snapshotStorage: ISnapshotStorageComponent
+export async function deployEntitiesFromSnapshot(
+  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'logs' | 'storage' | 'processedSnapshotStorage' | 'snapshotStorage'> & {
+    deployer: IDeployerComponent
   },
   options: SnapshotDeployedEntityStreamOptions,
-  snapshotInfo: SnapshotInfo
-) {
-  const { greatestEndTimestamp, replacedSnapshotHashes, servers, snapshotHash } = snapshotInfo
-  const genesisTimestamp = options.fromTimestamp || 0
-  const logs = components.logs.getLogger('getDeployedEntitiesStreamFromSnapshot')
-  logs.info('Snapshot to be processed.', { hash: snapshotHash, contentServers: JSON.stringify(Array.from(servers)) })
-  const shouldStreamSnapshot =
-    greatestEndTimestamp > genesisTimestamp &&
-    await components.processedSnapshots.shouldProcessSnapshotAndMarkAsProcessedIfNeeded(snapshotHash, replacedSnapshotHashes) &&
-    !(await components.snapshotStorage.has(snapshotHash))
-
-  if (shouldStreamSnapshot) {
-    try {
-      // 1. download the snapshot file if needed
-      await downloadFileWithRetries(
-        components,
-        snapshotHash,
-        options.tmpDownloadFolder,
-        Array.from(servers),
-        new Map(),
-        options.requestMaxRetries,
-        options.requestRetryWaitTime
-      )
-
-      // 2. open the snapshot file and process line by line
-      const deploymentsInFile = processDeploymentsInFile(snapshotHash, components, logs)
-      await components.processedSnapshots.startStreamOf(snapshotHash)
-      let numberOfStreamedEntities = 0
-      for await (const deployment of deploymentsInFile) {
-
-        const deploymentTimestamp = 'entityTimestamp' in deployment ? deployment.entityTimestamp : deployment.localTimestamp
-
-        if (deploymentTimestamp >= genesisTimestamp) {
-          components.metrics.increment('dcl_entities_deployments_streamed_total', { source: 'snapshots' })
-          numberOfStreamedEntities++
-          yield {
-            ...deployment,
-            snapshotHash,
-            servers: Array.from(servers)
-          }
-        }
-      }
-      await components.processedSnapshots.endStreamOf(snapshotHash, numberOfStreamedEntities)
-    } finally {
-      if (options.deleteSnapshotAfterUsage !== false) {
-        try {
-          await components.storage.delete([snapshotHash])
-        } catch (err: any) {
-          logs.error(err)
-        }
-      }
+  snapshotHash: string,
+  servers: Set<string>,
+  shouldStopStream: () => boolean) {
+  const logger = components.logs.getLogger('asdf')
+  const stream = getDeployedEntitiesStreamFromSnapshot(components, options, snapshotHash, servers)
+  let snapshotWasCompletelyStreamed = false
+  let numberOfStreamedEntities = 0
+  let numberOfProcessedEntities = 0
+  async function saveIfStreamEndedAndAllEntitiesWereProcessed() {
+    if (snapshotWasCompletelyStreamed && numberOfStreamedEntities == numberOfProcessedEntities) {
+      await components.processedSnapshotStorage.saveAsProcessed(snapshotHash)
+      components.metrics.increment('dcl_processed_snapshots_total', { state: 'saved' })
     }
   }
-}
-
-/**
- * Accepts a fromTimestamp option to filter out previous deployments.
- *
- * @public
- */
-export async function* getDeployedEntitiesStreamFromPointerChanges(
-  components: SnapshotsFetcherComponents,
-  options: PointerChangesDeployedEntityStreamOptions,
-  contentServer: string
-) {
-  const logs = components.logs.getLogger(`pointerChangesStream(${contentServer})`)
-  // fetch the /pointer-changes of the remote server using the last timestamp from the previous step with a grace period of 20 min
-  const genesisTimestamp = options.fromTimestamp || 0
-  let greatestLocalTimestampProcessed = genesisTimestamp
-  do {
-    // 1. download pointer changes and yield
-    const pointerChanges = fetchPointerChanges(components, contentServer, greatestLocalTimestampProcessed, logs)
-    for await (const deployment of pointerChanges) {
-
-      // selectively ignore deployments by localTimestamp
-      if (deployment.localTimestamp >= genesisTimestamp) {
-        components.metrics.increment('dcl_entities_deployments_streamed_total', { source: 'pointer-changes' })
-        yield deployment
-      }
-
-      // update greatest processed local timestamp
-      if (deployment.localTimestamp) {
-        greatestLocalTimestampProcessed = Math.max(greatestLocalTimestampProcessed, deployment.localTimestamp)
-      }
+  for await (const entity of stream) {
+    if (shouldStopStream()) {
+      logger.debug('Canceling running sync snapshots stream')
+      return
     }
-
-    await sleep(options.pointerChangesWaitTime)
-  } while (options.pointerChangesWaitTime > 0)
+    // schedule the deployment in the deployer. the await DOES NOT mean that the entity was deployed entirely
+    // if the deployer is not synchronous. For example, the batchDeployer used in the catalyst just add it in a queue.
+    // Once the entity is truly deployed, it should call the method 'markAsDeployed'
+    await components.deployer.deployEntity({
+      ...entity,
+      markAsDeployed: async function () {
+        components.metrics.increment('dcl_entities_deployments_processed_total', { source: 'snapshots' })
+        numberOfProcessedEntities++
+        await saveIfStreamEndedAndAllEntitiesWereProcessed()
+      },
+      snapshotHash
+    }, entity.servers)
+    numberOfStreamedEntities++
+  }
+  snapshotWasCompletelyStreamed = true
+  components.metrics.increment('dcl_processed_snapshots_total', { state: 'stream_end' })
+  logger.info('Stream ended.', { snapshotHash })
+  await saveIfStreamEndedAndAllEntitiesWereProcessed()
 }
 
 /**
@@ -264,7 +210,7 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
  * }
  * ```
  *
- * @public
+ * @deprecated
  */
 export function createCatalystPointerChangesDeploymentStream(
   components: SnapshotsFetcherComponents & { deployer: IDeployerComponent },

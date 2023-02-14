@@ -1,4 +1,4 @@
-import { getDeployedEntitiesStreamFromPointerChanges } from '../src'
+import { getDeployedEntitiesStreamFromPointerChanges } from '../src/stream-entities'
 import { test } from './components'
 import { AuthLinkType } from '@dcl/schemas'
 

@@ -1,10 +1,26 @@
-import { createProcessedSnapshotsComponent, getDeployedEntitiesStreamFromPointerChanges, getDeployedEntitiesStreamFromSnapshot } from "."
+import { deployEntitiesFromSnapshot } from "."
 import { getSnapshots } from "./client"
 import { createExponentialFallofRetry, ExponentialFallofRetryComponent } from "./exponential-fallof-retry"
 import { createJobLifecycleManagerComponent } from "./job-lifecycle-manager"
 import { IDeployerComponent, PointerChangesDeployedEntityStreamOptions, SnapshotInfo, SnapshotsFetcherComponents, SynchronizerComponent, SynchronizerOptions } from "./types"
 import { contentServerMetricLabels } from "./utils"
 import future from 'fp-future'
+import { getDeployedEntitiesStreamFromPointerChanges } from "./stream-entities"
+
+export async function shouldProcessSnapshotAndMarkAsProcessedIfNeeded(components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage'>, snapshotHash: string, snapshotReplacedGroups: string[][]) {
+  const processedSnapshots = await components.processedSnapshotStorage.filterProcessedSnapshotsFrom([snapshotHash, ...snapshotReplacedGroups.flat()])
+
+  if (processedSnapshots.has(snapshotHash)) {
+    return false
+  }
+  for (const replacedGroup of snapshotReplacedGroups) {
+    if (replacedGroup.length > 0 && replacedGroup.every(s => processedSnapshots.has(s))) {
+      await components.processedSnapshotStorage.saveAsProcessed(snapshotHash)
+      return false
+    }
+  }
+  return true
+}
 
 /**
  * @public
@@ -107,32 +123,18 @@ export async function createSynchronizer(
       }
     }
 
-    // Each time a new processedSnapshots is created because it has data that needs to be ephimeral between multiple
-    // calls of this method, for example 'snapshotsBeingStreamed'. It's proper of an execution.
-    const processedSnapshots = createProcessedSnapshotsComponent(components)
-
     logger.info('Starting to deploy entities from snapshots.')
     const deploymentsFromSnapshots: (() => Promise<void>)[] = []
 
     for (const snapshotInfo of snapshotInfoByHash.values()) {
       deploymentsFromSnapshots.push(async () => {
-        const stream = getDeployedEntitiesStreamFromSnapshot({ ...components, processedSnapshots }, options, snapshotInfo)
-        for await (const entity of stream) {
-          if (isStopped) {
-            logger.debug('Canceling running sync snapshots stream')
-            return
-          }
-          // schedule the deployment in the deployer. the await DOES NOT mean that the entity was deployed entirely
-          // if the deployer is not synchronous. For example, the batchDeployer used in the catalyst just add it in a queue.
-          // Once the entity is truly deployed, it should call the method 'markAsDeployed'
-          await components.deployer.deployEntity({
-            ...entity,
-            markAsDeployed: async function () {
-              components.metrics.increment('dcl_entities_deployments_processed_total', { source: 'snapshots' })
-              await processedSnapshots.entityProcessedFrom(entity.snapshotHash)
-            },
-            snapshotHash: snapshotInfo.snapshotHash
-          }, entity.servers)
+        const { greatestEndTimestamp, replacedSnapshotHashes, snapshotHash } = snapshotInfo
+        const shouldProcessSnapshot =
+          greatestEndTimestamp > genesisTimestamp &&
+          await shouldProcessSnapshotAndMarkAsProcessedIfNeeded(components, snapshotHash, replacedSnapshotHashes) &&
+          !(await components.snapshotStorage.has(snapshotHash))
+        if (shouldProcessSnapshot) {
+          await deployEntitiesFromSnapshot(components, options, snapshotInfo.snapshotHash, snapshotInfo.servers, () => isStopped)
         }
       })
     }

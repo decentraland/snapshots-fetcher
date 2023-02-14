@@ -2,7 +2,7 @@ import { createConfigComponent } from '@well-known-components/env-config-provide
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import { createLogComponent } from '@well-known-components/logger'
 import { createTestMetricsComponent } from '@well-known-components/metrics'
-import { createProcessedSnapshotsComponent } from '../src'
+import { createProcessedSnapshotsComponent } from '../src/processed-snapshots'
 import { IProcessedSnapshotsComponent, IProcessedSnapshotStorageComponent } from '../src/types'
 import { createProcessedSnapshotStorageComponent } from './test-component'
 import { metricsDefinitions } from '../src'

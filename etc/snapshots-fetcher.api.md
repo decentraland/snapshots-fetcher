@@ -19,16 +19,10 @@ import { SyncDeployment } from '@dcl/schemas';
 // Warning: (ae-forgotten-export) The symbol "IJobWithLifecycle" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "CatalystDeploymentStreamComponent" needs to be exported by the entry point index.d.ts
 //
-// @public
+// @public @deprecated
 export function createCatalystPointerChangesDeploymentStream(components: SnapshotsFetcherComponents & {
     deployer: IDeployerComponent;
 }, contentServer: string, options: ReconnectionOptions & PointerChangesDeployedEntityStreamOptions): IJobWithLifecycle & CatalystDeploymentStreamComponent;
-
-// Warning: (ae-forgotten-export) The symbol "IProcessedSnapshotsComponent" needs to be exported by the entry point index.d.ts
-// Warning: (ae-internal-missing-underscore) The name "createProcessedSnapshotsComponent" should be prefixed with an underscore because the declaration is marked as @internal
-//
-// @internal
-export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage' | 'logs' | 'metrics'>): IProcessedSnapshotsComponent;
 
 // Warning: (ae-forgotten-export) The symbol "SynchronizerOptions" needs to be exported by the entry point index.d.ts
 //
@@ -36,6 +30,13 @@ export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetc
 export function createSynchronizer(components: SnapshotsFetcherComponents & {
     deployer: IDeployerComponent;
 }, options: SynchronizerOptions): Promise<SynchronizerComponent>;
+
+// Warning: (ae-forgotten-export) The symbol "SnapshotDeployedEntityStreamOptions" needs to be exported by the entry point index.d.ts
+//
+// @public
+export function deployEntitiesFromSnapshot(components: Pick<SnapshotsFetcherComponents, 'metrics' | 'logs' | 'storage' | 'processedSnapshotStorage' | 'snapshotStorage'> & {
+    deployer: IDeployerComponent;
+}, options: SnapshotDeployedEntityStreamOptions, snapshotHash: string, servers: Set<string>, shouldStopStream: () => boolean): Promise<void>;
 
 // Warning: (ae-forgotten-export) The symbol "EntityHash" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "Server" needs to be exported by the entry point index.d.ts
@@ -46,14 +47,8 @@ export function downloadEntityAndContentFiles(components: Pick<SnapshotsFetcherC
 // @public
 export function getDeployedEntitiesStreamFromPointerChanges(components: SnapshotsFetcherComponents, options: PointerChangesDeployedEntityStreamOptions, contentServer: string): AsyncGenerator<PointerChangesSyncDeployment, void, unknown>;
 
-// Warning: (ae-forgotten-export) The symbol "SnapshotDeployedEntityStreamOptions" needs to be exported by the entry point index.d.ts
-// Warning: (ae-forgotten-export) The symbol "SnapshotInfo" needs to be exported by the entry point index.d.ts
-//
 // @public
-export function getDeployedEntitiesStreamFromSnapshot(components: SnapshotsFetcherComponents & {
-    processedSnapshots: IProcessedSnapshotsComponent;
-    snapshotStorage: ISnapshotStorageComponent;
-}, options: SnapshotDeployedEntityStreamOptions, snapshotInfo: SnapshotInfo): AsyncGenerator<{
+export function getDeployedEntitiesStreamFromSnapshot(components: Pick<SnapshotsFetcherComponents, 'logs' | 'metrics' | 'storage'>, options: SnapshotDeployedEntityStreamOptions, snapshotHash: string, servers: Set<string>): AsyncGenerator<{
     snapshotHash: string;
     servers: string[];
     entityId: string;
@@ -87,9 +82,8 @@ export type SynchronizerComponent = IBaseComponent & {
 
 // Warnings were encountered during analysis:
 //
-// src/index.ts:164:5 - (ae-forgotten-export) The symbol "ISnapshotStorageComponent" needs to be exported by the entry point index.d.ts
 // src/types.ts:59:3 - (ae-forgotten-export) The symbol "DeployableEntity" needs to be exported by the entry point index.d.ts
-// src/types.ts:222:3 - (ae-forgotten-export) The symbol "SyncJob" needs to be exported by the entry point index.d.ts
+// src/types.ts:230:3 - (ae-forgotten-export) The symbol "SyncJob" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 
