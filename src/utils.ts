@@ -40,7 +40,7 @@ export async function assertHash(filename: string, hash: string) {
     const file = fs.createReadStream(filename)
     try {
       const qmHash = await hashV0(file as any)
-      if (qmHash != hash) {
+      if (qmHash !== hash) {
         throw new Error(
           `Download error: hashes do not match(expected:${hash} != calculated:${qmHash}) for file ${filename}`
         )
@@ -52,7 +52,7 @@ export async function assertHash(filename: string, hash: string) {
     const file = fs.createReadStream(filename)
     try {
       const baHash = await hashV1(file as any)
-      if (baHash != hash) {
+      if (baHash !== hash) {
         throw new Error(
           `Download error: hashes do not match(expected:${hash} != calculated:${baHash}) for file ${filename}`
         )
@@ -80,7 +80,7 @@ export async function saveContentFileToDisk(
   } while (await checkFileExists(tmpFileName))
 
   const metricsLabels: ContentServerMetricLabels = {
-    remote_server: '',
+    remote_server: ''
   }
 
   try {
@@ -100,7 +100,7 @@ export async function saveContentFileToDisk(
           if (await checkFileExists(tmpFileName)) {
             await fs.promises.unlink(tmpFileName)
           }
-        } catch { }
+        } catch {}
         throw e
       }
     }
@@ -141,7 +141,7 @@ function downloadFile(
 
       httpModule
         .get(url.toString(), { headers: { 'accept-encoding': 'gzip' } }, (response) => {
-          if ((response.statusCode == 302 || response.statusCode == 301) && response.headers.location) {
+          if ((response.statusCode === 302 || response.statusCode === 301) && response.headers.location) {
             // handle redirection
             requestWithRedirects(response.headers.location!, redirects + 1)
             return
@@ -149,9 +149,11 @@ function downloadFile(
             reject(new Error('Invalid response from ' + url + ' status: ' + response.statusCode))
             return
           } else {
-            const file = fs.createWriteStream(tmpFileName, { emitClose: true })
+            const file = fs.createWriteStream(tmpFileName, {
+              emitClose: true
+            })
 
-            const isGzip = response.headers['content-encoding'] == 'gzip'
+            const isGzip = response.headers['content-encoding'] === 'gzip'
 
             const pipe = isGzip ? streamPipeline(response, zlib.createGunzip(), file) : streamPipeline(response, file)
 
@@ -195,7 +197,7 @@ export function pickLeastRecentlyUsedServer(serversToPickFrom: Server[]): string
 export function contentServerMetricLabels(contentServer: string): ContentServerMetricLabels {
   const url = new URL(contentServer)
   return {
-    remote_server: url.origin,
+    remote_server: url.origin
   }
 }
 

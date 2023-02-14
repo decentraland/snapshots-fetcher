@@ -39,7 +39,7 @@ export function createJobLifecycleManagerComponent(
     setDesiredJobs(desiredJobNames: Set<string>): void {
       // first stop all the jobs that are not part of the desiredJobNames
       // and remove them from the map of running jobs
-      for (let [name, job] of createdJobs) {
+      for (const [name, job] of createdJobs) {
         if (!desiredJobNames.has(name)) {
           logs.info('Stopping job', { name })
           job.stop().catch(logs.error)
@@ -70,7 +70,7 @@ export function createJobLifecycleManagerComponent(
       return new Set(createdJobs.keys())
     },
     async stop() {
-      for (let [name, job] of createdJobs) {
+      for (const [name, job] of createdJobs) {
         logs.info('Stopping job', { name })
         try {
           await job.stop()
@@ -79,6 +79,6 @@ export function createJobLifecycleManagerComponent(
         }
         createdJobs.delete(name)
       }
-    },
+    }
   }
 }

@@ -4,30 +4,44 @@ import { metricsDefinitions } from './metrics'
 import { Snapshot, SnapshotsFetcherComponents } from './types'
 import { contentServerMetricLabels, fetchJson, saveContentFileToDisk as saveContentFile } from './utils'
 
-export async function getSnapshots(components: SnapshotsFetcherComponents, server: string, retries: number):
-  Promise<Snapshot[]> {
+export async function getSnapshots(
+  components: SnapshotsFetcherComponents,
+  server: string,
+  retries: number
+): Promise<Snapshot[]> {
   try {
     const incrementalSnapshotsUrl = new URL(`${server}/snapshots`).toString()
     const newSnapshots: {
-      hash: string,
-      timeRange: { initTimestamp: number, endTimestamp: number },
+      hash: string
+      timeRange: { initTimestamp: number; endTimestamp: number }
       replacedSnapshotHashes?: string[]
-    }[] = await components.downloadQueue.scheduleJobWithRetries(() => fetchJson(incrementalSnapshotsUrl, components.fetcher), retries)
-    return newSnapshots
-      // newest first
-      .sort((s1, s2) => s2.timeRange.endTimestamp - s1.timeRange.endTimestamp)
-      .map(newSnapshot => ({
-        hash: newSnapshot.hash,
-        lastIncludedDeploymentTimestamp: newSnapshot.timeRange.endTimestamp,
-        replacedSnapshotHashes: newSnapshot.replacedSnapshotHashes
-      }))
+    }[] = await components.downloadQueue.scheduleJobWithRetries(
+      () => fetchJson(incrementalSnapshotsUrl, components.fetcher),
+      retries
+    )
+    return (
+      newSnapshots
+        // newest first
+        .sort((s1, s2) => s2.timeRange.endTimestamp - s1.timeRange.endTimestamp)
+        .map((newSnapshot) => ({
+          hash: newSnapshot.hash,
+          lastIncludedDeploymentTimestamp: newSnapshot.timeRange.endTimestamp,
+          replacedSnapshotHashes: newSnapshot.replacedSnapshotHashes
+        }))
+    )
   } catch (error) {
-    components.logs.getLogger('snapshots-fetcher')
+    components.logs
+      .getLogger('snapshots-fetcher')
       .info(`Couldn't find new snapshots from ${server}. Will continue to fetch old one. Error: ${error}`)
   }
 
   const globalSnapshotUrl = new URL(`${server}/snapshot`).toString()
-  return [await components.downloadQueue.scheduleJobWithRetries(() => fetchJson(globalSnapshotUrl, components.fetcher), retries)]
+  return [
+    await components.downloadQueue.scheduleJobWithRetries(
+      () => fetchJson(globalSnapshotUrl, components.fetcher),
+      retries
+    )
+  ]
 }
 
 export async function* fetchJsonPaginated<T>(
@@ -67,7 +81,12 @@ export async function* fetchPointerChanges(
   const url = new URL(
     `${server}/pointer-changes?sortingOrder=ASC&sortingField=local_timestamp&from=${encodeURIComponent(fromTimestamp)}`
   ).toString()
-  for await (const deployment of fetchJsonPaginated(components, url, ($) => $.deltas, 'dcl_catalysts_pointer_changes_response_time_seconds')) {
+  for await (const deployment of fetchJsonPaginated(
+    components,
+    url,
+    ($) => $.deltas,
+    'dcl_catalysts_pointer_changes_response_time_seconds'
+  )) {
     if (PointerChangesSyncDeployment.validate(deployment)) {
       yield deployment
     } else {

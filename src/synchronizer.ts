@@ -1,10 +1,17 @@
-import { getSnapshots } from "./client"
-import { createExponentialFallofRetry, ExponentialFallofRetryComponent } from "./exponential-fallof-retry"
-import { createJobLifecycleManagerComponent } from "./job-lifecycle-manager"
-import { IDeployerComponent, SnapshotInfo, SnapshotsFetcherComponents, SynchronizerComponent, SynchronizerOptions } from "./types"
-import { contentServerMetricLabels } from "./utils"
+import { getSnapshots } from './client'
+import { createExponentialFallofRetry, ExponentialFallofRetryComponent } from './exponential-fallof-retry'
+import { createJobLifecycleManagerComponent } from './job-lifecycle-manager'
+import {
+  IDeployerComponent,
+  SnapshotInfo,
+  SnapshotsFetcherComponents,
+  SynchronizerComponent,
+  SynchronizerOptions
+} from './types'
+import { contentServerMetricLabels } from './utils'
 import future from 'fp-future'
-import { deployEntitiesFromSnapshot, deployEntitiesFromPointerChanges } from "./deploy-entities"
+import PQueue from 'p-queue'
+import { deployEntitiesFromPointerChanges, deployEntitiesFromSnapshot } from './deploy-entities'
 
 export async function shouldProcessSnapshotAndMarkAsProcessedIfNeeded(components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage'>, snapshotHash: string, snapshotReplacedGroups: string[][]) {
   const processedSnapshots = await components.processedSnapshotStorage.filterProcessedSnapshotsFrom([snapshotHash, ...snapshotReplacedGroups.flat()])
@@ -62,8 +69,16 @@ export async function createSynchronizer(
   }
 
   function reportServerStateMetric() {
-    components.metrics.observe('dcl_bootstrapping_servers', { from: 'snapshots' }, bootstrappingServersFromSnapshots.size)
-    components.metrics.observe('dcl_bootstrapping_servers', { from: 'pointer-changes' }, bootstrappingServersFromPointerChanges.size)
+    components.metrics.observe(
+      'dcl_bootstrapping_servers',
+      { from: 'snapshots' },
+      bootstrappingServersFromSnapshots.size
+    )
+    components.metrics.observe(
+      'dcl_bootstrapping_servers',
+      { from: 'pointer-changes' },
+      bootstrappingServersFromPointerChanges.size
+    )
     components.metrics.observe('dcl_syncing_servers', {}, syncingServers.size)
   }
 
@@ -73,7 +88,7 @@ export async function createSynchronizer(
     for (const server of serversToSync) {
       try {
         const snapshots = await getSnapshots(components, server, options.requestMaxRetries)
-        snapshotLastTimestampByServer.set(server, Math.max(...snapshots.map(s => s.lastIncludedDeploymentTimestamp)))
+        snapshotLastTimestampByServer.set(server, Math.max(...snapshots.map((s) => s.lastIncludedDeploymentTimestamp)))
         for (const snapshot of snapshots) {
           const snapshotInfo = snapshotInfoByHash.get(snapshot.hash)
 
@@ -101,24 +116,28 @@ export async function createSynchronizer(
     }
 
     logger.info('Starting to deploy entities from snapshots.')
-    const deploymentsFromSnapshots: (() => Promise<void>)[] = []
+
+    const deploymentsProcessorsQueue = new PQueue({
+      concurrency: 10,
+      autoStart: true
+    })
 
     for (const snapshotInfo of snapshotInfoByHash.values()) {
-      deploymentsFromSnapshots.push(async () => {
-        const { greatestEndTimestamp, replacedSnapshotHashes, snapshotHash } = snapshotInfo
-        const shouldProcessSnapshot =
-          greatestEndTimestamp > genesisTimestamp &&
-          await shouldProcessSnapshotAndMarkAsProcessedIfNeeded(components, snapshotHash, replacedSnapshotHashes) &&
-          !(await components.snapshotStorage.has(snapshotHash))
-        if (shouldProcessSnapshot) {
-          await deployEntitiesFromSnapshot(components, options, snapshotInfo.snapshotHash, snapshotInfo.servers, () => isStopped)
-        }
-      })
+      deploymentsProcessorsQueue
+        .add(async () => {
+          const { greatestEndTimestamp, replacedSnapshotHashes, snapshotHash } = snapshotInfo
+          const shouldProcessSnapshot =
+            greatestEndTimestamp > genesisTimestamp &&
+            await shouldProcessSnapshotAndMarkAsProcessedIfNeeded(components, snapshotHash, replacedSnapshotHashes) &&
+            !(await components.snapshotStorage.has(snapshotHash))
+          if (shouldProcessSnapshot) {
+            await deployEntitiesFromSnapshot(components, options, snapshotInfo.snapshotHash, snapshotInfo.servers, () => isStopped)
+          }
+        })
+        .catch(logger.error)
     }
 
-    if (deploymentsFromSnapshots.length > 0) {
-      await Promise.all(deploymentsFromSnapshots.map(deployFromSnapshot => deployFromSnapshot()))
-    }
+    await deploymentsProcessorsQueue.onIdle()
 
     logger.info('End deploying entities from snapshots.')
 
@@ -147,9 +166,13 @@ export async function createSynchronizer(
     for (const bootstrappingServersFromPointerChange of bootstrappingServersFromPointerChanges) {
       pointerChangesBootstrappingJobs.push(async () => {
         try {
-          const lastEntityTimestamp = lastEntityTimestampFromSnapshotsByServer.get(bootstrappingServersFromPointerChange)
-          if (lastEntityTimestamp == undefined) {
-            throw new Error(`Can't start pointer changes stream without last entity timestamp for ${bootstrappingServersFromPointerChange}. This should never happen.`)
+          const lastEntityTimestamp = lastEntityTimestampFromSnapshotsByServer.get(
+            bootstrappingServersFromPointerChange
+          )
+          if (lastEntityTimestamp === undefined) {
+            throw new Error(
+              `Can't start pointer changes stream without last entity timestamp for ${bootstrappingServersFromPointerChange}. This should never happen.`
+            )
           }
           const fromTimestamp = Math.max(lastEntityTimestamp - 20 * 60_000, 0)
           await deployEntitiesFromPointerChanges(
@@ -168,7 +191,7 @@ export async function createSynchronizer(
     }
 
     if (pointerChangesBootstrappingJobs.length > 0) {
-      await Promise.all(pointerChangesBootstrappingJobs.map(job => job()))
+      await Promise.all(pointerChangesBootstrappingJobs.map((job) => job()))
     }
 
     reportServerStateMetric()
@@ -182,40 +205,39 @@ export async function createSynchronizer(
     logger.debug(`Bootstrap finished.`)
   }
 
-  const deployPointerChangesAfterBootstrapJobManager = createJobLifecycleManagerComponent(
-    components,
-    {
-      jobManagerName: 'SynchronizationJobManager',
-      createJob(contentServer) {
-        const fromTimestamp = lastEntityTimestampFromSnapshotsByServer.get(contentServer)
-        if (fromTimestamp == undefined) {
-          throw new Error(`Can't start pointer changes stream without last entity timestamp for ${contentServer}. This should never happen.`)
-        }
-        const metricsLabels = contentServerMetricLabels(contentServer)
-        const exponentialFallofRetryComponent = createExponentialFallofRetry(logger, {
-          async action() {
-            try {
-              components.metrics.increment('dcl_deployments_stream_reconnection_count', metricsLabels)
-              await deployEntitiesFromPointerChanges(
-                components,
-                { ...options, fromTimestamp },
-                contentServer,
-                () => isStopped,
-                increaseLastTimestamp)
-            } catch (e: any) {
-              // we don't log the exception here because createExponentialFallofRetry(logger, options) receives the logger
-              components.metrics.increment('dcl_deployments_stream_failure_count', metricsLabels)
-              throw e
-            }
-          },
-          retryTime: options.syncingReconnection.reconnectTime,
-          retryTimeExponent: options.syncingReconnection.reconnectRetryTimeExponent ?? 1.1,
-          maxInterval: options.syncingReconnection.maxReconnectionTime,
-        })
-        return exponentialFallofRetryComponent
+  const deployPointerChangesAfterBootstrapJobManager = createJobLifecycleManagerComponent(components, {
+    jobManagerName: 'SynchronizationJobManager',
+    createJob(contentServer) {
+      const fromTimestamp = lastEntityTimestampFromSnapshotsByServer.get(contentServer)
+      if (fromTimestamp === undefined) {
+        throw new Error(
+          `Can't start pointer changes stream without last entity timestamp for ${contentServer}. This should never happen.`
+        )
       }
+      const metricsLabels = contentServerMetricLabels(contentServer)
+      const exponentialFallofRetryComponent = createExponentialFallofRetry(logger, {
+        async action() {
+          try {
+            components.metrics.increment('dcl_deployments_stream_reconnection_count', metricsLabels)
+            await deployEntitiesFromPointerChanges(
+              components,
+              { ...options, fromTimestamp },
+              contentServer,
+              () => isStopped,
+              increaseLastTimestamp)
+          } catch (e: any) {
+            // we don't log the exception here because createExponentialFallofRetry(logger, options) receives the logger
+            components.metrics.increment('dcl_deployments_stream_failure_count', metricsLabels)
+            throw e
+          }
+        },
+        retryTime: options.syncingReconnection.reconnectTime,
+        retryTimeExponent: options.syncingReconnection.reconnectRetryTimeExponent ?? 1.1,
+        maxInterval: options.syncingReconnection.maxReconnectionTime
+      })
+      return exponentialFallofRetryComponent
     }
-  )
+  })
 
   function createSyncJob() {
     const onFirstBootstrapFinishedCallbacks: Array<() => Promise<void>> = []
@@ -228,7 +250,7 @@ export async function createSynchronizer(
         if (!isStopped && !firstBootstrapTryFinished) {
           firstBootstrapTryFinished = true
           if (onFirstBootstrapFinishedCallbacks.length > 0) {
-            const runningCallbacks = onFirstBootstrapFinishedCallbacks.map(cb => cb())
+            const runningCallbacks = onFirstBootstrapFinishedCallbacks.map((cb) => cb())
             await Promise.all(runningCallbacks)
           }
         }
@@ -240,8 +262,9 @@ export async function createSynchronizer(
           throw new Error(
             `There are servers that failed to bootstrap. Will try later. Servers: ${JSON.stringify([
               ...bootstrappingServersFromSnapshots,
-              ...bootstrappingServersFromPointerChanges])
-            }`)
+              ...bootstrappingServersFromPointerChanges
+            ])}`
+          )
         }
         syncFinished.resolve()
       },
@@ -281,7 +304,7 @@ export async function createSynchronizer(
       }
       // 1. Add the new servers (not currently syncing) to the bootstrapping state from snapshots
       for (const serverToSync of serversToSync) {
-        if (!syncingServers.has(serverToSync) && !(bootstrappingServersFromPointerChanges.has(serverToSync))) {
+        if (!syncingServers.has(serverToSync) && !bootstrappingServersFromPointerChanges.has(serverToSync)) {
           bootstrappingServersFromSnapshots.add(serverToSync)
         }
       }
@@ -300,21 +323,21 @@ export async function createSynchronizer(
       const newSyncJob = createSyncJob()
       if (!firstSyncJobStarted) {
         firstSyncJobStarted = true
-        newSyncJob.onInitialBootstrapFinished(async () => {
-          snapshotsSyncTimeout = setTimeout(async () => await regularSyncFromSnapshotsAfterBootstrapJob.start(), 3_600_000)
+        await newSyncJob.onInitialBootstrapFinished(async () => {
+          snapshotsSyncTimeout = setTimeout(
+            async () => await regularSyncFromSnapshotsAfterBootstrapJob.start(),
+            3_600_000
+          )
         })
       }
       syncJobs.push(newSyncJob)
-      if (syncJobs.length == 1) {
-        syncJobs[0]
-          .start()
-          .finally(
-            async () => {
-              syncJobs.shift()
-              if (syncJobs.length > 0) {
-                syncJobs[0].start()
-              }
-            })
+      if (syncJobs.length === 1) {
+        syncJobs[0].start().finally(async () => {
+          syncJobs.shift()
+          if (syncJobs.length > 0) {
+            syncJobs[0].start().catch(logger.error)
+          }
+        })
       }
       return newSyncJob
     },
@@ -331,10 +354,10 @@ export async function createSynchronizer(
         }
         syncingServers.clear()
         if (deployPointerChangesAfterBootstrapJobManager.stop) {
-          deployPointerChangesAfterBootstrapJobManager.stop()
+          await deployPointerChangesAfterBootstrapJobManager.stop()
         }
         if (regularSyncFromSnapshotsAfterBootstrapJob.stop) {
-          regularSyncFromSnapshotsAfterBootstrapJob.stop()
+          await regularSyncFromSnapshotsAfterBootstrapJob.stop()
         }
         if (snapshotsSyncTimeout) {
           clearTimeout(snapshotsSyncTimeout)
@@ -343,5 +366,4 @@ export async function createSynchronizer(
       }
     }
   }
-
 }

@@ -6,7 +6,7 @@ import { ILoggerComponent } from '@well-known-components/interfaces'
 async function* processLineByLine(input: NodeJS.ReadableStream) {
   yield* createInterface({
     input,
-    crlfDelay: Infinity,
+    crlfDelay: Infinity
   })
 }
 
