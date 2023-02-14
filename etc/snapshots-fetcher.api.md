@@ -31,13 +31,6 @@ export function createSynchronizer(components: SnapshotsFetcherComponents & {
     deployer: IDeployerComponent;
 }, options: SynchronizerOptions): Promise<SynchronizerComponent>;
 
-// Warning: (ae-forgotten-export) The symbol "SnapshotDeployedEntityStreamOptions" needs to be exported by the entry point index.d.ts
-//
-// @public
-export function deployEntitiesFromSnapshot(components: Pick<SnapshotsFetcherComponents, 'metrics' | 'logs' | 'storage' | 'processedSnapshotStorage' | 'snapshotStorage'> & {
-    deployer: IDeployerComponent;
-}, options: SnapshotDeployedEntityStreamOptions, snapshotHash: string, servers: Set<string>, shouldStopStream: () => boolean): Promise<void>;
-
 // Warning: (ae-forgotten-export) The symbol "EntityHash" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "Server" needs to be exported by the entry point index.d.ts
 //
@@ -45,8 +38,10 @@ export function deployEntitiesFromSnapshot(components: Pick<SnapshotsFetcherComp
 export function downloadEntityAndContentFiles(components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'logs' | 'metrics' | 'storage'>, entityId: EntityHash, presentInServers: string[], _serverMapLRU: Map<Server, number>, targetFolder: string, maxRetries: number, waitTimeBetweenRetries: number): Promise<unknown>;
 
 // @public
-export function getDeployedEntitiesStreamFromPointerChanges(components: SnapshotsFetcherComponents, options: PointerChangesDeployedEntityStreamOptions, contentServer: string): AsyncGenerator<PointerChangesSyncDeployment, void, unknown>;
+export function getDeployedEntitiesStreamFromPointerChanges(components: Pick<SnapshotsFetcherComponents, 'logs' | 'metrics' | 'fetcher'>, options: PointerChangesDeployedEntityStreamOptions, contentServer: string): AsyncGenerator<PointerChangesSyncDeployment, void, unknown>;
 
+// Warning: (ae-forgotten-export) The symbol "SnapshotDeployedEntityStreamOptions" needs to be exported by the entry point index.d.ts
+//
 // @public
 export function getDeployedEntitiesStreamFromSnapshot(components: Pick<SnapshotsFetcherComponents, 'logs' | 'metrics' | 'storage'>, options: SnapshotDeployedEntityStreamOptions, snapshotHash: string, servers: Set<string>): AsyncGenerator<{
     snapshotHash: string;
@@ -83,7 +78,7 @@ export type SynchronizerComponent = IBaseComponent & {
 // Warnings were encountered during analysis:
 //
 // src/types.ts:59:3 - (ae-forgotten-export) The symbol "DeployableEntity" needs to be exported by the entry point index.d.ts
-// src/types.ts:230:3 - (ae-forgotten-export) The symbol "SyncJob" needs to be exported by the entry point index.d.ts
+// src/types.ts:229:3 - (ae-forgotten-export) The symbol "SyncJob" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

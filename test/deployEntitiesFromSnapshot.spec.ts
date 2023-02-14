@@ -1,5 +1,5 @@
 import { DeployableEntity, IDeployerComponent } from '../src/types'
-import { deployEntitiesFromSnapshot } from '../src'
+import { deployEntitiesFromSnapshot } from '../src/deploy-entities'
 import * as streamEntities from '../src/stream-entities'
 import { resolve } from 'path'
 import { test, TestComponents } from './components'

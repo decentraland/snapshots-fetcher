@@ -1,11 +1,10 @@
-import { deployEntitiesFromSnapshot } from "."
 import { getSnapshots } from "./client"
 import { createExponentialFallofRetry, ExponentialFallofRetryComponent } from "./exponential-fallof-retry"
 import { createJobLifecycleManagerComponent } from "./job-lifecycle-manager"
-import { IDeployerComponent, PointerChangesDeployedEntityStreamOptions, SnapshotInfo, SnapshotsFetcherComponents, SynchronizerComponent, SynchronizerOptions } from "./types"
+import { IDeployerComponent, SnapshotInfo, SnapshotsFetcherComponents, SynchronizerComponent, SynchronizerOptions } from "./types"
 import { contentServerMetricLabels } from "./utils"
 import future from 'fp-future'
-import { getDeployedEntitiesStreamFromPointerChanges } from "./stream-entities"
+import { deployEntitiesFromSnapshot, deployEntitiesFromPointerChanges } from "./deploy-entities"
 
 export async function shouldProcessSnapshotAndMarkAsProcessedIfNeeded(components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage'>, snapshotHash: string, snapshotReplacedGroups: string[][]) {
   const processedSnapshots = await components.processedSnapshotStorage.filterProcessedSnapshotsFrom([snapshotHash, ...snapshotReplacedGroups.flat()])
@@ -66,28 +65,6 @@ export async function createSynchronizer(
     components.metrics.observe('dcl_bootstrapping_servers', { from: 'snapshots' }, bootstrappingServersFromSnapshots.size)
     components.metrics.observe('dcl_bootstrapping_servers', { from: 'pointer-changes' }, bootstrappingServersFromPointerChanges.size)
     components.metrics.observe('dcl_syncing_servers', {}, syncingServers.size)
-  }
-
-  async function syncFromPointerChanges(contentServer: string, options: PointerChangesDeployedEntityStreamOptions) {
-    const deployments = getDeployedEntitiesStreamFromPointerChanges(components, options, contentServer)
-
-    for await (const deployment of deployments) {
-      // if the stream is closed then we should not process more deployments
-      if (isStopped) {
-        logger.debug('Canceling running stream')
-        return
-      }
-
-      await components.deployer.deployEntity({
-        ...deployment,
-        markAsDeployed: async function () {
-          components.metrics.increment('dcl_entities_deployments_processed_total', { source: 'pointer-changes' })
-        }
-      }, [contentServer])
-
-      // update greatest processed timestamp
-      increaseLastTimestamp(contentServer, deployment.localTimestamp)
-    }
   }
 
   async function syncFromSnapshots(serversToSync: Set<string>): Promise<Set<string>> {
@@ -175,7 +152,12 @@ export async function createSynchronizer(
             throw new Error(`Can't start pointer changes stream without last entity timestamp for ${bootstrappingServersFromPointerChange}. This should never happen.`)
           }
           const fromTimestamp = Math.max(lastEntityTimestamp - 20 * 60_000, 0)
-          await syncFromPointerChanges(bootstrappingServersFromPointerChange, { ...options, fromTimestamp, pointerChangesWaitTime: 0 })
+          await deployEntitiesFromPointerChanges(
+            components,
+            { ...options, fromTimestamp, pointerChangesWaitTime: 0 },
+            bootstrappingServersFromPointerChange,
+            () => isStopped,
+            increaseLastTimestamp)
           syncingServers.add(bootstrappingServersFromPointerChange)
           bootstrappingServersFromPointerChanges.delete(bootstrappingServersFromPointerChange)
         } catch (error) {
@@ -214,7 +196,12 @@ export async function createSynchronizer(
           async action() {
             try {
               components.metrics.increment('dcl_deployments_stream_reconnection_count', metricsLabels)
-              await syncFromPointerChanges(contentServer, { ...options, fromTimestamp })
+              await deployEntitiesFromPointerChanges(
+                components,
+                { ...options, fromTimestamp },
+                contentServer,
+                () => isStopped,
+                increaseLastTimestamp)
             } catch (e: any) {
               // we don't log the exception here because createExponentialFallofRetry(logger, options) receives the logger
               components.metrics.increment('dcl_deployments_stream_failure_count', metricsLabels)

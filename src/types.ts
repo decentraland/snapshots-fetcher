@@ -212,7 +212,6 @@ export type IProcessedSnapshotStorageComponent = {
  * @internal
  */
 export type IProcessedSnapshotsComponent = {
-  shouldProcessSnapshotAndMarkAsProcessedIfNeeded(snapshotHash: string, replacedSnapshotHashes: string[][]): Promise<boolean>
   startStreamOf(snapshotHash: string): Promise<void>
   endStreamOf(snapshotHash: string, numberOfEntitiesStreamed: number): Promise<void>
   entityProcessedFrom(snapshotHash: string): Promise<void>

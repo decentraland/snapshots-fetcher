@@ -71,7 +71,7 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
  * @public
  */
 export async function* getDeployedEntitiesStreamFromPointerChanges(
-  components: SnapshotsFetcherComponents,
+  components: Pick<SnapshotsFetcherComponents, 'logs' | 'metrics' | 'fetcher'>,
   options: PointerChangesDeployedEntityStreamOptions,
   contentServer: string
 ) {

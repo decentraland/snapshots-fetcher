@@ -1,10 +1,8 @@
 import { ILoggerComponent } from '@well-known-components/interfaces'
-import { fetchPointerChanges } from './client'
 import { downloadFileWithRetries } from './downloader'
 import { createExponentialFallofRetry } from './exponential-fallof-retry'
-import { processDeploymentsInFile } from './file-processor'
 import { IJobWithLifecycle } from './job-lifecycle-manager'
-import { getDeployedEntitiesStreamFromPointerChanges, getDeployedEntitiesStreamFromSnapshot } from './stream-entities'
+import { getDeployedEntitiesStreamFromPointerChanges } from './stream-entities'
 import {
   CatalystDeploymentStreamComponent,
   ContentMapping,
@@ -13,10 +11,9 @@ import {
   PointerChangesDeployedEntityStreamOptions,
   ReconnectionOptions,
   Server,
-  SnapshotDeployedEntityStreamOptions,
   SnapshotsFetcherComponents,
 } from './types'
-import { contentServerMetricLabels, sleep, streamToBuffer } from './utils'
+import { contentServerMetricLabels, streamToBuffer } from './utils'
 
 export { metricsDefinitions } from './metrics'
 export { IDeployerComponent, SynchronizerComponent } from './types'
@@ -149,55 +146,6 @@ export async function downloadEntityAndContentFiles(
   }
 
   return entityMetadata
-}
-
-/**
- * This function streams and deploys the entities of a snapshot. When the deployer marks all the entities as deployed,
- * it saved the snapshot as processed.
- * @public
- */
-export async function deployEntitiesFromSnapshot(
-  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'logs' | 'storage' | 'processedSnapshotStorage' | 'snapshotStorage'> & {
-    deployer: IDeployerComponent
-  },
-  options: SnapshotDeployedEntityStreamOptions,
-  snapshotHash: string,
-  servers: Set<string>,
-  shouldStopStream: () => boolean) {
-  const logger = components.logs.getLogger('asdf')
-  const stream = getDeployedEntitiesStreamFromSnapshot(components, options, snapshotHash, servers)
-  let snapshotWasCompletelyStreamed = false
-  let numberOfStreamedEntities = 0
-  let numberOfProcessedEntities = 0
-  async function saveIfStreamEndedAndAllEntitiesWereProcessed() {
-    if (snapshotWasCompletelyStreamed && numberOfStreamedEntities == numberOfProcessedEntities) {
-      await components.processedSnapshotStorage.saveAsProcessed(snapshotHash)
-      components.metrics.increment('dcl_processed_snapshots_total', { state: 'saved' })
-    }
-  }
-  for await (const entity of stream) {
-    if (shouldStopStream()) {
-      logger.debug('Canceling running sync snapshots stream')
-      return
-    }
-    // schedule the deployment in the deployer. the await DOES NOT mean that the entity was deployed entirely
-    // if the deployer is not synchronous. For example, the batchDeployer used in the catalyst just add it in a queue.
-    // Once the entity is truly deployed, it should call the method 'markAsDeployed'
-    await components.deployer.deployEntity({
-      ...entity,
-      markAsDeployed: async function () {
-        components.metrics.increment('dcl_entities_deployments_processed_total', { source: 'snapshots' })
-        numberOfProcessedEntities++
-        await saveIfStreamEndedAndAllEntitiesWereProcessed()
-      },
-      snapshotHash
-    }, entity.servers)
-    numberOfStreamedEntities++
-  }
-  snapshotWasCompletelyStreamed = true
-  components.metrics.increment('dcl_processed_snapshots_total', { state: 'stream_end' })
-  logger.info('Stream ended.', { snapshotHash })
-  await saveIfStreamEndedAndAllEntitiesWereProcessed()
 }
 
 /**
