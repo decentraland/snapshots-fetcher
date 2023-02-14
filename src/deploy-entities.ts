@@ -1,5 +1,10 @@
-import { getDeployedEntitiesStreamFromPointerChanges, getDeployedEntitiesStreamFromSnapshot } from "."
-import { IDeployerComponent, PointerChangesDeployedEntityStreamOptions, SnapshotDeployedEntityStreamOptions, SnapshotsFetcherComponents } from "./types"
+import { getDeployedEntitiesStreamFromPointerChanges, getDeployedEntitiesStreamFromSnapshot } from '.'
+import {
+  IDeployerComponent,
+  PointerChangesDeployedEntityStreamOptions,
+  SnapshotDeployedEntityStreamOptions,
+  SnapshotsFetcherComponents
+} from './types'
 
 /**
  * This function streams and deploys the entities of pointer-changes of a server. It calls 'increaseLastTimestamp'
@@ -15,7 +20,6 @@ export async function deployEntitiesFromPointerChanges(
   shouldStopStream: () => boolean,
   increaseLastTimestamp: (contentServer: string, ...newTimestamps: number[]) => void
 ) {
-
   const logger = components.logs.getLogger('deployEntitiesFromPointerChanges')
   const deployments = getDeployedEntitiesStreamFromPointerChanges(components, options, contentServer)
 
@@ -26,14 +30,17 @@ export async function deployEntitiesFromPointerChanges(
       return
     }
 
-    await components.deployer.deployEntity({
-      ...deployment,
-      markAsDeployed: async function () {
-        components.metrics.increment('dcl_entities_deployments_processed_total', { source: 'pointer-changes' })
-        // update greatest processed timestamp
-        increaseLastTimestamp(contentServer, deployment.localTimestamp)
-      }
-    }, [contentServer])
+    await components.deployer.deployEntity(
+      {
+        ...deployment,
+        markAsDeployed: async function () {
+          components.metrics.increment('dcl_entities_deployments_processed_total', { source: 'pointer-changes' })
+          // update greatest processed timestamp
+          increaseLastTimestamp(contentServer, deployment.localTimestamp)
+        }
+      },
+      [contentServer]
+    )
   }
 }
 
@@ -43,20 +50,24 @@ export async function deployEntitiesFromPointerChanges(
  * @public
  */
 export async function deployEntitiesFromSnapshot(
-  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'logs' | 'storage' | 'processedSnapshotStorage' | 'snapshotStorage'> & {
+  components: Pick<
+    SnapshotsFetcherComponents,
+    'metrics' | 'logs' | 'storage' | 'processedSnapshotStorage' | 'snapshotStorage'
+  > & {
     deployer: IDeployerComponent
   },
   options: SnapshotDeployedEntityStreamOptions,
   snapshotHash: string,
   servers: Set<string>,
-  shouldStopStream: () => boolean) {
+  shouldStopStream: () => boolean
+) {
   const logger = components.logs.getLogger('deployEntitiesFromSnapshot')
   const stream = getDeployedEntitiesStreamFromSnapshot(components, options, snapshotHash, servers)
   let snapshotWasCompletelyStreamed = false
   let numberOfStreamedEntities = 0
   let numberOfProcessedEntities = 0
   async function saveIfStreamEndedAndAllEntitiesWereProcessed() {
-    if (snapshotWasCompletelyStreamed && numberOfStreamedEntities == numberOfProcessedEntities) {
+    if (snapshotWasCompletelyStreamed && numberOfStreamedEntities === numberOfProcessedEntities) {
       await components.processedSnapshotStorage.saveAsProcessed(snapshotHash)
       components.metrics.increment('dcl_processed_snapshots_total', { state: 'saved' })
     }
@@ -69,15 +80,18 @@ export async function deployEntitiesFromSnapshot(
     // schedule the deployment in the deployer. the await DOES NOT mean that the entity was deployed entirely
     // if the deployer is not synchronous. For example, the batchDeployer used in the catalyst just add it in a queue.
     // Once the entity is truly deployed, it should call the method 'markAsDeployed'
-    await components.deployer.deployEntity({
-      ...entity,
-      markAsDeployed: async function () {
-        components.metrics.increment('dcl_entities_deployments_processed_total', { source: 'snapshots' })
-        numberOfProcessedEntities++
-        await saveIfStreamEndedAndAllEntitiesWereProcessed()
+    await components.deployer.deployEntity(
+      {
+        ...entity,
+        markAsDeployed: async function () {
+          components.metrics.increment('dcl_entities_deployments_processed_total', { source: 'snapshots' })
+          numberOfProcessedEntities++
+          await saveIfStreamEndedAndAllEntitiesWereProcessed()
+        },
+        snapshotHash
       },
-      snapshotHash
-    }, entity.servers)
+      entity.servers
+    )
     numberOfStreamedEntities++
   }
   snapshotWasCompletelyStreamed = true
