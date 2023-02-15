@@ -3,6 +3,7 @@ import { createExponentialFallofRetry, ExponentialFallofRetryComponent } from '.
 import { createJobLifecycleManagerComponent } from './job-lifecycle-manager'
 import {
   IDeployerComponent,
+  SnapshotDeployedEntityStreamOptions,
   SnapshotInfo,
   SnapshotsFetcherComponents,
   SynchronizerComponent,
@@ -13,26 +14,44 @@ import future from 'fp-future'
 import PQueue from 'p-queue'
 import { deployEntitiesFromPointerChanges, deployEntitiesFromSnapshot } from './deploy-entities'
 
-export async function shouldProcessSnapshotAndMarkAsProcessedIfNeeded(
-  components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage'>,
-  snapshotHash: string,
-  snapshotReplacedGroups: string[][]
+export async function processSnapshotAndMarkAsProcessedIfNeeded(
+  components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage' | 'snapshotStorage' | 'metrics' | 'logs' | 'storage'> & {
+    deployer: IDeployerComponent
+  },
+  snapshotInfo: SnapshotInfo,
+  options: SnapshotDeployedEntityStreamOptions,
+  genesisTimestamp: number,
+  shouldStop: () => boolean
 ) {
+  const { greatestEndTimestamp, replacedSnapshotHashes, snapshotHash } = snapshotInfo
+
   const processedSnapshots = await components.processedSnapshotStorage.filterProcessedSnapshotsFrom([
     snapshotHash,
-    ...snapshotReplacedGroups.flat()
+    ...replacedSnapshotHashes.flat()
   ])
 
-  if (processedSnapshots.has(snapshotHash)) {
-    return false
+  const snapshotWasProcessed = processedSnapshots.has(snapshotHash)
+  const aReplacedGroupWasProcessed = replacedSnapshotHashes
+    .some(replacedGroup => (replacedGroup.length > 0 && replacedGroup.every((s) => processedSnapshots.has(s))))
+
+  const shouldProcessSnapshot =
+    // if the snapshot has newer entities than the genesisPoint (filter)
+    greatestEndTimestamp > genesisTimestamp &&
+    !snapshotWasProcessed &&
+    !aReplacedGroupWasProcessed &&
+    !(await components.snapshotStorage.has(snapshotHash))
+  if (shouldProcessSnapshot) {
+    await deployEntitiesFromSnapshot(
+      components,
+      options,
+      snapshotInfo.snapshotHash,
+      snapshotInfo.servers,
+      shouldStop
+    )
   }
-  for (const replacedGroup of snapshotReplacedGroups) {
-    if (replacedGroup.length > 0 && replacedGroup.every((s) => processedSnapshots.has(s))) {
-      await components.processedSnapshotStorage.markSnapshotAsProcessed(snapshotHash)
-      return false
-    }
+  if (!snapshotWasProcessed && aReplacedGroupWasProcessed) {
+    await components.processedSnapshotStorage.markSnapshotAsProcessed(snapshotHash)
   }
-  return true
 }
 
 /**
@@ -132,21 +151,7 @@ export async function createSynchronizer(
     for (const snapshotInfo of snapshotInfoByHash.values()) {
       deploymentsProcessorsQueue
         .add(async () => {
-          const { greatestEndTimestamp, replacedSnapshotHashes, snapshotHash } = snapshotInfo
-          const shouldProcessSnapshot =
-            // if the snapshot has newer entities than the genesisPoint (filter)
-            greatestEndTimestamp > genesisTimestamp &&
-            (await shouldProcessSnapshotAndMarkAsProcessedIfNeeded(components, snapshotHash, replacedSnapshotHashes)) &&
-            !(await components.snapshotStorage.has(snapshotHash))
-          if (shouldProcessSnapshot) {
-            await deployEntitiesFromSnapshot(
-              components,
-              options,
-              snapshotInfo.snapshotHash,
-              snapshotInfo.servers,
-              () => isStopped
-            )
-          }
+          await processSnapshotAndMarkAsProcessedIfNeeded(components, snapshotInfo, options, genesisTimestamp, () => isStopped)
         })
         .catch(logger.error)
     }
