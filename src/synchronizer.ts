@@ -134,7 +134,8 @@ export async function createSynchronizer(
         .add(async () => {
           const { greatestEndTimestamp, replacedSnapshotHashes, snapshotHash } = snapshotInfo
           const shouldProcessSnapshot =
-            greatestEndTimestamp > genesisTimestamp &&
+            // if the snapshot has newer entities than the genesisPoint (filter)
+            greatestEndTimestamp > genesisTimestamp && 
             (await shouldProcessSnapshotAndMarkAsProcessedIfNeeded(components, snapshotHash, replacedSnapshotHashes)) &&
             !(await components.snapshotStorage.has(snapshotHash))
           if (shouldProcessSnapshot) {
