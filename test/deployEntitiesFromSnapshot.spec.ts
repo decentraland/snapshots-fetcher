@@ -14,6 +14,10 @@ describe('deployEntitiesFromSnapshot', () => {
     requestMaxRetries: 10,
     tmpDownloadFolder: contentFolder
   }
+  const deployerMock = {
+    scheduleEntityDeployment: jest.fn(),
+    onIdle: jest.fn()
+  }
 
   beforeEach(() => {
     jest.restoreAllMocks()
@@ -22,10 +26,6 @@ describe('deployEntitiesFromSnapshot', () => {
   test('when the snapshot is empty', ({ components }) => {
     it('does not stream entities but saves the snapshot as processed', async () => {
       mockDeployedEntitiesStreamWith([])
-      const deployerMock = {
-        deployEntity: jest.fn(),
-        onIdle: jest.fn()
-      }
       const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
       await deployEntitiesFromSnapshot(
         componentsWithDeployer(components, deployerMock),
@@ -34,7 +34,7 @@ describe('deployEntitiesFromSnapshot', () => {
         new Set(servers),
         () => false
       )
-      expect(deployerMock.deployEntity).not.toBeCalled()
+      expect(deployerMock.scheduleEntityDeployment).not.toBeCalled()
       expect(markSnapshotAsProcessedSpy).toBeCalledWith(snapshotHash)
     })
   })
@@ -44,11 +44,7 @@ describe('deployEntitiesFromSnapshot', () => {
       const entity1 = { entityId: 'id1', entityType: 't1', pointers: ['p1'], entityTimestamp: 0, authChain: [], snapshotHash, servers }
       const entity2 = { entityId: 'id2', entityType: 't2', pointers: ['p2'], entityTimestamp: 1, authChain: [], snapshotHash, servers }
       mockDeployedEntitiesStreamWith([entity1, entity2])
-      const deployerMock = {
-        deployEntity: jest.fn(),
-        onIdle: jest.fn()
-      }
-      const deployEntitySpy = jest.spyOn(deployerMock, 'deployEntity')
+      const scheduleEntityDeploymentSpy = jest.spyOn(deployerMock, 'scheduleEntityDeployment')
 
       await deployEntitiesFromSnapshot(
         componentsWithDeployer(components, deployerMock),
@@ -57,12 +53,12 @@ describe('deployEntitiesFromSnapshot', () => {
         new Set(),
         () => false
       )
-      expect(deployEntitySpy).toBeCalledTimes(2)
-      expect(deployEntitySpy).toBeCalledWith(expect.objectContaining({
+      expect(scheduleEntityDeploymentSpy).toBeCalledTimes(2)
+      expect(scheduleEntityDeploymentSpy).toBeCalledWith(expect.objectContaining({
         ...entity1,
         snapshotHash
       }), servers)
-      expect(deployEntitySpy).toBeCalledWith(expect.objectContaining({
+      expect(scheduleEntityDeploymentSpy).toBeCalledWith(expect.objectContaining({
         ...entity2,
         snapshotHash
       }), servers)
@@ -76,14 +72,14 @@ describe('deployEntitiesFromSnapshot', () => {
         { entityId: 'id2', entityType: 't2', pointers: ['p2'], entityTimestamp: 1, authChain: [], snapshotHash, servers }
       ])
       const deployerMock = {
-        async deployEntity(entity: DeployableEntity) {
+        async scheduleEntityDeployment(entity: DeployableEntity) {
           if (entity.markAsDeployed) {
             await entity.markAsDeployed()
           }
         },
         onIdle: jest.fn()
       }
-      const deployEntitySpy = jest.spyOn(deployerMock, 'deployEntity')
+      const scheduleEntityDeploymentSpy = jest.spyOn(deployerMock, 'scheduleEntityDeployment')
       const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
 
       await deployEntitiesFromSnapshot(
@@ -93,7 +89,7 @@ describe('deployEntitiesFromSnapshot', () => {
         new Set(),
         () => false
       )
-      expect(deployEntitySpy).toBeCalledTimes(2)
+      expect(scheduleEntityDeploymentSpy).toBeCalledTimes(2)
       expect(markSnapshotAsProcessedSpy).toBeCalledWith(snapshotHash)
     })
   })
@@ -107,7 +103,7 @@ describe('deployEntitiesFromSnapshot', () => {
 
       const entitiesToDeploy = []
       const deployerMock = {
-        async deployEntity(entity: DeployableEntity) {
+        async scheduleEntityDeployment(entity: DeployableEntity) {
           if (entity.markAsDeployed) {
             entitiesToDeploy.push(entity.markAsDeployed)
           }
@@ -116,7 +112,7 @@ describe('deployEntitiesFromSnapshot', () => {
           await Promise.all(entitiesToDeploy.map(mark => mark()))
         }
       }
-      const deployEntitySpy = jest.spyOn(deployerMock, 'deployEntity')
+      const scheduleEntityDeploymentSpy = jest.spyOn(deployerMock, 'scheduleEntityDeployment')
       const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
 
       await deployEntitiesFromSnapshot(
@@ -126,7 +122,7 @@ describe('deployEntitiesFromSnapshot', () => {
         new Set(),
         () => false
       )
-      expect(deployEntitySpy).toBeCalledTimes(2)
+      expect(scheduleEntityDeploymentSpy).toBeCalledTimes(2)
       expect(markSnapshotAsProcessedSpy).not.toBeCalledWith(snapshotHash)
       await deployerMock.onIdle()
       expect(markSnapshotAsProcessedSpy).toBeCalledWith(snapshotHash)
@@ -140,7 +136,7 @@ describe('deployEntitiesFromSnapshot', () => {
         { entityId: 'id2', entityType: 't2', pointers: ['p2'], entityTimestamp: 1, authChain: [], snapshotHash, servers },
       ])
       const deployerMock = {
-        async deployEntity(entity: DeployableEntity) {
+        async scheduleEntityDeployment(entity: DeployableEntity) {
           // only entity 1 is deployed
           if (entity.entityId == 'id1' && entity.markAsDeployed) {
             await entity.markAsDeployed()
@@ -148,7 +144,7 @@ describe('deployEntitiesFromSnapshot', () => {
         },
         onIdle: jest.fn()
       }
-      const deployEntitySpy = jest.spyOn(deployerMock, 'deployEntity')
+      const scheduleEntityDeploymentSpy = jest.spyOn(deployerMock, 'scheduleEntityDeployment')
       const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
 
       await deployEntitiesFromSnapshot(
@@ -158,7 +154,7 @@ describe('deployEntitiesFromSnapshot', () => {
         new Set(),
         () => false
       )
-      expect(deployEntitySpy).toBeCalledTimes(2)
+      expect(scheduleEntityDeploymentSpy).toBeCalledTimes(2)
       expect(markSnapshotAsProcessedSpy).not.toBeCalledWith(snapshotHash)
     })
   })
@@ -170,14 +166,14 @@ describe('deployEntitiesFromSnapshot', () => {
         { entityId: 'id2', entityType: 't2', pointers: ['p2'], entityTimestamp: 1, authChain: [], snapshotHash, servers },
       ])
       const deployerMock = {
-        async deployEntity(entity: DeployableEntity) {
+        async scheduleEntityDeployment(entity: DeployableEntity) {
           if (entity.markAsDeployed) {
             await entity.markAsDeployed()
           }
         },
         onIdle: jest.fn()
       }
-      const deployEntitySpy = jest.spyOn(deployerMock, 'deployEntity')
+      const scheduleEntityDeploymentSpy = jest.spyOn(deployerMock, 'scheduleEntityDeployment')
       const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
       let numberOfStreamedEntities = 0
       const shouldStopStream = () => {
@@ -195,7 +191,7 @@ describe('deployEntitiesFromSnapshot', () => {
         shouldStopStream
       )
       // only first entity is streamed
-      expect(deployEntitySpy).toBeCalledTimes(1)
+      expect(scheduleEntityDeploymentSpy).toBeCalledTimes(1)
       expect(markSnapshotAsProcessedSpy).not.toBeCalledWith(snapshotHash)
     })
   })

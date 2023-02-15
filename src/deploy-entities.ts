@@ -30,7 +30,7 @@ export async function deployEntitiesFromPointerChanges(
       return
     }
 
-    await components.deployer.deployEntity(
+    await components.deployer.scheduleEntityDeployment(
       {
         ...deployment,
         markAsDeployed: async function () {
@@ -81,7 +81,7 @@ export async function deployEntitiesFromSnapshot(
     // schedule the deployment in the deployer. the await DOES NOT mean that the entity was deployed entirely
     // if the deployer is not synchronous. For example, the batchDeployer used in the catalyst just add it in a queue.
     // Once the entity is truly deployed, it should call the method 'markAsDeployed'
-    await components.deployer.deployEntity(
+    await components.deployer.scheduleEntityDeployment(
       {
         ...entity,
         markAsDeployed: async function () {

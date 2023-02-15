@@ -46,19 +46,19 @@ export type DeployableEntity = SyncDeployment & {
 }
 
 /**
- * A component that handles deployments. The deployEntity function should be idempotent, since
+ * A component that handles deployments. The scheduleEntityDeployment function should be idempotent, since
  * it can be called several times with the same entity.
  * @public
  */
 export type IDeployerComponent = {
   /**
-   * awaiting deployEntity might not imply that the entity was deployed. To be marked the entity as deployed, it needs
+   * awaiting scheduleEntityDeployment does not imply that the entity was deployed. To be marked the entity as deployed, it needs
    * to be called the function #markAsDeployed. This is useful for asynchronous deployers that uses, for example,
    * queues to deploy entities.
    */
-  deployEntity(entity: DeployableEntity, contentServers: string[]): Promise<void>
+  scheduleEntityDeployment(entity: DeployableEntity, contentServers: string[]): Promise<void>
   /**
-   * onIdle returns a promise that should be resolved once every deployEntity(...) job has
+   * onIdle returns a promise that should be resolved once every scheduleEntityDeployment(...) job has
    * finished and there are no more queued jobs.
    */
   onIdle(): Promise<void>

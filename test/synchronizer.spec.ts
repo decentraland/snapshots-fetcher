@@ -82,7 +82,7 @@ test('synchronizer deploys entities from snapshots and pointer-changes at bootst
         snapshotStorage,
         metrics,
         deployer: {
-          async deployEntity(entity: DeployableEntity, contentServers: string[]) {
+          async scheduleEntityDeployment(entity: DeployableEntity, contentServers: string[]) {
             if (entity.markAsDeployed) {
               await entity.markAsDeployed()
             }
@@ -144,14 +144,6 @@ test('synchronizer deploys entities from snapshots and pointer-changes at bootst
 })
 
 test('synchronizer should not deploy entities from snapshot if it has itdx as own', ({ components, stubComponents }) => {
-  const authChain = [
-    {
-      type: AuthLinkType.SIGNER,
-      payload: '0x3b21028719a4aca7ebee35b0157a6f1b0cf0d0c5',
-      signature: '',
-    },
-  ]
-
   const contentFolder = resolve('downloads')
   const downloadedSnapshotFile = 'bafkreibivsdakhiouzuth2nr7c4d3iiolbobj32xhat3nzm5uwyi4raxwu'
 
@@ -205,7 +197,7 @@ test('synchronizer should not deploy entities from snapshot if it has itdx as ow
   it('do not deploy entities from snapshot', async () => {
     const { fetcher, downloadQueue, logs, storage, metrics, processedSnapshotStorage, snapshotStorage } = components
     const deployerMock = {
-      deployEntity: jest.fn(),
+      scheduleEntityDeployment: jest.fn(),
       onIdle: jest.fn()
     }
     const storageDeleteSpy = jest.spyOn(storage, 'delete')
@@ -250,7 +242,7 @@ test('synchronizer should not deploy entities from snapshot if it has itdx as ow
     })
     await bootstrapFinished
     await synchronizer.stop()
-    expect(deployerMock.deployEntity).not.toBeCalled()
+    expect(deployerMock.scheduleEntityDeployment).not.toBeCalled()
     // expect snapshot is not deleted
     expect(storageDeleteSpy).not.toBeCalled()
   })

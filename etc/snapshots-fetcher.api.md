@@ -55,7 +55,7 @@ export function getDeployedEntitiesStreamFromSnapshot(components: Pick<Snapshots
 
 // @public
 export type IDeployerComponent = {
-    deployEntity(entity: DeployableEntity, contentServers: string[]): Promise<void>;
+    scheduleEntityDeployment(entity: DeployableEntity, contentServers: string[]): Promise<void>;
     onIdle(): Promise<void>;
 };
 

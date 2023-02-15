@@ -11,6 +11,10 @@ describe('deployEntitiesFromPointerChanges', () => {
     pointerChangesWaitTime: 0,
     fromTimestamp: 0
   }
+  const deployerMock = {
+    scheduleEntityDeployment: jest.fn(),
+    onIdle: jest.fn()
+  }
 
   beforeEach(() => {
     jest.restoreAllMocks()
@@ -19,10 +23,6 @@ describe('deployEntitiesFromPointerChanges', () => {
   test('when the stream is empty', ({ components }) => {
     it('does not deploy anything', async () => {
       mockDeployedEntitiesStreamWith([])
-      const deployerMock = {
-        deployEntity: jest.fn(),
-        onIdle: jest.fn()
-      }
       await deployEntitiesFromPointerChanges(
         componentsWithDeployer(components, deployerMock),
         streamOptions,
@@ -30,7 +30,7 @@ describe('deployEntitiesFromPointerChanges', () => {
         () => false,
         () => { }
       )
-      expect(deployerMock.deployEntity).not.toBeCalled()
+      expect(deployerMock.scheduleEntityDeployment).not.toBeCalled()
     })
   })
 
@@ -39,11 +39,7 @@ describe('deployEntitiesFromPointerChanges', () => {
       const entity1 = { entityId: 'id1', entityType: 't1', pointers: ['p1'], localTimestamp: 0, authChain: [] }
       const entity2 = { entityId: 'id2', entityType: 't2', pointers: ['p2'], localTimestamp: 1, authChain: [] }
       mockDeployedEntitiesStreamWith([entity1, entity2])
-      const deployerMock = {
-        deployEntity: jest.fn(),
-        onIdle: jest.fn()
-      }
-      const deployEntitySpy = jest.spyOn(deployerMock, 'deployEntity')
+      const scheduleEntityDeploymentSpy = jest.spyOn(deployerMock, 'scheduleEntityDeployment')
 
       await deployEntitiesFromPointerChanges(
         componentsWithDeployer(components, deployerMock),
@@ -52,11 +48,11 @@ describe('deployEntitiesFromPointerChanges', () => {
         () => false,
         () => { }
       )
-      expect(deployEntitySpy).toBeCalledTimes(2)
-      expect(deployEntitySpy).toBeCalledWith(expect.objectContaining({
+      expect(scheduleEntityDeploymentSpy).toBeCalledTimes(2)
+      expect(scheduleEntityDeploymentSpy).toBeCalledWith(expect.objectContaining({
         ...entity1
       }), [server])
-      expect(deployEntitySpy).toBeCalledWith(expect.objectContaining({
+      expect(scheduleEntityDeploymentSpy).toBeCalledWith(expect.objectContaining({
         ...entity2
       }), [server])
     })
@@ -69,14 +65,14 @@ describe('deployEntitiesFromPointerChanges', () => {
         { entityId: 'id2', entityType: 't2', pointers: ['p2'], localTimestamp: 1, authChain: [] },
       ])
       const deployerMock = {
-        async deployEntity(entity: DeployableEntity) {
+        async scheduleEntityDeployment(entity: DeployableEntity) {
           if (entity.markAsDeployed) {
             await entity.markAsDeployed()
           }
         },
         onIdle: jest.fn()
       }
-      const deployEntitySpy = jest.spyOn(deployerMock, 'deployEntity')
+      const scheduleEntityDeploymentSpy = jest.spyOn(deployerMock, 'scheduleEntityDeployment')
       const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
       let numberOfStreamedEntities = 0
       const shouldStopStream = () => {
@@ -94,7 +90,7 @@ describe('deployEntitiesFromPointerChanges', () => {
         () => { }
       )
       // only first entity is streamed
-      expect(deployEntitySpy).toBeCalledTimes(1)
+      expect(scheduleEntityDeploymentSpy).toBeCalledTimes(1)
       expect(markSnapshotAsProcessedSpy).not.toBeCalledWith(snapshotHash)
     })
   })

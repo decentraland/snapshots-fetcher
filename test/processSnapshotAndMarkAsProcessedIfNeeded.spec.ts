@@ -16,6 +16,10 @@ describe('processSnapshotAndMarkAsProcessedIfNeeded', () => {
     requestMaxRetries: 1,
     tmpDownloadFolder: 'mock'
   }
+  const deployerMock = {
+    scheduleEntityDeployment: jest.fn(),
+    onIdle: jest.fn()
+  }
   const genesisTimestamp = 0
 
   beforeEach(() => {
@@ -26,10 +30,6 @@ describe('processSnapshotAndMarkAsProcessedIfNeeded', () => {
   test('should not process an already processed snapshot', ({ components }) => {
     it('run test', async () => {
       components.processedSnapshotStorage.markSnapshotAsProcessed(processedSnapshotHash)
-      const deployerMock = {
-        deployEntity: jest.fn(),
-        onIdle: jest.fn()
-      }
       await processSnapshotAndMarkAsProcessedIfNeeded(
         componentsWithDeployer(components, deployerMock),
         {
@@ -48,10 +48,6 @@ describe('processSnapshotAndMarkAsProcessedIfNeeded', () => {
 
   test('should not process snapshot with greatest timestamp smaller or equal than genesis timestamp', ({ components }) => {
     it('run test', async () => {
-      const deployerMock = {
-        deployEntity: jest.fn(),
-        onIdle: jest.fn()
-      }
       await processSnapshotAndMarkAsProcessedIfNeeded(
         componentsWithDeployer(components, deployerMock),
         {
@@ -70,10 +66,6 @@ describe('processSnapshotAndMarkAsProcessedIfNeeded', () => {
 
   test('should process snapshot with greatest timestamp bigger than genesis timestamp', ({ components }) => {
     it('run test', async () => {
-      const deployerMock = {
-        deployEntity: jest.fn(),
-        onIdle: jest.fn()
-      }
       await processSnapshotAndMarkAsProcessedIfNeeded(
         componentsWithDeployer(components, deployerMock),
         {
@@ -92,10 +84,6 @@ describe('processSnapshotAndMarkAsProcessedIfNeeded', () => {
 
   test('should not process own snapshot', ({ components }) => {
     it('run test', async () => {
-      const deployerMock = {
-        deployEntity: jest.fn(),
-        onIdle: jest.fn()
-      }
       jest.spyOn(components.snapshotStorage, 'has').mockImplementation(async (hash) => {
         return hash === processedSnapshotHash
       })
@@ -122,7 +110,7 @@ describe('processSnapshotAndMarkAsProcessedIfNeeded', () => {
       components.processedSnapshotStorage.markSnapshotAsProcessed(h3)
       await processSnapshotAndMarkAsProcessedIfNeeded(
         componentsWithDeployer(components, {
-          deployEntity: jest.fn(),
+          scheduleEntityDeployment: jest.fn(),
           onIdle: jest.fn()
         }),
         {
@@ -144,10 +132,6 @@ describe('processSnapshotAndMarkAsProcessedIfNeeded', () => {
       components.processedSnapshotStorage.markSnapshotAsProcessed(h1)
       components.processedSnapshotStorage.markSnapshotAsProcessed(h2)
       components.processedSnapshotStorage.markSnapshotAsProcessed(h3)
-      const deployerMock = {
-        deployEntity: jest.fn(),
-        onIdle: jest.fn()
-      }
       await processSnapshotAndMarkAsProcessedIfNeeded(
         componentsWithDeployer(components, deployerMock),
         {
@@ -171,10 +155,6 @@ describe('processSnapshotAndMarkAsProcessedIfNeeded', () => {
       components.processedSnapshotStorage.markSnapshotAsProcessed(h1)
       components.processedSnapshotStorage.markSnapshotAsProcessed(h2)
       components.processedSnapshotStorage.markSnapshotAsProcessed(h3)
-      const deployerMock = {
-        deployEntity: jest.fn(),
-        onIdle: jest.fn()
-      }
       await processSnapshotAndMarkAsProcessedIfNeeded(
         componentsWithDeployer(components, deployerMock),
         {
