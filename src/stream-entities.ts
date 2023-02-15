@@ -13,7 +13,8 @@ export { IDeployerComponent, SynchronizerComponent } from './types'
 
 /**
  * Accepts a fromTimestamp option to filter out previous deployments.
- *
+ * Loads deployments from snapshots and returns an async iterable of deployments.
+ * Snapshots are downloaded to the provided "storage" component and deleted right after processing.
  * @public
  */
 export async function* getDeployedEntitiesStreamFromSnapshot(
