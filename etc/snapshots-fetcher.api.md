@@ -14,16 +14,6 @@ import { PointerChangesSyncDeployment } from '@dcl/schemas';
 import { SyncDeployment } from '@dcl/schemas';
 
 // Warning: (ae-forgotten-export) The symbol "SnapshotsFetcherComponents" needs to be exported by the entry point index.d.ts
-// Warning: (ae-forgotten-export) The symbol "ReconnectionOptions" needs to be exported by the entry point index.d.ts
-// Warning: (ae-forgotten-export) The symbol "PointerChangesDeployedEntityStreamOptions" needs to be exported by the entry point index.d.ts
-// Warning: (ae-forgotten-export) The symbol "IJobWithLifecycle" needs to be exported by the entry point index.d.ts
-// Warning: (ae-forgotten-export) The symbol "CatalystDeploymentStreamComponent" needs to be exported by the entry point index.d.ts
-//
-// @public @deprecated
-export function createCatalystPointerChangesDeploymentStream(components: SnapshotsFetcherComponents & {
-    deployer: IDeployerComponent;
-}, contentServer: string, options: ReconnectionOptions & PointerChangesDeployedEntityStreamOptions): IJobWithLifecycle & CatalystDeploymentStreamComponent;
-
 // Warning: (ae-forgotten-export) The symbol "SynchronizerOptions" needs to be exported by the entry point index.d.ts
 //
 // @public (undocumented)
@@ -37,6 +27,8 @@ export function createSynchronizer(components: SnapshotsFetcherComponents & {
 // @public
 export function downloadEntityAndContentFiles(components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'logs' | 'metrics' | 'storage'>, entityId: EntityHash, presentInServers: string[], _serverMapLRU: Map<Server, number>, targetFolder: string, maxRetries: number, waitTimeBetweenRetries: number): Promise<unknown>;
 
+// Warning: (ae-forgotten-export) The symbol "PointerChangesDeployedEntityStreamOptions" needs to be exported by the entry point index.d.ts
+//
 // @public
 export function getDeployedEntitiesStreamFromPointerChanges(components: Pick<SnapshotsFetcherComponents, 'logs' | 'metrics' | 'fetcher'>, options: PointerChangesDeployedEntityStreamOptions, contentServer: string): AsyncGenerator<PointerChangesSyncDeployment, void, unknown>;
 

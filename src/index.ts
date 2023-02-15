@@ -1,19 +1,12 @@
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import { downloadFileWithRetries } from './downloader'
-import { createExponentialFallofRetry } from './exponential-fallof-retry'
-import { IJobWithLifecycle } from './job-lifecycle-manager'
-import { getDeployedEntitiesStreamFromPointerChanges } from './stream-entities'
 import {
-  CatalystDeploymentStreamComponent,
   ContentMapping,
   EntityHash,
-  IDeployerComponent,
-  PointerChangesDeployedEntityStreamOptions,
-  ReconnectionOptions,
   Server,
   SnapshotsFetcherComponents,
 } from './types'
-import { contentServerMetricLabels, streamToBuffer } from './utils'
+import { streamToBuffer } from './utils'
 
 export { metricsDefinitions } from './metrics'
 export { IDeployerComponent, SynchronizerComponent } from './types'
@@ -146,71 +139,4 @@ export async function downloadEntityAndContentFiles(
   }
 
   return entityMetadata
-}
-
-/**
- * This function returns a JobWithLifecycle that runs forever if well configured.
- * In pseudocode it does something like this
- *
- * ```ts
- * while (jobRunning) {
- *   getDeployedEntitiesStream.map(components.deployer.deployEntity)
- * }
- * ```
- *
- * @deprecated
- */
-export function createCatalystPointerChangesDeploymentStream(
-  components: SnapshotsFetcherComponents & { deployer: IDeployerComponent },
-  contentServer: string,
-  options: ReconnectionOptions & PointerChangesDeployedEntityStreamOptions
-): IJobWithLifecycle & CatalystDeploymentStreamComponent {
-  const logs = components.logs.getLogger(`pointerChangesDeploymentStream(${contentServer})`)
-
-  let greatestProcessedTimestamp = options.fromTimestamp || 0
-
-  const metricsLabels = contentServerMetricLabels(contentServer)
-
-  const exponentialFallofRetryComponent = createExponentialFallofRetry(logs, {
-    async action() {
-      try {
-        components.metrics.increment('dcl_deployments_stream_reconnection_count', metricsLabels)
-
-        const deployments = getDeployedEntitiesStreamFromPointerChanges(
-          components,
-          { ...options, fromTimestamp: greatestProcessedTimestamp },
-          contentServer)
-
-        for await (const deployment of deployments) {
-          // if the stream is closed then we should not process more deployments
-          if (exponentialFallofRetryComponent.isStopped()) {
-            logs.debug('Canceling running stream')
-            return
-          }
-
-          await components.deployer.deployEntity(deployment, [contentServer])
-
-          // update greatest processed timestamp
-          if (deployment.localTimestamp > greatestProcessedTimestamp) {
-            greatestProcessedTimestamp = deployment.localTimestamp
-          }
-        }
-      } catch (e: any) {
-        // we don't log the exception here because createExponentialFallofRetry(logger, options) receives the logger
-        components.metrics.increment('dcl_deployments_stream_failure_count', metricsLabels)
-        throw e
-      }
-    },
-    retryTime: options.reconnectTime,
-    retryTimeExponent: options.reconnectRetryTimeExponent ?? 1.1,
-    maxInterval: options.maxReconnectionTime,
-  })
-
-  return {
-    // exponentialFallofRetryComponent contains start and stop methods used to control this job
-    ...exponentialFallofRetryComponent,
-    getGreatesProcessedTimestamp() {
-      return greatestProcessedTimestamp
-    },
-  }
 }
