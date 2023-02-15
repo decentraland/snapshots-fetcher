@@ -29,22 +29,22 @@ describe('shouldProcessSnapshotAndMarkAsProcessedIfNeeded', () => {
   })
 
   it('should return false when the snapshot was processed', async () => {
-    processedSnapshotStorage.saveAsProcessed(processedSnapshotHash)
+    processedSnapshotStorage.markSnapshotAsProcessed(processedSnapshotHash)
     expect(await shouldProcessSnapshotAndMarkAsProcessedIfNeeded({ processedSnapshotStorage }, processedSnapshotHash, [])).toBeFalsy()
   })
 
   it('should return false when the replaced hashes where processed (in the same group)', async () => {
-    processedSnapshotStorage.saveAsProcessed(h1)
-    processedSnapshotStorage.saveAsProcessed(h2)
-    processedSnapshotStorage.saveAsProcessed(h3)
+    processedSnapshotStorage.markSnapshotAsProcessed(h1)
+    processedSnapshotStorage.markSnapshotAsProcessed(h2)
+    processedSnapshotStorage.markSnapshotAsProcessed(h3)
 
     expect(await shouldProcessSnapshotAndMarkAsProcessedIfNeeded({ processedSnapshotStorage }, processedSnapshotHash, [[h1, h2, h3]])).toBeFalsy()
   })
 
   it('should save the snapshot as processed when all the hashes of any replaced-hashes group were processed', async () => {
-    processedSnapshotStorage.saveAsProcessed(h1)
-    processedSnapshotStorage.saveAsProcessed(h2)
-    processedSnapshotStorage.saveAsProcessed(h3)
+    processedSnapshotStorage.markSnapshotAsProcessed(h1)
+    processedSnapshotStorage.markSnapshotAsProcessed(h2)
+    processedSnapshotStorage.markSnapshotAsProcessed(h3)
 
     expect(await shouldProcessSnapshotAndMarkAsProcessedIfNeeded({ processedSnapshotStorage }, processedSnapshotHash, [[h1, h2, h3], ['non-processed']])).toBeFalsy()
     const processed = await processedSnapshotStorage.filterProcessedSnapshotsFrom([processedSnapshotHash])
@@ -52,9 +52,9 @@ describe('shouldProcessSnapshotAndMarkAsProcessedIfNeeded', () => {
   })
 
   it('should return true when not all the replaced hashes of any group were processed', async () => {
-    processedSnapshotStorage.saveAsProcessed(h1)
-    processedSnapshotStorage.saveAsProcessed(h2)
-    processedSnapshotStorage.saveAsProcessed(h3)
+    processedSnapshotStorage.markSnapshotAsProcessed(h1)
+    processedSnapshotStorage.markSnapshotAsProcessed(h2)
+    processedSnapshotStorage.markSnapshotAsProcessed(h3)
 
     expect(await shouldProcessSnapshotAndMarkAsProcessedIfNeeded({ processedSnapshotStorage }, processedSnapshotHash, [[h1, h2, 'non-processed'], [h3, 'non-processed']])).toBeTruthy()
     const processed = await processedSnapshotStorage.filterProcessedSnapshotsFrom([processedSnapshotHash, 'non-processed'])

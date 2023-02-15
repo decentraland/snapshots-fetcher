@@ -28,7 +28,7 @@ export async function shouldProcessSnapshotAndMarkAsProcessedIfNeeded(
   }
   for (const replacedGroup of snapshotReplacedGroups) {
     if (replacedGroup.length > 0 && replacedGroup.every((s) => processedSnapshots.has(s))) {
-      await components.processedSnapshotStorage.saveAsProcessed(snapshotHash)
+      await components.processedSnapshotStorage.markSnapshotAsProcessed(snapshotHash)
       return false
     }
   }
@@ -135,7 +135,7 @@ export async function createSynchronizer(
           const { greatestEndTimestamp, replacedSnapshotHashes, snapshotHash } = snapshotInfo
           const shouldProcessSnapshot =
             // if the snapshot has newer entities than the genesisPoint (filter)
-            greatestEndTimestamp > genesisTimestamp && 
+            greatestEndTimestamp > genesisTimestamp &&
             (await shouldProcessSnapshotAndMarkAsProcessedIfNeeded(components, snapshotHash, replacedSnapshotHashes)) &&
             !(await components.snapshotStorage.has(snapshotHash))
           if (shouldProcessSnapshot) {

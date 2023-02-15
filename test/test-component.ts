@@ -49,7 +49,7 @@ export function createProcessedSnapshotStorageComponent(): IProcessedSnapshotSto
     async filterProcessedSnapshotsFrom(snapshotHashes: string[]) {
       return new Set(snapshotHashes.filter(h => processedSnapshots.has(h)))
     },
-    async saveAsProcessed(snapshotHash: string) {
+    async markSnapshotAsProcessed(snapshotHash: string) {
       processedSnapshots.add(snapshotHash)
     }
   }

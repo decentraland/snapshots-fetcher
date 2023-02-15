@@ -201,10 +201,10 @@ export type IProcessedSnapshotStorageComponent = {
    */
   filterProcessedSnapshotsFrom(snapshotHashes: string[]): Promise<Set<string>>
   /**
-   * It receives a snapshot hash and saves it as processed.
+   * It receives a snapshot hash and marks it as processed.
    * @param snapshotHash - The snapshot hash to be saved as processed
    */
-  saveAsProcessed(snapshotHash: string): Promise<void>
+  markSnapshotAsProcessed(snapshotHash: string): Promise<void>
 }
 
 export type SyncJob = {

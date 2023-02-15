@@ -26,7 +26,7 @@ describe('deployEntitiesFromSnapshot', () => {
         deployEntity: jest.fn(),
         onIdle: jest.fn()
       }
-      const saveAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'saveAsProcessed')
+      const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
       await deployEntitiesFromSnapshot(
         componentsWithDeployer(components, deployerMock),
         streamOptions,
@@ -35,7 +35,7 @@ describe('deployEntitiesFromSnapshot', () => {
         () => false
       )
       expect(deployerMock.deployEntity).not.toBeCalled()
-      expect(saveAsProcessedSpy).toBeCalledWith(snapshotHash)
+      expect(markSnapshotAsProcessedSpy).toBeCalledWith(snapshotHash)
     })
   })
 
@@ -84,7 +84,7 @@ describe('deployEntitiesFromSnapshot', () => {
         onIdle: jest.fn()
       }
       const deployEntitySpy = jest.spyOn(deployerMock, 'deployEntity')
-      const saveAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'saveAsProcessed')
+      const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
 
       await deployEntitiesFromSnapshot(
         componentsWithDeployer(components, deployerMock),
@@ -94,7 +94,7 @@ describe('deployEntitiesFromSnapshot', () => {
         () => false
       )
       expect(deployEntitySpy).toBeCalledTimes(2)
-      expect(saveAsProcessedSpy).toBeCalledWith(snapshotHash)
+      expect(markSnapshotAsProcessedSpy).toBeCalledWith(snapshotHash)
     })
   })
 
@@ -117,7 +117,7 @@ describe('deployEntitiesFromSnapshot', () => {
         }
       }
       const deployEntitySpy = jest.spyOn(deployerMock, 'deployEntity')
-      const saveAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'saveAsProcessed')
+      const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
 
       await deployEntitiesFromSnapshot(
         componentsWithDeployer(components, deployerMock),
@@ -127,9 +127,9 @@ describe('deployEntitiesFromSnapshot', () => {
         () => false
       )
       expect(deployEntitySpy).toBeCalledTimes(2)
-      expect(saveAsProcessedSpy).not.toBeCalledWith(snapshotHash)
+      expect(markSnapshotAsProcessedSpy).not.toBeCalledWith(snapshotHash)
       await deployerMock.onIdle()
-      expect(saveAsProcessedSpy).toBeCalledWith(snapshotHash)
+      expect(markSnapshotAsProcessedSpy).toBeCalledWith(snapshotHash)
     })
   })
 
@@ -149,7 +149,7 @@ describe('deployEntitiesFromSnapshot', () => {
         onIdle: jest.fn()
       }
       const deployEntitySpy = jest.spyOn(deployerMock, 'deployEntity')
-      const saveAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'saveAsProcessed')
+      const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
 
       await deployEntitiesFromSnapshot(
         componentsWithDeployer(components, deployerMock),
@@ -159,7 +159,7 @@ describe('deployEntitiesFromSnapshot', () => {
         () => false
       )
       expect(deployEntitySpy).toBeCalledTimes(2)
-      expect(saveAsProcessedSpy).not.toBeCalledWith(snapshotHash)
+      expect(markSnapshotAsProcessedSpy).not.toBeCalledWith(snapshotHash)
     })
   })
 
@@ -178,7 +178,7 @@ describe('deployEntitiesFromSnapshot', () => {
         onIdle: jest.fn()
       }
       const deployEntitySpy = jest.spyOn(deployerMock, 'deployEntity')
-      const saveAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'saveAsProcessed')
+      const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
       let numberOfStreamedEntities = 0
       const shouldStopStream = () => {
         if (numberOfStreamedEntities == 1) {
@@ -196,7 +196,7 @@ describe('deployEntitiesFromSnapshot', () => {
       )
       // only first entity is streamed
       expect(deployEntitySpy).toBeCalledTimes(1)
-      expect(saveAsProcessedSpy).not.toBeCalledWith(snapshotHash)
+      expect(markSnapshotAsProcessedSpy).not.toBeCalledWith(snapshotHash)
     })
   })
 })

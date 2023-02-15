@@ -68,7 +68,7 @@ export async function deployEntitiesFromSnapshot(
   let numberOfProcessedEntities = 0
   async function saveIfStreamEndedAndAllEntitiesWereProcessed() {
     if (snapshotWasCompletelyStreamed && numberOfStreamedEntities === numberOfProcessedEntities) {
-      await components.processedSnapshotStorage.saveAsProcessed(snapshotHash)
+      await components.processedSnapshotStorage.markSnapshotAsProcessed(snapshotHash)
       components.metrics.increment('dcl_processed_snapshots_total', { state: 'saved' })
     }
   }

@@ -77,7 +77,7 @@ describe('deployEntitiesFromPointerChanges', () => {
         onIdle: jest.fn()
       }
       const deployEntitySpy = jest.spyOn(deployerMock, 'deployEntity')
-      const saveAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'saveAsProcessed')
+      const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
       let numberOfStreamedEntities = 0
       const shouldStopStream = () => {
         if (numberOfStreamedEntities == 1) {
@@ -95,7 +95,7 @@ describe('deployEntitiesFromPointerChanges', () => {
       )
       // only first entity is streamed
       expect(deployEntitySpy).toBeCalledTimes(1)
-      expect(saveAsProcessedSpy).not.toBeCalledWith(snapshotHash)
+      expect(markSnapshotAsProcessedSpy).not.toBeCalledWith(snapshotHash)
     })
   })
 })
