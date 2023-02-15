@@ -77,6 +77,7 @@ export async function deployEntitiesFromSnapshot(
       logger.debug('Canceling running sync snapshots stream')
       return
     }
+    numberOfStreamedEntities++
     // schedule the deployment in the deployer. the await DOES NOT mean that the entity was deployed entirely
     // if the deployer is not synchronous. For example, the batchDeployer used in the catalyst just add it in a queue.
     // Once the entity is truly deployed, it should call the method 'markAsDeployed'
@@ -92,7 +93,6 @@ export async function deployEntitiesFromSnapshot(
       },
       entity.servers
     )
-    numberOfStreamedEntities++
   }
   snapshotWasCompletelyStreamed = true
   components.metrics.increment('dcl_processed_snapshots_total', { state: 'stream_end' })
