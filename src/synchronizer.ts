@@ -15,7 +15,10 @@ import PQueue from 'p-queue'
 import { deployEntitiesFromPointerChanges, deployEntitiesFromSnapshot } from './deploy-entities'
 
 export async function processSnapshotAndMarkAsProcessedIfNeeded(
-  components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage' | 'snapshotStorage' | 'metrics' | 'logs' | 'storage'> & {
+  components: Pick<
+    SnapshotsFetcherComponents,
+    'processedSnapshotStorage' | 'snapshotStorage' | 'metrics' | 'logs' | 'storage'
+  > & {
     deployer: IDeployerComponent
   },
   snapshotInfo: SnapshotInfo,
@@ -31,8 +34,9 @@ export async function processSnapshotAndMarkAsProcessedIfNeeded(
   ])
 
   const snapshotWasProcessed = processedSnapshots.has(snapshotHash)
-  const aReplacedGroupWasProcessed = replacedSnapshotHashes
-    .some(replacedGroup => (replacedGroup.length > 0 && replacedGroup.every((s) => processedSnapshots.has(s))))
+  const aReplacedGroupWasProcessed = replacedSnapshotHashes.some(
+    (replacedGroup) => replacedGroup.length > 0 && replacedGroup.every((s) => processedSnapshots.has(s))
+  )
 
   const shouldProcessSnapshot =
     // if the snapshot has newer entities than the genesisPoint (filter)
@@ -41,13 +45,7 @@ export async function processSnapshotAndMarkAsProcessedIfNeeded(
     !aReplacedGroupWasProcessed &&
     !(await components.snapshotStorage.has(snapshotHash))
   if (shouldProcessSnapshot) {
-    await deployEntitiesFromSnapshot(
-      components,
-      options,
-      snapshotInfo.snapshotHash,
-      snapshotInfo.servers,
-      shouldStop
-    )
+    await deployEntitiesFromSnapshot(components, options, snapshotInfo.snapshotHash, snapshotInfo.servers, shouldStop)
   }
   if (!snapshotWasProcessed && aReplacedGroupWasProcessed) {
     await components.processedSnapshotStorage.markSnapshotAsProcessed(snapshotHash)
@@ -151,7 +149,13 @@ export async function createSynchronizer(
     for (const snapshotInfo of snapshotInfoByHash.values()) {
       deploymentsProcessorsQueue
         .add(async () => {
-          await processSnapshotAndMarkAsProcessedIfNeeded(components, snapshotInfo, options, genesisTimestamp, () => isStopped)
+          await processSnapshotAndMarkAsProcessedIfNeeded(
+            components,
+            snapshotInfo,
+            options,
+            genesisTimestamp,
+            () => isStopped
+          )
         })
         .catch(logger.error)
     }
