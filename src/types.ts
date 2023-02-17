@@ -46,19 +46,19 @@ export type DeployableEntity = SyncDeployment & {
 }
 
 /**
- * A component that handles deployments. The deployEntity function should be idempotent, since
+ * A component that handles deployments. The scheduleEntityDeployment function should be idempotent, since
  * it can be called several times with the same entity.
  * @public
  */
 export type IDeployerComponent = {
   /**
-   * awaiting deployEntity might not imply that the entity was deployed. To be marked the entity as deployed, it needs
+   * awaiting scheduleEntityDeployment does not imply that the entity was deployed. To be marked the entity as deployed, it needs
    * to be called the function #markAsDeployed. This is useful for asynchronous deployers that uses, for example,
    * queues to deploy entities.
    */
-  deployEntity(entity: DeployableEntity, contentServers: string[]): Promise<void>
+  scheduleEntityDeployment(entity: DeployableEntity, contentServers: string[]): Promise<void>
   /**
-   * onIdle returns a promise that should be resolved once every deployEntity(...) job has
+   * onIdle returns a promise that should be resolved once every scheduleEntityDeployment(...) job has
    * finished and there are no more queued jobs.
    */
   onIdle(): Promise<void>
@@ -195,21 +195,16 @@ export type ISnapshotStorageComponent = {
  * @public
  */
 export type IProcessedSnapshotStorageComponent = {
-  processedFrom(snapshotHashes: string[]): Promise<Set<string>>
-  saveProcessed(snapshotHash: string): Promise<void>
-}
-
-/**
- * @internal
- */
-export type IProcessedSnapshotsComponent = {
-  shouldProcessSnapshotAndMarkAsProcessedIfNeeded(
-    snapshotHash: string,
-    replacedSnapshotHashes: string[][]
-  ): Promise<boolean>
-  startStreamOf(snapshotHash: string): Promise<void>
-  endStreamOf(snapshotHash: string, numberOfEntitiesStreamed: number): Promise<void>
-  entityProcessedFrom(snapshotHash: string): Promise<void>
+  /**
+   * It receives a list of snapshot hashes L and returns a set with hashes of the snapshots that were processed from L.
+   * @param snapshotHashes - The list of snapshots hashes to be filtered.
+   */
+  filterProcessedSnapshotsFrom(snapshotHashes: string[]): Promise<Set<string>>
+  /**
+   * It receives a snapshot hash and marks it as processed.
+   * @param snapshotHash - The snapshot hash to be saved as processed
+   */
+  markSnapshotAsProcessed(snapshotHash: string): Promise<void>
 }
 
 export type SyncJob = {

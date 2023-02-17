@@ -14,22 +14,6 @@ import { PointerChangesSyncDeployment } from '@dcl/schemas';
 import { SyncDeployment } from '@dcl/schemas';
 
 // Warning: (ae-forgotten-export) The symbol "SnapshotsFetcherComponents" needs to be exported by the entry point index.d.ts
-// Warning: (ae-forgotten-export) The symbol "ReconnectionOptions" needs to be exported by the entry point index.d.ts
-// Warning: (ae-forgotten-export) The symbol "PointerChangesDeployedEntityStreamOptions" needs to be exported by the entry point index.d.ts
-// Warning: (ae-forgotten-export) The symbol "IJobWithLifecycle" needs to be exported by the entry point index.d.ts
-// Warning: (ae-forgotten-export) The symbol "CatalystDeploymentStreamComponent" needs to be exported by the entry point index.d.ts
-//
-// @public
-export function createCatalystPointerChangesDeploymentStream(components: SnapshotsFetcherComponents & {
-    deployer: IDeployerComponent;
-}, contentServer: string, options: ReconnectionOptions & PointerChangesDeployedEntityStreamOptions): IJobWithLifecycle & CatalystDeploymentStreamComponent;
-
-// Warning: (ae-forgotten-export) The symbol "IProcessedSnapshotsComponent" needs to be exported by the entry point index.d.ts
-// Warning: (ae-internal-missing-underscore) The name "createProcessedSnapshotsComponent" should be prefixed with an underscore because the declaration is marked as @internal
-//
-// @internal
-export function createProcessedSnapshotsComponent(components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage' | 'logs' | 'metrics'>): IProcessedSnapshotsComponent;
-
 // Warning: (ae-forgotten-export) The symbol "SynchronizerOptions" needs to be exported by the entry point index.d.ts
 //
 // @public (undocumented)
@@ -43,17 +27,15 @@ export function createSynchronizer(components: SnapshotsFetcherComponents & {
 // @public
 export function downloadEntityAndContentFiles(components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'logs' | 'metrics' | 'storage'>, entityId: EntityHash, presentInServers: string[], _serverMapLRU: Map<Server, number>, targetFolder: string, maxRetries: number, waitTimeBetweenRetries: number): Promise<unknown>;
 
-// @public
-export function getDeployedEntitiesStreamFromPointerChanges(components: SnapshotsFetcherComponents, options: PointerChangesDeployedEntityStreamOptions, contentServer: string): AsyncGenerator<PointerChangesSyncDeployment, void, unknown>;
-
-// Warning: (ae-forgotten-export) The symbol "SnapshotDeployedEntityStreamOptions" needs to be exported by the entry point index.d.ts
-// Warning: (ae-forgotten-export) The symbol "SnapshotInfo" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "PointerChangesDeployedEntityStreamOptions" needs to be exported by the entry point index.d.ts
 //
 // @public
-export function getDeployedEntitiesStreamFromSnapshot(components: SnapshotsFetcherComponents & {
-    processedSnapshots: IProcessedSnapshotsComponent;
-    snapshotStorage: ISnapshotStorageComponent;
-}, options: SnapshotDeployedEntityStreamOptions, snapshotInfo: SnapshotInfo): AsyncGenerator<{
+export function getDeployedEntitiesStreamFromPointerChanges(components: Pick<SnapshotsFetcherComponents, 'logs' | 'metrics' | 'fetcher'>, options: PointerChangesDeployedEntityStreamOptions, contentServer: string): AsyncGenerator<PointerChangesSyncDeployment, void, unknown>;
+
+// Warning: (ae-forgotten-export) The symbol "SnapshotDeployedEntityStreamOptions" needs to be exported by the entry point index.d.ts
+//
+// @public
+export function getDeployedEntitiesStreamFromSnapshot(components: Pick<SnapshotsFetcherComponents, 'logs' | 'metrics' | 'storage'>, options: SnapshotDeployedEntityStreamOptions, snapshotHash: string, servers: Set<string>): AsyncGenerator<{
     snapshotHash: string;
     servers: string[];
     entityId: string;
@@ -73,7 +55,7 @@ export function getDeployedEntitiesStreamFromSnapshot(components: SnapshotsFetch
 
 // @public
 export type IDeployerComponent = {
-    deployEntity(entity: DeployableEntity, contentServers: string[]): Promise<void>;
+    scheduleEntityDeployment(entity: DeployableEntity, contentServers: string[]): Promise<void>;
     onIdle(): Promise<void>;
 };
 
@@ -87,9 +69,8 @@ export type SynchronizerComponent = IBaseComponent & {
 
 // Warnings were encountered during analysis:
 //
-// src/index.ts:164:5 - (ae-forgotten-export) The symbol "ISnapshotStorageComponent" needs to be exported by the entry point index.d.ts
 // src/types.ts:59:3 - (ae-forgotten-export) The symbol "DeployableEntity" needs to be exported by the entry point index.d.ts
-// src/types.ts:222:3 - (ae-forgotten-export) The symbol "SyncJob" needs to be exported by the entry point index.d.ts
+// src/types.ts:219:3 - (ae-forgotten-export) The symbol "SyncJob" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

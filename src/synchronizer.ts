@@ -1,14 +1,9 @@
-import {
-  createProcessedSnapshotsComponent,
-  getDeployedEntitiesStreamFromPointerChanges,
-  getDeployedEntitiesStreamFromSnapshot
-} from '.'
 import { getSnapshots } from './client'
 import { createExponentialFallofRetry, ExponentialFallofRetryComponent } from './exponential-fallof-retry'
 import { createJobLifecycleManagerComponent } from './job-lifecycle-manager'
 import {
   IDeployerComponent,
-  PointerChangesDeployedEntityStreamOptions,
+  SnapshotDeployedEntityStreamOptions,
   SnapshotInfo,
   SnapshotsFetcherComponents,
   SynchronizerComponent,
@@ -17,6 +12,45 @@ import {
 import { contentServerMetricLabels } from './utils'
 import future from 'fp-future'
 import PQueue from 'p-queue'
+import { deployEntitiesFromPointerChanges, deployEntitiesFromSnapshot } from './deploy-entities'
+
+export async function processSnapshotAndMarkAsProcessedIfNeeded(
+  components: Pick<
+    SnapshotsFetcherComponents,
+    'processedSnapshotStorage' | 'snapshotStorage' | 'metrics' | 'logs' | 'storage'
+  > & {
+    deployer: IDeployerComponent
+  },
+  snapshotInfo: SnapshotInfo,
+  options: SnapshotDeployedEntityStreamOptions,
+  genesisTimestamp: number,
+  shouldStop: () => boolean
+) {
+  const { greatestEndTimestamp, replacedSnapshotHashes, snapshotHash } = snapshotInfo
+
+  const processedSnapshots = await components.processedSnapshotStorage.filterProcessedSnapshotsFrom([
+    snapshotHash,
+    ...replacedSnapshotHashes.flat()
+  ])
+
+  const snapshotWasProcessed = processedSnapshots.has(snapshotHash)
+  const aReplacedGroupWasProcessed = replacedSnapshotHashes.some(
+    (replacedGroup) => replacedGroup.length > 0 && replacedGroup.every((s) => processedSnapshots.has(s))
+  )
+
+  const shouldProcessSnapshot =
+    // if the snapshot has newer entities than the genesisPoint (filter)
+    greatestEndTimestamp > genesisTimestamp &&
+    !snapshotWasProcessed &&
+    !aReplacedGroupWasProcessed &&
+    !(await components.snapshotStorage.has(snapshotHash))
+  if (shouldProcessSnapshot) {
+    await deployEntitiesFromSnapshot(components, options, snapshotInfo.snapshotHash, snapshotInfo.servers, shouldStop)
+  }
+  if (!snapshotWasProcessed && aReplacedGroupWasProcessed) {
+    await components.processedSnapshotStorage.markSnapshotAsProcessed(snapshotHash)
+  }
+}
 
 /**
  * @public
@@ -72,31 +106,6 @@ export async function createSynchronizer(
     components.metrics.observe('dcl_syncing_servers', {}, syncingServers.size)
   }
 
-  async function syncFromPointerChanges(contentServer: string, options: PointerChangesDeployedEntityStreamOptions) {
-    const deployments = getDeployedEntitiesStreamFromPointerChanges(components, options, contentServer)
-
-    for await (const deployment of deployments) {
-      // if the stream is closed then we should not process more deployments
-      if (isStopped) {
-        logger.debug('Canceling running stream')
-        return
-      }
-
-      await components.deployer.deployEntity(
-        {
-          ...deployment,
-          markAsDeployed: async function () {
-            components.metrics.increment('dcl_entities_deployments_processed_total', { source: 'pointer-changes' })
-          }
-        },
-        [contentServer]
-      )
-
-      // update greatest processed timestamp
-      increaseLastTimestamp(contentServer, deployment.localTimestamp)
-    }
-  }
-
   async function syncFromSnapshots(serversToSync: Set<string>): Promise<Set<string>> {
     const snapshotInfoByHash: Map<string, SnapshotInfo> = new Map()
     const snapshotLastTimestampByServer: Map<string, number> = new Map()
@@ -130,10 +139,6 @@ export async function createSynchronizer(
       }
     }
 
-    // Each time a new processedSnapshots is created because it has data that needs to be ephimeral between multiple
-    // calls of this method, for example 'snapshotsBeingStreamed'. It's proper of an execution.
-    const processedSnapshots = createProcessedSnapshotsComponent(components)
-
     logger.info('Starting to deploy entities from snapshots.')
 
     const deploymentsProcessorsQueue = new PQueue({
@@ -144,31 +149,13 @@ export async function createSynchronizer(
     for (const snapshotInfo of snapshotInfoByHash.values()) {
       deploymentsProcessorsQueue
         .add(async () => {
-          const stream = getDeployedEntitiesStreamFromSnapshot(
-            { ...components, processedSnapshots },
+          await processSnapshotAndMarkAsProcessedIfNeeded(
+            components,
+            snapshotInfo,
             options,
-            snapshotInfo
+            genesisTimestamp,
+            () => isStopped
           )
-          for await (const entity of stream) {
-            if (isStopped) {
-              logger.debug('Canceling running sync snapshots stream')
-              return
-            }
-            // schedule the deployment in the deployer. the await DOES NOT mean that the entity was deployed entirely
-            // if the deployer is not synchronous. For example, the batchDeployer used in the catalyst just add it in a queue.
-            // Once the entity is truly deployed, it should call the method 'markAsDeployed'
-            await components.deployer.deployEntity(
-              {
-                ...entity,
-                markAsDeployed: async function () {
-                  components.metrics.increment('dcl_entities_deployments_processed_total', { source: 'snapshots' })
-                  await processedSnapshots.entityProcessedFrom(entity.snapshotHash)
-                },
-                snapshotHash: snapshotInfo.snapshotHash
-              },
-              entity.servers
-            )
-          }
         })
         .catch(logger.error)
     }
@@ -211,11 +198,13 @@ export async function createSynchronizer(
             )
           }
           const fromTimestamp = Math.max(lastEntityTimestamp - 20 * 60_000, 0)
-          await syncFromPointerChanges(bootstrappingServersFromPointerChange, {
-            ...options,
-            fromTimestamp,
-            pointerChangesWaitTime: 0
-          })
+          await deployEntitiesFromPointerChanges(
+            components,
+            { ...options, fromTimestamp, pointerChangesWaitTime: 0 },
+            bootstrappingServersFromPointerChange,
+            () => isStopped,
+            increaseLastTimestamp
+          )
           syncingServers.add(bootstrappingServersFromPointerChange)
           bootstrappingServersFromPointerChanges.delete(bootstrappingServersFromPointerChange)
         } catch (error) {
@@ -254,7 +243,13 @@ export async function createSynchronizer(
         async action() {
           try {
             components.metrics.increment('dcl_deployments_stream_reconnection_count', metricsLabels)
-            await syncFromPointerChanges(contentServer, { ...options, fromTimestamp })
+            await deployEntitiesFromPointerChanges(
+              components,
+              { ...options, fromTimestamp },
+              contentServer,
+              () => isStopped,
+              increaseLastTimestamp
+            )
           } catch (e: any) {
             // we don't log the exception here because createExponentialFallofRetry(logger, options) receives the logger
             components.metrics.increment('dcl_deployments_stream_failure_count', metricsLabels)
