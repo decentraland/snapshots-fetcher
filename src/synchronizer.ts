@@ -68,8 +68,14 @@ export async function createSynchronizer(
   const syncingServers: Set<string> = new Set()
   const lastEntityTimestampFromSnapshotsByServer: Map<string, number> = new Map()
   const syncJobs: ExponentialFallofRetryComponent[] = []
+
+  let isStopped = false
   const regularSyncFromSnapshotsAfterBootstrapJob = createExponentialFallofRetry(logger, {
     async action() {
+      if (isStopped) {
+        return
+      }
+
       try {
         await syncFromSnapshots(syncingServers)
       } catch (e: any) {
@@ -84,7 +90,6 @@ export async function createSynchronizer(
   })
   let firstSyncJobStarted = false
   let snapshotsSyncTimeout: NodeJS.Timeout | undefined
-  let isStopped = false
 
   function increaseLastTimestamp(contentServer: string, ...newTimestamps: number[]) {
     // If the server doesn't have snapshots yet (for example new servers), then we set to genesisTimestamp
@@ -221,14 +226,6 @@ export async function createSynchronizer(
     reportServerStateMetric()
   }
 
-  async function bootstrap() {
-    logger.info(`Bootstrap (snapshots): ${Array.from(bootstrappingServersFromSnapshots)}`)
-    await bootstrapFromSnapshots()
-    logger.info(`Bootstrap (pointer-changes): ${Array.from(bootstrappingServersFromPointerChanges)}`)
-    await bootstrapFromPointerChanges()
-    logger.debug(`Bootstrap finished.`)
-  }
-
   const deployPointerChangesAfterBootstrapJobManager = createJobLifecycleManagerComponent(components, {
     jobManagerName: 'SynchronizationJobManager',
     createJob(contentServer) {
@@ -241,6 +238,10 @@ export async function createSynchronizer(
       const metricsLabels = contentServerMetricLabels(contentServer)
       const exponentialFallofRetryComponent = createExponentialFallofRetry(logger, {
         async action() {
+          if (isStopped) {
+            return
+          }
+
           try {
             components.metrics.increment('dcl_deployments_stream_reconnection_count', metricsLabels)
             await deployEntitiesFromPointerChanges(
@@ -270,9 +271,23 @@ export async function createSynchronizer(
     const syncFinished = future<void>()
     const syncRetry = createExponentialFallofRetry(logger, {
       async action() {
-        await bootstrap()
+        if (isStopped) {
+          return
+        }
+
+        logger.info(`Bootstrap (snapshots): ${Array.from(bootstrappingServersFromSnapshots)}`)
+        await bootstrapFromSnapshots()
+
+        logger.info(`Bootstrap (pointer-changes): ${Array.from(bootstrappingServersFromPointerChanges)}`)
+        await bootstrapFromPointerChanges()
+
         logger.info('Bootstrap finished')
-        if (!isStopped && !firstBootstrapTryFinished) {
+
+        if (isStopped) {
+          return
+        }
+
+        if (!firstBootstrapTryFinished) {
           firstBootstrapTryFinished = true
           if (onFirstBootstrapFinishedCallbacks.length > 0) {
             const runningCallbacks = onFirstBootstrapFinishedCallbacks.map((cb) => cb())
