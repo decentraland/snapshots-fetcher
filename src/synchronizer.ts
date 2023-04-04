@@ -117,13 +117,13 @@ export async function createSynchronizer(
     for (const server of serversToSync) {
       try {
         const snapshots = await getSnapshots(components, server, options.requestMaxRetries)
-        snapshotLastTimestampByServer.set(server, Math.max(...snapshots.map((s) => s.lastIncludedDeploymentTimestamp)))
+        snapshotLastTimestampByServer.set(server, Math.max(...snapshots.map((s) => s.timeRange.endTimestamp)))
         for (const snapshot of snapshots) {
           const snapshotInfo = snapshotInfoByHash.get(snapshot.hash)
 
           const greatestEndTimestamp = snapshotInfo
-            ? Math.max(snapshotInfo.greatestEndTimestamp, snapshot.lastIncludedDeploymentTimestamp)
-            : snapshot.lastIncludedDeploymentTimestamp
+            ? Math.max(snapshotInfo.greatestEndTimestamp, snapshot.timeRange.endTimestamp)
+            : snapshot.timeRange.endTimestamp
 
           const replacedSnapshotHashes = snapshotInfo?.replacedSnapshotHashes ?? []
           if (snapshot.replacedSnapshotHashes) {
