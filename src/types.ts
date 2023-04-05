@@ -220,12 +220,22 @@ export type SynchronizerComponent = IBaseComponent & {
 }
 
 /**
- * @internal
+ * @public
  */
-export type Snapshot = {
+export type SnapshotMetadata = {
   hash: string
-  lastIncludedDeploymentTimestamp: number
-  replacedSnapshotHashes?: string[] | undefined
+  timeRange: TimeRange
+  numberOfEntities: number
+  replacedSnapshotHashes?: string[]
+  generationTimestamp: number
+}
+
+/**
+ * @public
+ */
+export type TimeRange = {
+  initTimestamp: number
+  endTimestamp: number
 }
 
 /**

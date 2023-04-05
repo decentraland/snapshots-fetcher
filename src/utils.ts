@@ -9,11 +9,12 @@ import { IFetchComponent } from '@well-known-components/http-server'
 import { Server, SnapshotsFetcherComponents } from './types'
 import { ContentServerMetricLabels } from './metrics'
 import { hashV0, hashV1 } from '@dcl/hashing'
+import * as fetch from 'node-fetch'
 
 const streamPipeline = promisify(pipeline)
 
-export async function fetchJson(url: string, fetcher: IFetchComponent): Promise<any> {
-  const response = await fetcher.fetch(url)
+export async function fetchJson(url: string, fetcher: IFetchComponent, init?: fetch.RequestInit): Promise<any> {
+  const response = await fetcher.fetch(url, init)
 
   if (!response.ok) {
     throw new Error('Error fetching ' + url + '. Status code was: ' + response.status)
