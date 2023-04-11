@@ -308,9 +308,9 @@
     destroy "^1.2.0"
 
 "@dcl/eslint-config@^1.1.0":
-  version "1.1.0"
-  resolved "https://registry.yarnpkg.com/@dcl/eslint-config/-/eslint-config-1.1.0.tgz#8ff58ee8171f7928bd9b46fa5bb6b4e659e203f0"
-  integrity sha512-TkECgjNBi/0ascn8M2n6V5l+B3lSyacokF++nnhB0x+gTOvUESmBmIyqJc8uBQYRRfErFEhnwszREu5dy74bBQ==
+  version "1.1.1"
+  resolved "https://registry.yarnpkg.com/@dcl/eslint-config/-/eslint-config-1.1.1.tgz#42dc5a4d2f69d7461e87d7b2475380e5746342c7"
+  integrity sha512-4bOEgSu5APHVs4s5I1f0zWukUpKl9b5h5auixwmbRW4gwsMkWAZLNc+77Ne1iG5t1U7hsMpfJO55w0hFewtV/A==
   dependencies:
     "@typescript-eslint/eslint-plugin" "^5.50.0"
     "@typescript-eslint/parser" "^5.50.0"
@@ -335,9 +335,9 @@
     multiformats "^9.6.3"
 
 "@dcl/schemas@^6.2.0":
-  version "6.4.2"
-  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-6.4.2.tgz#0f318b7b74943cae9288b24b3ebd8881aea057d3"
-  integrity sha512-yO8GgC7RIU17951VBGIx2tA0xMVRv6Ia7rR6V97yY77/fYLAIn1FqW/20MEmonDzyJJ5YnuDa/8gVk3XusIXYA==
+  version "6.15.0"
+  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-6.15.0.tgz#18887aa8ad64b26eec1144cdf44568ebdcc6224c"
+  integrity sha512-JepCFaNcaeTrONVh/TlCsajhogKhSfLjL1pAJfKIbRU/3tcZpfyWP2vka+s53pYVQbufQ1+MJzKIuG4+urC/dA==
   dependencies:
     ajv "^8.11.0"
     ajv-errors "^3.0.0"
@@ -1224,9 +1224,9 @@
     typed-url-params "^1.0.1"
 
 "@well-known-components/logger@^3.0.0":
-  version "3.0.0"
-  resolved "https://registry.yarnpkg.com/@well-known-components/logger/-/logger-3.0.0.tgz#19532f6027de92a4e85ed2bf50f3c7171c177531"
-  integrity sha512-UbVTSwV+9VtP1Z0sBW+ICbPYJfvy80sJNJNGHi33SeXq4rNSJRsFK8t7LWTipJNLpZRHyMNq4P9swBBB8yAyFw==
+  version "3.1.2"
+  resolved "https://registry.yarnpkg.com/@well-known-components/logger/-/logger-3.1.2.tgz#0644e7a25515235b7ffee4d6c1f0a34fd94b910e"
+  integrity sha512-nT2ULsvtxcaehnUPcmRfVWIspVq6iYTPTzs5D9lBxqE3Pt+j5StzPfo814IqSo4xhN9cJhJAQ/EggMmKuYMaZg==
 
 "@well-known-components/metrics@^2.0.0":
   version "2.0.1"
