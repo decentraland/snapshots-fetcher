@@ -3,9 +3,10 @@ import * as nodeFetch from 'node-fetch'
 import { readFileSync } from 'fs'
 import { readdir, stat } from 'fs/promises'
 import { resolve } from 'path'
-import { MockedStorage } from '@dcl/catalyst-storage/dist/MockedStorage'
+import { createInMemoryStorage } from '@dcl/catalyst-storage'
 import { IContentStorageComponent } from '@dcl/catalyst-storage'
 import { IProcessedSnapshotStorageComponent } from '../src/types'
+import { Readable } from "stream";
 
 export function createFetchComponent() {
   const fetch: IFetchComponent = {
@@ -23,7 +24,7 @@ export async function createStorageComponent(): Promise<IContentStorageComponent
 
   const files = await readdir(rootFixturesDir)
 
-  const mockFileSystem = new MockedStorage()
+  const mockFileSystem = createInMemoryStorage()
 
   async function reset() {
     return Promise.all(
@@ -31,7 +32,7 @@ export async function createStorageComponent(): Promise<IContentStorageComponent
         const fileName = resolve(rootFixturesDir, file)
         const stats = await stat(fileName)
         if (stats.isFile()) {
-          mockFileSystem.storage.set(file, readFileSync(fileName))
+          await mockFileSystem.storeStream(file, Readable.from(readFileSync(fileName)))
         }
       })
     )
