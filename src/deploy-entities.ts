@@ -72,10 +72,16 @@ export async function deployEntitiesFromSnapshot(
       components.metrics.increment('dcl_processed_snapshots_total', { state: 'saved' })
     }
   }
+  let streamStarted = false
   for await (const entity of stream) {
     if (shouldStopStream()) {
       logger.debug('Canceling running sync snapshots stream')
+      components.metrics.increment('dcl_processed_snapshots_total', { state: 'stream_end' })
       return
+    }
+    if (!streamStarted) {
+      streamStarted = true
+      components.metrics.increment('dcl_processed_snapshots_total', { state: 'stream_start' })
     }
     numberOfStreamedEntities++
     // schedule the deployment in the deployer. the await DOES NOT mean that the entity was deployed entirely
