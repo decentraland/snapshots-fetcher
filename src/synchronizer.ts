@@ -10,10 +10,11 @@ import { ExponentialFallofRetryComponent, createExponentialFallofRetry } from '.
 import { createJobLifecycleManagerComponent } from './job-lifecycle-manager'
 import {
   IDeployerComponent,
-  SnapshotInfo,
+  SnapshotMetadata,
   SnapshotsFetcherComponents,
   SynchronizerComponent,
-  SynchronizerOptions
+  SynchronizerOptions,
+  TimeRange
 } from './types'
 import { contentServerMetricLabels } from './utils'
 
@@ -77,68 +78,57 @@ export async function createSynchronizer(
   }
 
   async function syncFromSnapshots(serversToSync: Set<string>): Promise<Set<string>> {
-    const snapshotInfoByHash: Map<string, SnapshotInfo> = new Map()
+    type Snapshot = SnapshotMetadata & { server: string }
+    const snapshotsByHash: Map<string, Snapshot[]> = new Map()
     const snapshotLastTimestampByServer: Map<string, number> = new Map()
     for (const server of serversToSync) {
       try {
         const snapshots = await getSnapshots(components, server, options.requestMaxRetries)
         snapshotLastTimestampByServer.set(server, Math.max(...snapshots.map((s) => s.timeRange.endTimestamp)))
         for (const snapshot of snapshots) {
-          const snapshotInfo = snapshotInfoByHash.get(snapshot.hash)
-
-          const greatestEndTimestamp = snapshotInfo
-            ? Math.max(snapshotInfo.greatestEndTimestamp, snapshot.timeRange.endTimestamp)
-            : snapshot.timeRange.endTimestamp
-
-          const replacedSnapshotHashes = snapshotInfo?.replacedSnapshotHashes ?? []
-          if (snapshot.replacedSnapshotHashes) {
-            replacedSnapshotHashes.push(snapshot.replacedSnapshotHashes)
-          }
-          const servers = snapshotInfo?.servers ?? new Set()
-          servers.add(server)
-
-          snapshotInfoByHash.set(snapshot.hash, {
-            snapshotHash: snapshot.hash,
-            greatestEndTimestamp,
-            replacedSnapshotHashes,
-            servers
-          })
+          const snapshotMetadatas = snapshotsByHash.get(snapshot.hash) ?? []
+          snapshotMetadatas.push({ ...snapshot, server })
+          snapshotsByHash.set(snapshot.hash, snapshotMetadatas)
         }
       } catch (error) {
         logger.info(`Error getting snapshots from ${server}.`)
       }
     }
 
-    logger.info('Starting to deploy entities from snapshots.')
-
     const deploymentsProcessorsQueue = new PQueue({
       concurrency: 10,
-      autoStart: true
+      autoStart: false
     })
 
-    for (const snapshotInfo of snapshotInfoByHash.values()) {
+    const timeRangesOfEntitiesToDeploy: TimeRange[] = []
+    for (const [snapshotHash, snapshots] of snapshotsByHash) {
+      const replacedSnapshotHashes = snapshots.map((s) => s.replacedSnapshotHashes ?? [])
+      const greatestEndTimestamp = Math.max(...snapshots.map((s) => s.timeRange.endTimestamp))
       const shouldProcessSnapshot = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(
         components,
         genesisTimestamp,
-        snapshotInfo
+        snapshotHash,
+        greatestEndTimestamp,
+        replacedSnapshotHashes
       )
       if (shouldProcessSnapshot) {
+        const servers = new Set(snapshots.map((s) => s.server))
+        timeRangesOfEntitiesToDeploy.push(...snapshots.map((s) => s.timeRange))
         deploymentsProcessorsQueue
           .add(async () => {
-            await deployEntitiesFromSnapshot(
-              components,
-              options,
-              snapshotInfo.snapshotHash,
-              snapshotInfo.servers,
-              () => isStopped
-            )
+            await deployEntitiesFromSnapshot(components, options, snapshotHash, servers, () => isStopped)
           })
           .catch(logger.error)
       }
     }
 
-    await deploymentsProcessorsQueue.onIdle()
+    logger.info('Warming up deployer.')
+    await components.deployer.prepareForDeploymentsIn(timeRangesOfEntitiesToDeploy)
 
+    logger.info('Starting to deploy entities from snapshots.')
+    deploymentsProcessorsQueue.start()
+
+    await deploymentsProcessorsQueue.onIdle()
     logger.info('End deploying entities from snapshots.')
 
     // Once the snapshots were correctly streamed, update the last entity timestamps

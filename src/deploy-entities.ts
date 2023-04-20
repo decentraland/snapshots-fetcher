@@ -3,7 +3,6 @@ import {
   IDeployerComponent,
   PointerChangesDeployedEntityStreamOptions,
   SnapshotDeployedEntityStreamOptions,
-  SnapshotInfo,
   SnapshotsFetcherComponents
 } from './types'
 
@@ -113,10 +112,10 @@ export async function shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded
     'processedSnapshotStorage' | 'snapshotStorage' | 'metrics' | 'logs' | 'storage'
   >,
   genesisTimestamp: number,
-  snapshotInfo: SnapshotInfo
+  snapshotHash: string,
+  greatestEndTimestamp: number,
+  replacedSnapshotHashes: string[][]
 ): Promise<boolean> {
-  const { greatestEndTimestamp, replacedSnapshotHashes, snapshotHash } = snapshotInfo
-
   const processedSnapshots = await components.processedSnapshotStorage.filterProcessedSnapshotsFrom([
     snapshotHash,
     ...replacedSnapshotHashes.flat()

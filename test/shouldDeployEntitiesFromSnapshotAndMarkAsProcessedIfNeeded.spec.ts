@@ -17,12 +17,13 @@ describe('shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded', () => {
   test('should not process an already processed snapshot', ({ components }) => {
     it('run test', async () => {
       components.processedSnapshotStorage.markSnapshotAsProcessed(processedSnapshotHash)
-      const shouldProcess = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
-        snapshotHash: processedSnapshotHash,
-        greatestEndTimestamp: genesisTimestamp + 1,
-        replacedSnapshotHashes: [],
-        servers: new Set([])
-      })
+      const shouldProcess = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(
+        components,
+        genesisTimestamp,
+        processedSnapshotHash,
+        genesisTimestamp + 1,
+        []
+      )
       expect(shouldProcess).toBeFalsy()
     })
   })
@@ -31,36 +32,35 @@ describe('shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded', () => {
     it('run test', async () => {
       components.processedSnapshotStorage.markSnapshotAsProcessed(processedSnapshotHash)
       const markSnapshotAsProcessed = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
-      await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
-        snapshotHash: processedSnapshotHash,
-        greatestEndTimestamp: genesisTimestamp + 1,
-        replacedSnapshotHashes: [],
-        servers: new Set([])
-      })
+      await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(
+        components,
+        genesisTimestamp,
+        processedSnapshotHash,
+        genesisTimestamp + 1,
+        []
+      )
       expect(markSnapshotAsProcessed).not.toBeCalled()
     })
   })
 
   test('should not process snapshot with greatest timestamp smaller or equal than genesis timestamp', ({ components }) => {
     it('run test', async () => {
-      const shouldProcess = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
-        snapshotHash: processedSnapshotHash,
-        greatestEndTimestamp: 0,
-        replacedSnapshotHashes: [],
-        servers: new Set([])
-      })
+      const shouldProcess = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp,
+        processedSnapshotHash,
+        0,
+        []
+      )
       expect(shouldProcess).toBeFalsy()
     })
   })
 
   test('should process snapshot with greatest timestamp bigger than genesis timestamp', ({ components }) => {
     it('run test', async () => {
-      const shouldProcess = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
-        snapshotHash: processedSnapshotHash,
-        greatestEndTimestamp: 1,
-        replacedSnapshotHashes: [],
-        servers: new Set([])
-      })
+      const shouldProcess = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp,
+        processedSnapshotHash,
+        1,
+        []
+      )
       expect(shouldProcess).toBeTruthy()
     })
   })
@@ -70,12 +70,13 @@ describe('shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded', () => {
       jest.spyOn(components.snapshotStorage, 'has').mockImplementation(async (hash) => {
         return hash === processedSnapshotHash
       })
-      const shouldProcess = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
-        snapshotHash: processedSnapshotHash,
-        greatestEndTimestamp: 1,
-        replacedSnapshotHashes: [],
-        servers: new Set([])
-      })
+      const shouldProcess = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(
+        components,
+        genesisTimestamp,
+        processedSnapshotHash,
+        1,
+        []
+      )
       expect(shouldProcess).toBeFalsy()
     })
   })
@@ -85,12 +86,13 @@ describe('shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded', () => {
       components.processedSnapshotStorage.markSnapshotAsProcessed(h1)
       components.processedSnapshotStorage.markSnapshotAsProcessed(h2)
       components.processedSnapshotStorage.markSnapshotAsProcessed(h3)
-      const shouldProcess = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
-        snapshotHash: processedSnapshotHash,
-        greatestEndTimestamp: 1,
-        replacedSnapshotHashes: [[h1, h2, h3]],
-        servers: new Set([])
-      })
+      const shouldProcess = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(
+        components,
+        genesisTimestamp,
+        processedSnapshotHash,
+        1,
+        [[h1, h2, h3]]
+      )
       expect(shouldProcess).toBeFalsy()
     })
   })
@@ -101,12 +103,13 @@ describe('shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded', () => {
       components.processedSnapshotStorage.markSnapshotAsProcessed(h2)
       components.processedSnapshotStorage.markSnapshotAsProcessed(h3)
       const markAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
-      await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
-        snapshotHash: processedSnapshotHash,
-        greatestEndTimestamp: 1,
-        replacedSnapshotHashes: [[h1, h2, h3]],
-        servers: new Set([])
-      })
+      await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(
+        components,
+        genesisTimestamp,
+        processedSnapshotHash,
+        1,
+        [[h1, h2, h3]]
+      )
       expect(markAsProcessedSpy).toBeCalledWith(processedSnapshotHash)
     })
   })
@@ -117,12 +120,13 @@ describe('shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded', () => {
       components.processedSnapshotStorage.markSnapshotAsProcessed(h2)
       components.processedSnapshotStorage.markSnapshotAsProcessed(h3)
       const markAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
-      const shouldProcess = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
-        snapshotHash: processedSnapshotHash,
-        greatestEndTimestamp: 1,
-        replacedSnapshotHashes: [[h1, h2, h3], ['non-processed']],
-        servers: new Set([])
-      })
+      const shouldProcess = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(
+        components,
+        genesisTimestamp,
+        processedSnapshotHash,
+        1,
+        [[h1, h2, h3], ['non-processed']]
+      )
       expect(shouldProcess).toBeFalsy()
       expect(markAsProcessedSpy).toBeCalledWith(processedSnapshotHash)
     })
@@ -134,12 +138,13 @@ describe('shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded', () => {
       components.processedSnapshotStorage.markSnapshotAsProcessed(h2)
       components.processedSnapshotStorage.markSnapshotAsProcessed(h3)
       const markAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
-      const shouldProcess = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
-        snapshotHash: processedSnapshotHash,
-        greatestEndTimestamp: 1,
-        replacedSnapshotHashes: [[h1, h2, 'non-processed'], [h3, 'non-processed']],
-        servers: new Set([])
-      })
+      const shouldProcess = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(
+        components,
+        genesisTimestamp,
+        processedSnapshotHash,
+        1,
+        [[h1, h2, 'non-processed'], [h3, 'non-processed']]
+      )
       expect(shouldProcess).toBeTruthy()
       expect(markAsProcessedSpy).not.toBeCalledWith(processedSnapshotHash)
       const processed = await components.processedSnapshotStorage.filterProcessedSnapshotsFrom([processedSnapshotHash, 'non-processed'])

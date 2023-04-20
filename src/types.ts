@@ -62,6 +62,12 @@ export type IDeployerComponent = {
    * finished and there are no more queued jobs.
    */
   onIdle(): Promise<void>
+  /**
+   * Before sending entities to schedule deployments from snapshots, this function will be called to warm up the deployer.
+   * This migth be useful for cases where a warmup could improve the performance of the deployments. For example, filling up a
+   * bloom filter with the already deployed entities in the specified #timeRanges.
+   */
+  prepareForDeploymentsIn(timeRanges: TimeRange[]): Promise<void>
 }
 
 /**
@@ -236,14 +242,4 @@ export type SnapshotMetadata = {
 export type TimeRange = {
   initTimestamp: number
   endTimestamp: number
-}
-
-/**
- * @internal
- */
-export type SnapshotInfo = {
-  snapshotHash: string
-  greatestEndTimestamp: number
-  replacedSnapshotHashes: string[][]
-  servers: Set<string>
 }
