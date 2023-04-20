@@ -1,6 +1,6 @@
-import { IDeployerComponent } from '../src/types'
-import { processSnapshotAndMarkAsProcessedIfNeeded } from '../src/synchronizer'
 import * as deployEntities from '../src/deploy-entities'
+import { processSnapshotAndMarkAsProcessedIfNeeded } from '../src/synchronizer'
+import { IDeployerComponent } from '../src/types'
 import { test, TestComponents } from './components'
 
 describe('processSnapshotAndMarkAsProcessedIfNeeded', () => {

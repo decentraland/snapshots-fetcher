@@ -38,6 +38,7 @@ export type SnapshotsFetcherComponents = {
   storage: IContentStorageComponent
   processedSnapshotStorage: IProcessedSnapshotStorageComponent
   snapshotStorage: ISnapshotStorageComponent
+  deployedEntitiesFilter?: DeployedEntitiesFilterComponent
 }
 
 export type DeployableEntity = SyncDeployment & {
@@ -246,4 +247,8 @@ export type SnapshotInfo = {
   greatestEndTimestamp: number
   replacedSnapshotHashes: string[][]
   servers: Set<string>
+}
+
+export type DeployedEntitiesFilterComponent = {
+  fillBetween(timeRange: TimeRange): Promise<void>
 }
