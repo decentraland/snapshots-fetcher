@@ -1,8 +1,8 @@
-import { shouldProcessSnapshotAndMarkAsProcessedIfNeeded } from '../src/synchronizer'
+import { shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded } from '../src/deploy-entities'
 import { test } from './components'
 
 
-describe('shouldProcessSnapshotAndMarkAsProcessedIfNeeded', () => {
+describe('shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded', () => {
 
   const processedSnapshotHash = 'someHash'
   const h1 = 'h1'
@@ -17,7 +17,7 @@ describe('shouldProcessSnapshotAndMarkAsProcessedIfNeeded', () => {
   test('should not process an already processed snapshot', ({ components }) => {
     it('run test', async () => {
       components.processedSnapshotStorage.markSnapshotAsProcessed(processedSnapshotHash)
-      const shouldProcess = await shouldProcessSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
+      const shouldProcess = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
         snapshotHash: processedSnapshotHash,
         greatestEndTimestamp: genesisTimestamp + 1,
         replacedSnapshotHashes: [],
@@ -31,7 +31,7 @@ describe('shouldProcessSnapshotAndMarkAsProcessedIfNeeded', () => {
     it('run test', async () => {
       components.processedSnapshotStorage.markSnapshotAsProcessed(processedSnapshotHash)
       const markSnapshotAsProcessed = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
-      await shouldProcessSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
+      await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
         snapshotHash: processedSnapshotHash,
         greatestEndTimestamp: genesisTimestamp + 1,
         replacedSnapshotHashes: [],
@@ -43,7 +43,7 @@ describe('shouldProcessSnapshotAndMarkAsProcessedIfNeeded', () => {
 
   test('should not process snapshot with greatest timestamp smaller or equal than genesis timestamp', ({ components }) => {
     it('run test', async () => {
-      const shouldProcess = await shouldProcessSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
+      const shouldProcess = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
         snapshotHash: processedSnapshotHash,
         greatestEndTimestamp: 0,
         replacedSnapshotHashes: [],
@@ -55,7 +55,7 @@ describe('shouldProcessSnapshotAndMarkAsProcessedIfNeeded', () => {
 
   test('should process snapshot with greatest timestamp bigger than genesis timestamp', ({ components }) => {
     it('run test', async () => {
-      const shouldProcess = await shouldProcessSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
+      const shouldProcess = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
         snapshotHash: processedSnapshotHash,
         greatestEndTimestamp: 1,
         replacedSnapshotHashes: [],
@@ -70,7 +70,7 @@ describe('shouldProcessSnapshotAndMarkAsProcessedIfNeeded', () => {
       jest.spyOn(components.snapshotStorage, 'has').mockImplementation(async (hash) => {
         return hash === processedSnapshotHash
       })
-      const shouldProcess = await shouldProcessSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
+      const shouldProcess = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
         snapshotHash: processedSnapshotHash,
         greatestEndTimestamp: 1,
         replacedSnapshotHashes: [],
@@ -85,7 +85,7 @@ describe('shouldProcessSnapshotAndMarkAsProcessedIfNeeded', () => {
       components.processedSnapshotStorage.markSnapshotAsProcessed(h1)
       components.processedSnapshotStorage.markSnapshotAsProcessed(h2)
       components.processedSnapshotStorage.markSnapshotAsProcessed(h3)
-      const shouldProcess = await shouldProcessSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
+      const shouldProcess = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
         snapshotHash: processedSnapshotHash,
         greatestEndTimestamp: 1,
         replacedSnapshotHashes: [[h1, h2, h3]],
@@ -101,7 +101,7 @@ describe('shouldProcessSnapshotAndMarkAsProcessedIfNeeded', () => {
       components.processedSnapshotStorage.markSnapshotAsProcessed(h2)
       components.processedSnapshotStorage.markSnapshotAsProcessed(h3)
       const markAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
-      await shouldProcessSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
+      await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
         snapshotHash: processedSnapshotHash,
         greatestEndTimestamp: 1,
         replacedSnapshotHashes: [[h1, h2, h3]],
@@ -117,7 +117,7 @@ describe('shouldProcessSnapshotAndMarkAsProcessedIfNeeded', () => {
       components.processedSnapshotStorage.markSnapshotAsProcessed(h2)
       components.processedSnapshotStorage.markSnapshotAsProcessed(h3)
       const markAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
-      const shouldProcess = await shouldProcessSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
+      const shouldProcess = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
         snapshotHash: processedSnapshotHash,
         greatestEndTimestamp: 1,
         replacedSnapshotHashes: [[h1, h2, h3], ['non-processed']],
@@ -134,7 +134,7 @@ describe('shouldProcessSnapshotAndMarkAsProcessedIfNeeded', () => {
       components.processedSnapshotStorage.markSnapshotAsProcessed(h2)
       components.processedSnapshotStorage.markSnapshotAsProcessed(h3)
       const markAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
-      const shouldProcess = await shouldProcessSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
+      const shouldProcess = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(components, genesisTimestamp, {
         snapshotHash: processedSnapshotHash,
         greatestEndTimestamp: 1,
         replacedSnapshotHashes: [[h1, h2, 'non-processed'], [h3, 'non-processed']],

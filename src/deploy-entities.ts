@@ -3,6 +3,7 @@ import {
   IDeployerComponent,
   PointerChangesDeployedEntityStreamOptions,
   SnapshotDeployedEntityStreamOptions,
+  SnapshotInfo,
   SnapshotsFetcherComponents
 } from './types'
 
@@ -98,4 +99,41 @@ export async function deployEntitiesFromSnapshot(
   components.metrics.increment('dcl_processed_snapshots_total', { state: 'stream_end' })
   logger.info('Stream ended.', { snapshotHash })
   await saveIfStreamEndedAndAllEntitiesWereProcessed()
+}
+
+/**
+ * This function decides if the entities of a snapshot should be deployed or not. It also marks the snapshot as
+ * processed if the snapshot was not processed, but at least one whole group of snapshot hashes were processed of one
+ * of the replaced ones.
+ * @public
+ */
+export async function shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(
+  components: Pick<
+    SnapshotsFetcherComponents,
+    'processedSnapshotStorage' | 'snapshotStorage' | 'metrics' | 'logs' | 'storage'
+  >,
+  genesisTimestamp: number,
+  snapshotInfo: SnapshotInfo
+): Promise<boolean> {
+  const { greatestEndTimestamp, replacedSnapshotHashes, snapshotHash } = snapshotInfo
+
+  const processedSnapshots = await components.processedSnapshotStorage.filterProcessedSnapshotsFrom([
+    snapshotHash,
+    ...replacedSnapshotHashes.flat()
+  ])
+
+  const snapshotWasProcessed = processedSnapshots.has(snapshotHash)
+  const aReplacedGroupWasProcessed = replacedSnapshotHashes.some(
+    (replacedGroup) => replacedGroup.length > 0 && replacedGroup.every((s) => processedSnapshots.has(s))
+  )
+
+  if (!snapshotWasProcessed) {
+    if (!aReplacedGroupWasProcessed) {
+      // if the snapshot has newer entities than the genesisPoint (filter)
+      return greatestEndTimestamp > genesisTimestamp && !(await components.snapshotStorage.has(snapshotHash))
+    } else {
+      await components.processedSnapshotStorage.markSnapshotAsProcessed(snapshotHash)
+    }
+  }
+  return false
 }
