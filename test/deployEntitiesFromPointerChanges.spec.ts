@@ -1,7 +1,7 @@
-import { DeployableEntity, IDeployerComponent } from '../src/types'
 import { deployEntitiesFromPointerChanges } from '../src/deploy-entities'
 import * as streamEntities from '../src/stream-entities'
-import { test, TestComponents } from './components'
+import { DeployableEntity, IDeployerComponent } from '../src/types'
+import { TestComponents, test } from './components'
 
 describe('deployEntitiesFromPointerChanges', () => {
 
@@ -13,7 +13,8 @@ describe('deployEntitiesFromPointerChanges', () => {
   }
   const deployerMock = {
     scheduleEntityDeployment: jest.fn(),
-    onIdle: jest.fn()
+    onIdle: jest.fn(),
+    prepareForDeploymentsIn: jest.fn()
   }
 
   beforeEach(() => {
@@ -70,7 +71,8 @@ describe('deployEntitiesFromPointerChanges', () => {
             await entity.markAsDeployed()
           }
         },
-        onIdle: jest.fn()
+        onIdle: jest.fn(),
+        prepareForDeploymentsIn: jest.fn()
       }
       const scheduleEntityDeploymentSpy = jest.spyOn(deployerMock, 'scheduleEntityDeployment')
       const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')

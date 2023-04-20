@@ -1,11 +1,11 @@
-import { createSynchronizer } from "../src/synchronizer"
-import { resolve } from 'path'
-import { test } from './components'
-import future from 'fp-future'
-import { sleep } from "../src/utils"
-import { createReadStream, unlinkSync } from 'fs'
 import { AuthLinkType } from "@dcl/schemas"
+import future from 'fp-future'
+import { createReadStream, unlinkSync } from 'fs'
+import { resolve } from 'path'
+import { createSynchronizer } from "../src/synchronizer"
 import { DeployableEntity } from "../src/types"
+import { sleep } from "../src/utils"
+import { test } from './components'
 
 test('synchronizer deploys entities from snapshots and pointer-changes at bootstrap', ({ components, stubComponents }) => {
   const authChain = [
@@ -88,7 +88,8 @@ test('synchronizer deploys entities from snapshots and pointer-changes at bootst
             }
             deployedEntities.add(entity.entityId)
           },
-          onIdle: jest.fn()
+          onIdle: jest.fn(),
+          prepareForDeploymentsIn: jest.fn()
         }
       },
       {
@@ -198,7 +199,8 @@ test('synchronizer should not deploy entities from snapshot if it has itdx as ow
     const { fetcher, downloadQueue, logs, storage, metrics, processedSnapshotStorage, snapshotStorage } = components
     const deployerMock = {
       scheduleEntityDeployment: jest.fn(),
-      onIdle: jest.fn()
+      onIdle: jest.fn(),
+      prepareForDeploymentsIn: jest.fn()
     }
     const storageDeleteSpy = jest.spyOn(storage, 'delete')
     jest.spyOn(snapshotStorage, 'has').mockImplementation(async (hash) => {
