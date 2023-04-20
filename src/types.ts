@@ -1,10 +1,10 @@
+import { IContentStorageComponent } from '@dcl/catalyst-storage'
+import { SyncDeployment } from '@dcl/schemas'
 import { IFetchComponent } from '@well-known-components/http-server'
 import { IBaseComponent, ILoggerComponent, IMetricsComponent } from '@well-known-components/interfaces'
 import { ExponentialFallofRetryComponent } from './exponential-fallof-retry'
 import { IJobQueue } from './job-queue-port'
 import { metricsDefinitions } from './metrics'
-import { IContentStorageComponent } from '@dcl/catalyst-storage'
-import { SyncDeployment } from '@dcl/schemas'
 
 /**
  * @public
@@ -38,7 +38,6 @@ export type SnapshotsFetcherComponents = {
   storage: IContentStorageComponent
   processedSnapshotStorage: IProcessedSnapshotStorageComponent
   snapshotStorage: ISnapshotStorageComponent
-  deployedEntitiesFilter?: DeployedEntitiesFilterComponent
 }
 
 export type DeployableEntity = SyncDeployment & {
@@ -247,8 +246,4 @@ export type SnapshotInfo = {
   greatestEndTimestamp: number
   replacedSnapshotHashes: string[][]
   servers: Set<string>
-}
-
-export type DeployedEntitiesFilterComponent = {
-  fillBetween(timeRange: TimeRange): Promise<void>
 }
