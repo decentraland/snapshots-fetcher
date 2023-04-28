@@ -488,10 +488,10 @@
     ipfs-unixfs-importer "^7.0.3"
     multiformats "^9.6.3"
 
-"@dcl/schemas@^6.2.0":
-  version "6.16.0"
-  resolved "https://registry.npmjs.org/@dcl/schemas/-/schemas-6.16.0.tgz"
-  integrity sha512-hL4+GF8htynrm9VddFd20c2AnTdHkR0UjpOmuB4KO81/yLlb1OAZORtTyPeJS25KUJMM70hC7eIeb/m0YwcHOw==
+"@dcl/schemas@tag-bloom-filter-opt":
+  version "6.17.1-20230428182545.commit-81ff481"
+  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-6.17.1-20230428182545.commit-81ff481.tgz#c433dd6d64b756dab68446650cb25c29b1585256"
+  integrity sha512-kgTJFcz2LFDGsPzNZXc2vwVqH/u4BLJdy8eF8K6A3mjYpCLL9IFkBfGeTwbVdR6rdsa9inn6V5OHV+ls5/3PFQ==
   dependencies:
     ajv "^8.11.0"
     ajv-errors "^3.0.0"
