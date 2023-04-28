@@ -75,6 +75,10 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
   // fetch the /pointer-changes of the remote server using the last timestamp from the previous step with a grace period of 20 min
   const genesisTimestamp = options.fromTimestamp || 0
   let greatestLocalTimestampProcessed = genesisTimestamp
+  logs.info('Starting to stream entities from Pointer-Changes.', {
+    contentServer,
+    timestamp: new Date(genesisTimestamp).toISOString()
+  })
   do {
     // 1. download pointer changes and yield
     const pointerChanges = fetchPointerChanges(components, contentServer, greatestLocalTimestampProcessed, logs)

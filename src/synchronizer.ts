@@ -164,7 +164,10 @@ export async function createSynchronizer(
   async function bootstrapFromPointerChanges() {
     logger.debug(`Bootstrapping servers (Pointer Changes): ${Array.from(bootstrappingServersFromPointerChanges)}`)
     const pointerChangesBootstrappingJobs: (() => Promise<void>)[] = []
+    let minStartingPoint: undefined | number
     for (const bootstrappingServersFromPointerChange of bootstrappingServersFromPointerChanges) {
+      const fromTimestamp = pointerChangesStartingTimestamp(bootstrappingServersFromPointerChange)
+      minStartingPoint = Math.min(fromTimestamp, minStartingPoint ?? fromTimestamp)
       pointerChangesBootstrappingJobs.push(async () => {
         try {
           const fromTimestamp = pointerChangesStartingTimestamp(bootstrappingServersFromPointerChange)
@@ -184,13 +187,14 @@ export async function createSynchronizer(
       })
     }
 
-    const endTimestamp = Date.now()
-    await components.deployer.prepareForDeploymentsIn(
-      [...lastEntityTimestampFromSnapshotsByServer.keys()].map((server) => ({
-        initTimestamp: pointerChangesStartingTimestamp(server),
-        endTimestamp
-      }))
-    )
+    if (minStartingPoint) {
+      await components.deployer.prepareForDeploymentsIn([
+        {
+          initTimestamp: minStartingPoint,
+          endTimestamp: Date.now()
+        }
+      ])
+    }
 
     if (pointerChangesBootstrappingJobs.length > 0) {
       await Promise.all(pointerChangesBootstrappingJobs.map((job) => job()))
