@@ -34,6 +34,7 @@ export async function createSynchronizer(
   const syncingServers: Set<string> = new Set()
   const lastEntityTimestampFromSnapshotsByServer: Map<string, number> = new Map()
   const syncJobs: ExponentialFallofRetryComponent[] = []
+  const pointerChangesShiftFix = 20 * 60_000
 
   let isStopped = false
   const regularSyncFromSnapshotsAfterBootstrapJob = createExponentialFallofRetry(logger, {
@@ -56,6 +57,16 @@ export async function createSynchronizer(
   })
   let firstSyncJobStarted = false
   let snapshotsSyncTimeout: NodeJS.Timeout | undefined
+
+  function pointerChangesStartingTimestamp(server: string): number {
+    const lastTimestamp = lastEntityTimestampFromSnapshotsByServer.get(server)
+    if (!lastTimestamp) {
+      throw new Error(
+        `Can't start pointer changes stream without last entity timestamp for ${server}. This should never happen.`
+      )
+    }
+    return Math.max(lastTimestamp - pointerChangesShiftFix, 0)
+  }
 
   function increaseLastTimestamp(contentServer: string, ...newTimestamps: number[]) {
     // If the server doesn't have snapshots yet (for example new servers), then we set to genesisTimestamp
@@ -156,15 +167,7 @@ export async function createSynchronizer(
     for (const bootstrappingServersFromPointerChange of bootstrappingServersFromPointerChanges) {
       pointerChangesBootstrappingJobs.push(async () => {
         try {
-          const lastEntityTimestamp = lastEntityTimestampFromSnapshotsByServer.get(
-            bootstrappingServersFromPointerChange
-          )
-          if (lastEntityTimestamp === undefined) {
-            throw new Error(
-              `Can't start pointer changes stream without last entity timestamp for ${bootstrappingServersFromPointerChange}. This should never happen.`
-            )
-          }
-          const fromTimestamp = Math.max(lastEntityTimestamp - 20 * 60_000, 0)
+          const fromTimestamp = pointerChangesStartingTimestamp(bootstrappingServersFromPointerChange)
           await deployEntitiesFromPointerChanges(
             components,
             { ...options, fromTimestamp, pointerChangesWaitTime: 0 },
@@ -183,8 +186,8 @@ export async function createSynchronizer(
 
     const endTimestamp = Date.now()
     await components.deployer.prepareForDeploymentsIn(
-      [...lastEntityTimestampFromSnapshotsByServer.values()].map((t) => ({
-        initTimestamp: t,
+      [...lastEntityTimestampFromSnapshotsByServer.keys()].map((server) => ({
+        initTimestamp: pointerChangesStartingTimestamp(server),
         endTimestamp
       }))
     )
