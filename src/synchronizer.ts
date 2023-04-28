@@ -181,6 +181,14 @@ export async function createSynchronizer(
       })
     }
 
+    const endTimestamp = Date.now()
+    await components.deployer.prepareForDeploymentsIn(
+      [...lastEntityTimestampFromSnapshotsByServer.values()].map((t) => ({
+        initTimestamp: t,
+        endTimestamp
+      }))
+    )
+
     if (pointerChangesBootstrappingJobs.length > 0) {
       await Promise.all(pointerChangesBootstrappingJobs.map((job) => job()))
     }
