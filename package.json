@@ -26,7 +26,7 @@
   "dependencies": {
     "@dcl/catalyst-storage": "^2.0.0",
     "@dcl/hashing": "^1.0.0",
-    "@dcl/schemas": "tag-bloom-filter-opt",
+    "@dcl/schemas": "^7.1.0",
     "@well-known-components/interfaces": "^1.1.0",
     "@well-known-components/metrics": "^2.0.0",
     "p-queue": "^6.6.2"
