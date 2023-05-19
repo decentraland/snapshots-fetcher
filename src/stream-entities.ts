@@ -41,10 +41,7 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
     // 2. open the snapshot file and process line by line
     const deploymentsInFile = processDeploymentsInFile(snapshotHash, components, logs)
     for await (const deployment of deploymentsInFile) {
-      const deploymentTimestamp =
-        'entityTimestamp' in deployment ? deployment.entityTimestamp : deployment.localTimestamp
-
-      if (deploymentTimestamp >= genesisTimestamp) {
+      if (deployment.entityTimestamp >= genesisTimestamp) {
         components.metrics.increment('dcl_entities_deployments_streamed_total', { source: 'snapshots' })
         yield {
           ...deployment,
