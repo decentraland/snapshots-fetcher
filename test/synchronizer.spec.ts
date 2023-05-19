@@ -57,8 +57,8 @@ test('synchronizer deploys entities from snapshots and pointer-changes at bootst
         return {
           body: {
             deltas: [
-              { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000010', localTimestamp: 10, authChain, pointers: ['0x1'] },
-              { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000011', localTimestamp: 11, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000010', entityTimestamp: 10, localTimestamp: 10, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000011', entityTimestamp: 11, localTimestamp: 11, authChain, pointers: ['0x1'] },
             ],
             pagination: {},
           },
