@@ -50,6 +50,7 @@ export function getDeployedEntitiesStreamFromSnapshot(components: Pick<Snapshots
     entityType: string;
     pointers: string[];
     authChain: AuthChain;
+    entityTimestamp: number;
     localTimestamp: number;
 }, void, unknown>;
 
@@ -57,6 +58,7 @@ export function getDeployedEntitiesStreamFromSnapshot(components: Pick<Snapshots
 export type IDeployerComponent = {
     scheduleEntityDeployment(entity: DeployableEntity, contentServers: string[]): Promise<void>;
     onIdle(): Promise<void>;
+    prepareForDeploymentsIn(timeRanges: TimeRange[]): Promise<void>;
 };
 
 // @public (undocumented)
@@ -70,7 +72,8 @@ export type SynchronizerComponent = IBaseComponent & {
 // Warnings were encountered during analysis:
 //
 // src/types.ts:59:3 - (ae-forgotten-export) The symbol "DeployableEntity" needs to be exported by the entry point index.d.ts
-// src/types.ts:219:3 - (ae-forgotten-export) The symbol "SyncJob" needs to be exported by the entry point index.d.ts
+// src/types.ts:70:3 - (ae-forgotten-export) The symbol "TimeRange" needs to be exported by the entry point index.d.ts
+// src/types.ts:225:3 - (ae-forgotten-export) The symbol "SyncJob" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

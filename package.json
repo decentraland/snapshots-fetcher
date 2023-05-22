@@ -13,6 +13,10 @@
     "api-extractor-ci": "yarn clean-api-extractor && api-extractor run --verbose --typescript-compiler-folder ./node_modules/typescript",
     "test": "jest --runInBand --forceExit --detectOpenHandles --coverage"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/decentraland/snapshots-fetcher.git"
+  },
   "keywords": [],
   "author": "Decentraland Contributors",
   "license": "Apache-2.0",
