@@ -334,10 +334,10 @@
     ipfs-unixfs-importer "^7.0.3"
     multiformats "^9.6.3"
 
-"@dcl/schemas@^6.2.0":
-  version "6.18.1"
-  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-6.18.1.tgz#c912223d529d6327463fe069ff5c4211dd404c9c"
-  integrity sha512-Us8E1FoJhG7jRRLjixkt6U79zD7oROdsjydo4t0t381xiNFZNUdclJQY6PGwEKCvPvO30cSR4OZCbqUT4DaFHg==
+"@dcl/schemas@^7.1.0":
+  version "7.1.0"
+  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-7.1.0.tgz#9db8513011d642cd0be995336862e6497dd701f1"
+  integrity sha512-wc/r/h32VV9RElrAN+E0t1bfc4qOhXGElzyKkPW5MLKqcv37ECcDD2HeaHovIv8ZtPqTTZBkuMEGa2bMryVA+g==
   dependencies:
     ajv "^8.11.0"
     ajv-errors "^3.0.0"
