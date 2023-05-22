@@ -31,7 +31,7 @@
     "@dcl/catalyst-storage": "^2.0.0",
     "@dcl/hashing": "^1.0.0",
     "@dcl/schemas": "^7.1.0",
-    "@well-known-components/interfaces": "^1.1.0",
+    "@well-known-components/interfaces": "^1.4.0",
     "@well-known-components/metrics": "^2.0.0",
     "p-queue": "^6.6.2"
   },
@@ -40,8 +40,11 @@
   },
   "engineStrict": true,
   "devDependencies": {
-    "@dcl/eslint-config": "^1.1.0",
+    "@dcl/eslint-config": "^1.1.1",
+    "babel-plugin-module-resolver": "^3.0.0",
+    "@babel/core": "^7.0.0",
     "@microsoft/api-extractor": "^7.19.4",
+    "@types/node": "^18.15.11",
     "@well-known-components/env-config-provider": "^1.1.1",
     "@well-known-components/http-server": "^1.1.1",
     "@well-known-components/logger": "^3.0.0",

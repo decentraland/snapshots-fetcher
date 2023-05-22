@@ -1,56 +1,22 @@
+import future from 'fp-future'
+import PQueue from 'p-queue'
 import { getSnapshots } from './client'
-import { createExponentialFallofRetry, ExponentialFallofRetryComponent } from './exponential-fallof-retry'
+import {
+  deployEntitiesFromPointerChanges,
+  deployEntitiesFromSnapshot,
+  shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded
+} from './deploy-entities'
+import { ExponentialFallofRetryComponent, createExponentialFallofRetry } from './exponential-fallof-retry'
 import { createJobLifecycleManagerComponent } from './job-lifecycle-manager'
 import {
   IDeployerComponent,
-  SnapshotDeployedEntityStreamOptions,
-  SnapshotInfo,
+  SnapshotMetadata,
   SnapshotsFetcherComponents,
   SynchronizerComponent,
-  SynchronizerOptions
+  SynchronizerOptions,
+  TimeRange
 } from './types'
 import { contentServerMetricLabels } from './utils'
-import future from 'fp-future'
-import PQueue from 'p-queue'
-import { deployEntitiesFromPointerChanges, deployEntitiesFromSnapshot } from './deploy-entities'
-
-export async function processSnapshotAndMarkAsProcessedIfNeeded(
-  components: Pick<
-    SnapshotsFetcherComponents,
-    'processedSnapshotStorage' | 'snapshotStorage' | 'metrics' | 'logs' | 'storage'
-  > & {
-    deployer: IDeployerComponent
-  },
-  snapshotInfo: SnapshotInfo,
-  options: SnapshotDeployedEntityStreamOptions,
-  genesisTimestamp: number,
-  shouldStop: () => boolean
-) {
-  const { greatestEndTimestamp, replacedSnapshotHashes, snapshotHash } = snapshotInfo
-
-  const processedSnapshots = await components.processedSnapshotStorage.filterProcessedSnapshotsFrom([
-    snapshotHash,
-    ...replacedSnapshotHashes.flat()
-  ])
-
-  const snapshotWasProcessed = processedSnapshots.has(snapshotHash)
-  const aReplacedGroupWasProcessed = replacedSnapshotHashes.some(
-    (replacedGroup) => replacedGroup.length > 0 && replacedGroup.every((s) => processedSnapshots.has(s))
-  )
-
-  const shouldProcessSnapshot =
-    // if the snapshot has newer entities than the genesisPoint (filter)
-    greatestEndTimestamp > genesisTimestamp &&
-    !snapshotWasProcessed &&
-    !aReplacedGroupWasProcessed &&
-    !(await components.snapshotStorage.has(snapshotHash))
-  if (shouldProcessSnapshot) {
-    await deployEntitiesFromSnapshot(components, options, snapshotInfo.snapshotHash, snapshotInfo.servers, shouldStop)
-  }
-  if (!snapshotWasProcessed && aReplacedGroupWasProcessed) {
-    await components.processedSnapshotStorage.markSnapshotAsProcessed(snapshotHash)
-  }
-}
 
 /**
  * @public
@@ -68,6 +34,7 @@ export async function createSynchronizer(
   const syncingServers: Set<string> = new Set()
   const lastEntityTimestampFromSnapshotsByServer: Map<string, number> = new Map()
   const syncJobs: ExponentialFallofRetryComponent[] = []
+  const pointerChangesShiftFix = 20 * 60_000
 
   let isStopped = false
   const regularSyncFromSnapshotsAfterBootstrapJob = createExponentialFallofRetry(logger, {
@@ -91,6 +58,16 @@ export async function createSynchronizer(
   let firstSyncJobStarted = false
   let snapshotsSyncTimeout: NodeJS.Timeout | undefined
 
+  function pointerChangesStartingTimestamp(server: string): number {
+    const lastTimestamp = lastEntityTimestampFromSnapshotsByServer.get(server)
+    if (!lastTimestamp) {
+      throw new Error(
+        `Can't start pointer changes stream without last entity timestamp for ${server}. This should never happen.`
+      )
+    }
+    return Math.max(lastTimestamp - pointerChangesShiftFix, 0)
+  }
+
   function increaseLastTimestamp(contentServer: string, ...newTimestamps: number[]) {
     // If the server doesn't have snapshots yet (for example new servers), then we set to genesisTimestamp
     const currentLastTimestamp = lastEntityTimestampFromSnapshotsByServer.get(contentServer) || genesisTimestamp
@@ -112,61 +89,57 @@ export async function createSynchronizer(
   }
 
   async function syncFromSnapshots(serversToSync: Set<string>): Promise<Set<string>> {
-    const snapshotInfoByHash: Map<string, SnapshotInfo> = new Map()
+    type Snapshot = SnapshotMetadata & { server: string }
+    const snapshotsByHash: Map<string, Snapshot[]> = new Map()
     const snapshotLastTimestampByServer: Map<string, number> = new Map()
     for (const server of serversToSync) {
       try {
         const snapshots = await getSnapshots(components, server, options.requestMaxRetries)
         snapshotLastTimestampByServer.set(server, Math.max(...snapshots.map((s) => s.timeRange.endTimestamp)))
         for (const snapshot of snapshots) {
-          const snapshotInfo = snapshotInfoByHash.get(snapshot.hash)
-
-          const greatestEndTimestamp = snapshotInfo
-            ? Math.max(snapshotInfo.greatestEndTimestamp, snapshot.timeRange.endTimestamp)
-            : snapshot.timeRange.endTimestamp
-
-          const replacedSnapshotHashes = snapshotInfo?.replacedSnapshotHashes ?? []
-          if (snapshot.replacedSnapshotHashes) {
-            replacedSnapshotHashes.push(snapshot.replacedSnapshotHashes)
-          }
-          const servers = snapshotInfo?.servers ?? new Set()
-          servers.add(server)
-
-          snapshotInfoByHash.set(snapshot.hash, {
-            snapshotHash: snapshot.hash,
-            greatestEndTimestamp,
-            replacedSnapshotHashes,
-            servers
-          })
+          const snapshotMetadatas = snapshotsByHash.get(snapshot.hash) ?? []
+          snapshotMetadatas.push({ ...snapshot, server })
+          snapshotsByHash.set(snapshot.hash, snapshotMetadatas)
         }
       } catch (error) {
         logger.info(`Error getting snapshots from ${server}.`)
       }
     }
 
-    logger.info('Starting to deploy entities from snapshots.')
-
     const deploymentsProcessorsQueue = new PQueue({
       concurrency: 10,
-      autoStart: true
+      autoStart: false
     })
 
-    for (const snapshotInfo of snapshotInfoByHash.values()) {
-      deploymentsProcessorsQueue
-        .add(async () => {
-          await processSnapshotAndMarkAsProcessedIfNeeded(
-            components,
-            snapshotInfo,
-            options,
-            genesisTimestamp,
-            () => isStopped
-          )
-        })
-        .catch(logger.error)
+    const timeRangesOfEntitiesToDeploy: TimeRange[] = []
+    for (const [snapshotHash, snapshots] of snapshotsByHash) {
+      const replacedSnapshotHashes = snapshots.map((s) => s.replacedSnapshotHashes ?? [])
+      const greatestEndTimestamp = Math.max(...snapshots.map((s) => s.timeRange.endTimestamp))
+      const shouldProcessSnapshot = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(
+        components,
+        genesisTimestamp,
+        snapshotHash,
+        greatestEndTimestamp,
+        replacedSnapshotHashes
+      )
+      if (shouldProcessSnapshot) {
+        const servers = new Set(snapshots.map((s) => s.server))
+        timeRangesOfEntitiesToDeploy.push(...snapshots.map((s) => s.timeRange))
+        deploymentsProcessorsQueue
+          .add(async () => {
+            await deployEntitiesFromSnapshot(components, options, snapshotHash, servers, () => isStopped)
+          })
+          .catch(logger.error)
+      }
     }
 
-    await deploymentsProcessorsQueue.onIdle()
+    logger.info('Warming up deployer.')
+    await components.deployer.prepareForDeploymentsIn(timeRangesOfEntitiesToDeploy)
 
+    logger.info('Starting to deploy entities from snapshots.')
+    deploymentsProcessorsQueue.start()
+
+    await deploymentsProcessorsQueue.onIdle()
     logger.info('End deploying entities from snapshots.')
 
     // Once the snapshots were correctly streamed, update the last entity timestamps
@@ -191,18 +164,13 @@ export async function createSynchronizer(
   async function bootstrapFromPointerChanges() {
     logger.debug(`Bootstrapping servers (Pointer Changes): ${Array.from(bootstrappingServersFromPointerChanges)}`)
     const pointerChangesBootstrappingJobs: (() => Promise<void>)[] = []
+    let minStartingPoint: undefined | number
     for (const bootstrappingServersFromPointerChange of bootstrappingServersFromPointerChanges) {
+      const fromTimestamp = pointerChangesStartingTimestamp(bootstrappingServersFromPointerChange)
+      minStartingPoint = Math.min(fromTimestamp, minStartingPoint ?? fromTimestamp)
       pointerChangesBootstrappingJobs.push(async () => {
         try {
-          const lastEntityTimestamp = lastEntityTimestampFromSnapshotsByServer.get(
-            bootstrappingServersFromPointerChange
-          )
-          if (lastEntityTimestamp === undefined) {
-            throw new Error(
-              `Can't start pointer changes stream without last entity timestamp for ${bootstrappingServersFromPointerChange}. This should never happen.`
-            )
-          }
-          const fromTimestamp = Math.max(lastEntityTimestamp - 20 * 60_000, 0)
+          const fromTimestamp = pointerChangesStartingTimestamp(bootstrappingServersFromPointerChange)
           await deployEntitiesFromPointerChanges(
             components,
             { ...options, fromTimestamp, pointerChangesWaitTime: 0 },
@@ -217,6 +185,15 @@ export async function createSynchronizer(
           logger.info(`Error bootstrapping from pointer changes for server: ${bootstrappingServersFromPointerChange}`)
         }
       })
+    }
+
+    if (minStartingPoint) {
+      await components.deployer.prepareForDeploymentsIn([
+        {
+          initTimestamp: minStartingPoint,
+          endTimestamp: Date.now()
+        }
+      ])
     }
 
     if (pointerChangesBootstrappingJobs.length > 0) {

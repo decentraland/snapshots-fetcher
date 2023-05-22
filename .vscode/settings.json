@@ -12,10 +12,12 @@
     120
   ],
   "editor.codeActionsOnSave": {
-    // "source.fixAll.eslint": true,
-    // "source.organizeImports": true
+    "source.fixAll.eslint": true,
+    "source.organizeImports": true
   },
-  // "eslint.validate": ["typescript"],
+  "eslint.validate": [
+    "typescript"
+  ],
   "files.insertFinalNewline": true,
   "files.trimTrailingWhitespace": true,
   "files.trimFinalNewlines": true,

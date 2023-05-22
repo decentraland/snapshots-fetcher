@@ -1,6 +1,6 @@
+import { AuthLinkType } from '@dcl/schemas'
 import { getDeployedEntitiesStreamFromPointerChanges } from '../src/stream-entities'
 import { test } from './components'
-import { AuthLinkType } from '@dcl/schemas'
 
 test('fetches a stream from pointer-changes after specific timestamp', ({ components, stubComponents }) => {
   const authChain = [

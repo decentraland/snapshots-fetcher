@@ -1,8 +1,8 @@
-import { DeployableEntity, IDeployerComponent } from '../src/types'
+import { resolve } from 'path'
 import { deployEntitiesFromSnapshot } from '../src/deploy-entities'
 import * as streamEntities from '../src/stream-entities'
-import { resolve } from 'path'
-import { test, TestComponents } from './components'
+import { DeployableEntity, IDeployerComponent } from '../src/types'
+import { TestComponents, test } from './components'
 
 describe('deployEntitiesFromSnapshot', () => {
 
@@ -16,7 +16,8 @@ describe('deployEntitiesFromSnapshot', () => {
   }
   const deployerMock = {
     scheduleEntityDeployment: jest.fn(),
-    onIdle: jest.fn()
+    onIdle: jest.fn(),
+    prepareForDeploymentsIn: jest.fn()
   }
 
   beforeEach(() => {
@@ -77,7 +78,8 @@ describe('deployEntitiesFromSnapshot', () => {
             await entity.markAsDeployed()
           }
         },
-        onIdle: jest.fn()
+        onIdle: jest.fn(),
+        prepareForDeploymentsIn: jest.fn()
       }
       const scheduleEntityDeploymentSpy = jest.spyOn(deployerMock, 'scheduleEntityDeployment')
       const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
@@ -110,7 +112,8 @@ describe('deployEntitiesFromSnapshot', () => {
         },
         async onIdle() {
           await Promise.all(entitiesToDeploy.map(mark => mark()))
-        }
+        },
+        prepareForDeploymentsIn: jest.fn()
       }
       const scheduleEntityDeploymentSpy = jest.spyOn(deployerMock, 'scheduleEntityDeployment')
       const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
@@ -142,7 +145,8 @@ describe('deployEntitiesFromSnapshot', () => {
             await entity.markAsDeployed()
           }
         },
-        onIdle: jest.fn()
+        onIdle: jest.fn(),
+        prepareForDeploymentsIn: jest.fn()
       }
       const scheduleEntityDeploymentSpy = jest.spyOn(deployerMock, 'scheduleEntityDeployment')
       const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
@@ -171,7 +175,8 @@ describe('deployEntitiesFromSnapshot', () => {
             await entity.markAsDeployed()
           }
         },
-        onIdle: jest.fn()
+        onIdle: jest.fn(),
+        prepareForDeploymentsIn: jest.fn()
       }
       const scheduleEntityDeploymentSpy = jest.spyOn(deployerMock, 'scheduleEntityDeployment')
       const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
