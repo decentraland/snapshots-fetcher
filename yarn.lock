@@ -489,9 +489,9 @@
     multiformats "^9.6.3"
 
 "@dcl/schemas@^7.1.0":
-  version "7.1.0"
-  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-7.1.0.tgz#9db8513011d642cd0be995336862e6497dd701f1"
-  integrity sha512-wc/r/h32VV9RElrAN+E0t1bfc4qOhXGElzyKkPW5MLKqcv37ECcDD2HeaHovIv8ZtPqTTZBkuMEGa2bMryVA+g==
+  version "7.4.0"
+  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-7.4.0.tgz#6488d113bf0995921ffacf936d05331a15372227"
+  integrity sha512-pyhbXI0W4tKXtqhCghX8tlkUYn+baK7n7sHEvY0MWSmk46oWSBizPA9d2QFB/lRqIPU2scExM7waOhcBETVZwA==
   dependencies:
     ajv "^8.11.0"
     ajv-errors "^3.0.0"
