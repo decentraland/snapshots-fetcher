@@ -28,7 +28,7 @@
     "tabWidth": 2
   },
   "dependencies": {
-    "@dcl/catalyst-storage": "^2.0.0",
+    "@dcl/catalyst-storage": "^3.0.1",
     "@dcl/hashing": "^2.0.0",
     "@dcl/schemas": "^7.1.0",
     "@well-known-components/interfaces": "^1.4.0",
