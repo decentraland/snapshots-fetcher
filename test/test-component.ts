@@ -3,23 +3,21 @@ import * as nodeFetch from 'node-fetch'
 import { readFileSync } from 'fs'
 import { readdir, stat } from 'fs/promises'
 import { resolve } from 'path'
-import { createInMemoryStorage } from '@dcl/catalyst-storage'
-import { IContentStorageComponent } from '@dcl/catalyst-storage'
+import { createInMemoryStorage, IContentStorageComponent } from '@dcl/catalyst-storage'
 import { IProcessedSnapshotStorageComponent } from '../src/types'
-import { Readable } from "stream";
+import { Readable } from 'stream'
 
 export function createFetchComponent() {
   const fetch: IFetchComponent = {
     async fetch(url: nodeFetch.RequestInfo, init?: nodeFetch.RequestInit): Promise<nodeFetch.Response> {
       return nodeFetch.default(url, init)
-    },
+    }
   }
 
   return fetch
 }
 
 export async function createStorageComponent(): Promise<IContentStorageComponent> {
-
   const rootFixturesDir = 'test/fixtures'
 
   const files = await readdir(rootFixturesDir)
@@ -48,7 +46,7 @@ export function createProcessedSnapshotStorageComponent(): IProcessedSnapshotSto
 
   return {
     async filterProcessedSnapshotsFrom(snapshotHashes: string[]) {
-      return new Set(snapshotHashes.filter(h => processedSnapshots.has(h)))
+      return new Set(snapshotHashes.filter((h) => processedSnapshots.has(h)))
     },
     async markSnapshotAsProcessed(snapshotHash: string) {
       processedSnapshots.add(snapshotHash)
