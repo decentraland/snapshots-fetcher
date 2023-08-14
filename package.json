@@ -27,7 +27,7 @@
   "dependencies": {
     "@dcl/catalyst-storage": "^3.0.1",
     "@dcl/hashing": "^3.0.3",
-    "@dcl/schemas": "^8.2.0",
+    "@dcl/schemas": "^9.1.1",
     "@well-known-components/interfaces": "^1.4.0",
     "@well-known-components/metrics": "^2.0.0",
     "p-queue": "^6.6.2"
