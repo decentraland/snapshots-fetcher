@@ -38,7 +38,7 @@
   "engineStrict": true,
   "devDependencies": {
     "@babel/core": "^7.0.0",
-    "@dcl/eslint-config": "^1.1.1",
+    "@dcl/eslint-config": "^2.0.0",
     "@types/node": "^18.15.11",
     "@well-known-components/env-config-provider": "^1.1.1",
     "@well-known-components/http-server": "^2.0.0",
