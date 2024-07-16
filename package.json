@@ -27,7 +27,7 @@
   "dependencies": {
     "@dcl/catalyst-storage": "^4.0.0",
     "@dcl/hashing": "^3.0.3",
-    "@dcl/schemas": "^9.1.1",
+    "@dcl/schemas": "https://sdk-team-cdn.decentraland.org/@dcl/schemas/branch/feat/catalyst-deployments/dcl-schemas-12.0.1-9963583642.commit-7564e5e.tgz",
     "@well-known-components/interfaces": "^1.4.0",
     "@well-known-components/metrics": "^2.0.0",
     "p-queue": "^6.6.2"
