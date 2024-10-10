@@ -30,7 +30,10 @@ async function downloadJob(
       return
     } catch (e: any) {
       if (retries < maxRetries) {
-        serversToPickFrom = serversToPickFrom.filter((server) => server !== serverToUse)
+        serversToPickFrom =
+          serversToPickFrom.length > 1
+            ? serversToPickFrom.filter((server) => server !== serverToUse)
+            : serversToPickFrom
         await sleep(waitTimeBetweenRetries)
         continue
       } else {
