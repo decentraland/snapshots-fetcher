@@ -1,6 +1,6 @@
-import { Path, SnapshotsFetcherComponents } from './types'
 import * as path from 'path'
 import { saveContentFileToDisk } from './client'
+import { Path, SnapshotsFetcherComponents } from './types'
 import { pickLeastRecentlyUsedServer, sleep } from './utils'
 
 const downloadFileJobsMap = new Map<Path, ReturnType<typeof downloadFileWithRetries>>()
@@ -17,10 +17,11 @@ async function downloadJob(
   if (await components.storage.exist(hashToDownload)) return
 
   let retries = 0
+  let serversToPickFrom: string[] = presentInServers
 
   for (;;) {
     retries++
-    const serverToUse = pickLeastRecentlyUsedServer(presentInServers)
+    const serverToUse = pickLeastRecentlyUsedServer(serversToPickFrom)
     try {
       components.metrics.observe('dcl_available_servers_histogram', {}, presentInServers.length)
       await downloadContentFile(components, hashToDownload, finalFileName, serverToUse)
@@ -29,6 +30,7 @@ async function downloadJob(
       return
     } catch (e: any) {
       if (retries < maxRetries) {
+        serversToPickFrom = serversToPickFrom.filter((server) => server !== serverToUse)
         await sleep(waitTimeBetweenRetries)
         continue
       } else {
