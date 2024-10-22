@@ -29,6 +29,16 @@ async function downloadJob(
 
       return
     } catch (e: any) {
+      console.log('snapshot-fetcher-debug - failure while downloading content', {
+        serverToUse,
+        serversToPickFrom,
+        hashToDownload,
+        error: e?.message,
+        finalFileName,
+        retries,
+        willRetry: retries < maxRetries
+      })
+
       if (retries < maxRetries) {
         serversToPickFrom =
           serversToPickFrom.length > 1
