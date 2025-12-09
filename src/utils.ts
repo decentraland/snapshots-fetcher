@@ -1,15 +1,15 @@
+import { hashV0, hashV1 } from '@dcl/hashing'
+import { IFetchComponent } from '@well-known-components/http-server'
+import * as crypto from 'crypto'
 import * as fs from 'fs'
-import { pipeline, Readable } from 'stream'
-import { promisify } from 'util'
 import * as http from 'http'
 import * as https from 'https'
-import * as crypto from 'crypto'
-import * as zlib from 'zlib'
-import { IFetchComponent } from '@well-known-components/http-server'
-import { Server, SnapshotsFetcherComponents } from './types'
-import { ContentServerMetricLabels } from './metrics'
-import { hashV0, hashV1 } from '@dcl/hashing'
 import * as fetch from 'node-fetch'
+import { pipeline, Readable } from 'stream'
+import { promisify } from 'util'
+import * as zlib from 'zlib'
+import { ContentServerMetricLabels } from './metrics'
+import { Server, SnapshotsFetcherComponents } from './types'
 
 const streamPipeline = promisify(pipeline)
 
@@ -67,7 +67,7 @@ export async function assertHash(filename: string, hash: string) {
 }
 
 export async function saveContentFileToDisk(
-  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage'>,
+  components: Pick<SnapshotsFetcherComponents, 'storage'> & { metrics?: SnapshotsFetcherComponents['metrics'] },
   originalUrlString: string,
   destinationFilename: string,
   hash: string,
@@ -95,7 +95,7 @@ export async function saveContentFileToDisk(
       try {
         await assertHash(tmpFileName, hash)
       } catch (e) {
-        components.metrics.increment('dcl_content_download_hash_errors_total', metricsLabels)
+        components.metrics?.increment('dcl_content_download_hash_errors_total', metricsLabels)
         // delete the downloaded file if failed
         try {
           if (await checkFileExists(tmpFileName)) {
@@ -119,7 +119,7 @@ export async function saveContentFileToDisk(
 function downloadFile(
   originalUrlString: string,
   metricsLabels: ContentServerMetricLabels,
-  components: Pick<SnapshotsFetcherComponents, 'metrics'>,
+  components: { metrics?: SnapshotsFetcherComponents['metrics'] },
   tmpFileName: string
 ) {
   return new Promise<void>((resolve, reject) => {
@@ -135,10 +135,10 @@ function downloadFile(
 
       Object.assign(metricsLabels, contentServerMetricLabels(url.toString()))
 
-      const { end: endTimeMeasurement } = components.metrics.startTimer(
+      const { end: endTimeMeasurement } = components.metrics?.startTimer(
         'dcl_content_download_duration_seconds',
         metricsLabels
-      )
+      ) || { end: () => {} }
 
       httpModule
         .get(url.toString(), { headers: { 'accept-encoding': 'gzip' } }, (response) => {
@@ -161,21 +161,21 @@ function downloadFile(
             pipe
               .then(() => {
                 file.close() // close() is async, call cb after close completes.
-                components.metrics.increment('dcl_content_download_bytes_total', metricsLabels, file.bytesWritten)
+                components.metrics?.increment('dcl_content_download_bytes_total', metricsLabels, file.bytesWritten)
                 endTimeMeasurement()
                 resolve()
               })
               .catch((err) => {
                 file.close()
                 reject(err)
-                components.metrics.increment('dcl_content_download_errors_total', metricsLabels)
+                components.metrics?.increment('dcl_content_download_errors_total', metricsLabels)
                 endTimeMeasurement()
               })
           }
         })
         .on('error', function (err) {
           reject(err)
-          components.metrics.increment('dcl_content_download_errors_total', metricsLabels)
+          components.metrics?.increment('dcl_content_download_errors_total', metricsLabels)
           endTimeMeasurement()
         })
     }

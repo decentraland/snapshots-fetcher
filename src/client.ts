@@ -19,7 +19,7 @@ export async function getSnapshots(
 }
 
 export async function* fetchJsonPaginated<T>(
-  components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'metrics'>,
+  components: Pick<SnapshotsFetcherComponents, 'fetcher'> & { metrics?: SnapshotsFetcherComponents['metrics'] },
   url: string,
   selector: (responseBody: any) => T[],
   responseTimeMetric: keyof typeof metricsDefinitions
@@ -28,7 +28,7 @@ export async function* fetchJsonPaginated<T>(
   let currentUrl = url
   while (currentUrl) {
     const metricLabels = contentServerMetricLabels(currentUrl)
-    const { end: stopTimer } = components.metrics.startTimer(responseTimeMetric)
+    const { end: stopTimer } = components.metrics?.startTimer(responseTimeMetric) || { end: () => {} }
     const partialHistory: any = await fetchJson(currentUrl, components.fetcher)
     stopTimer({ ...metricLabels })
 
@@ -47,7 +47,7 @@ export async function* fetchJsonPaginated<T>(
 }
 
 export async function* fetchPointerChanges(
-  components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'metrics'>,
+  components: Pick<SnapshotsFetcherComponents, 'fetcher'> & { metrics?: SnapshotsFetcherComponents['metrics'] },
   server: string,
   fromTimestamp: number,
   logger: ILoggerComponent.ILogger
@@ -73,7 +73,7 @@ export async function* fetchPointerChanges(
 }
 
 export async function saveContentFileToDisk(
-  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage'>,
+  components: Pick<SnapshotsFetcherComponents, 'storage'> & { metrics?: SnapshotsFetcherComponents['metrics'] },
   server: string,
   hash: string,
   destinationFilename: string

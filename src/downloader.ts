@@ -6,7 +6,7 @@ import { pickLeastRecentlyUsedServer, sleep } from './utils'
 const downloadFileJobsMap = new Map<Path, ReturnType<typeof downloadFileWithRetries>>()
 
 async function downloadJob(
-  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage'>,
+  components: Pick<SnapshotsFetcherComponents, 'storage'> & { metrics?: SnapshotsFetcherComponents['metrics'] },
   hashToDownload: string,
   finalFileName: string,
   presentInServers: string[],
@@ -23,9 +23,9 @@ async function downloadJob(
     retries++
     const serverToUse = pickLeastRecentlyUsedServer(serversToPickFrom)
     try {
-      components.metrics.observe('dcl_available_servers_histogram', {}, presentInServers.length)
+      components.metrics?.observe('dcl_available_servers_histogram', {}, presentInServers.length)
       await downloadContentFile(components, hashToDownload, finalFileName, serverToUse)
-      components.metrics.observe('dcl_content_download_job_succeed_retries', {}, retries)
+      components.metrics?.observe('dcl_content_download_job_succeed_retries', {}, retries)
 
       return
     } catch (e: any) {
@@ -48,7 +48,7 @@ async function downloadJob(
  * being downloaded
  */
 export async function downloadFileWithRetries(
-  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage'>,
+  components: Pick<SnapshotsFetcherComponents, 'storage'> & { metrics?: SnapshotsFetcherComponents['metrics'] },
   hashToDownload: string,
   targetTempFolder: string,
   presentInServers: string[],
@@ -81,7 +81,7 @@ export async function downloadFileWithRetries(
 }
 
 async function downloadContentFile(
-  components: Pick<SnapshotsFetcherComponents, 'metrics' | 'storage'>,
+  components: Pick<SnapshotsFetcherComponents, 'storage'> & { metrics?: SnapshotsFetcherComponents['metrics'] },
   hash: string,
   finalFileName: string,
   serverToUse: string
