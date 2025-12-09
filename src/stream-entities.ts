@@ -18,7 +18,9 @@ export { IDeployerComponent, SynchronizerComponent } from './types'
  * @public
  */
 export async function* getDeployedEntitiesStreamFromSnapshot(
-  components: Pick<SnapshotsFetcherComponents, 'logs' | 'metrics' | 'storage'>,
+  components: Pick<SnapshotsFetcherComponents, 'logs' | 'storage'> & {
+    metrics?: SnapshotsFetcherComponents['metrics']
+  },
   options: SnapshotDeployedEntityStreamOptions,
   snapshotHash: string,
   servers: Set<string>
@@ -42,7 +44,7 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
     const deploymentsInFile = processDeploymentsInFile(snapshotHash, components, logs)
     for await (const deployment of deploymentsInFile) {
       if (deployment.entityTimestamp >= genesisTimestamp) {
-        components.metrics.increment('dcl_entities_deployments_streamed_total', { source: 'snapshots' })
+        components.metrics?.increment('dcl_entities_deployments_streamed_total', { source: 'snapshots' })
         yield {
           ...deployment,
           snapshotHash,
@@ -67,7 +69,9 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
  * @public
  */
 export async function* getDeployedEntitiesStreamFromPointerChanges(
-  components: Pick<SnapshotsFetcherComponents, 'logs' | 'metrics' | 'fetcher'>,
+  components: Pick<SnapshotsFetcherComponents, 'logs' | 'fetcher'> & {
+    metrics?: SnapshotsFetcherComponents['metrics']
+  },
   options: PointerChangesDeployedEntityStreamOptions,
   contentServer: string
 ) {
@@ -85,7 +89,7 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
     for await (const deployment of pointerChanges) {
       // selectively ignore deployments by localTimestamp
       if (deployment.localTimestamp >= genesisTimestamp) {
-        components.metrics.increment('dcl_entities_deployments_streamed_total', { source: 'pointer-changes' })
+        components.metrics?.increment('dcl_entities_deployments_streamed_total', { source: 'pointer-changes' })
         yield deployment
       }
 
