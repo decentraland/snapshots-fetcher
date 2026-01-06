@@ -1,4 +1,4 @@
-import { validateMetricsDeclaration } from '@well-known-components/metrics'
+import { validateMetricsDeclaration } from '@dcl/metrics'
 
 type ContentServerMetricLabelNames = 'remote_server'
 export type ContentServerMetricLabels = Record<ContentServerMetricLabelNames, string>

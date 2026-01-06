@@ -1,12 +1,12 @@
-import { test } from './components'
-import { readFileSync, unlinkSync, promises as fsPromises, constants } from 'fs'
+import { createTestMetricsComponent } from '@dcl/metrics'
+import { unlinkSync } from 'fs'
 import { resolve } from 'path'
 import { Readable } from 'stream'
 import { gzipSync } from 'zlib'
-import { checkFileExists, saveContentFileToDisk, streamToBuffer } from '../src/utils'
 import { downloadFileWithRetries } from '../src/downloader'
 import { metricsDefinitions } from '../src/metrics'
-import { createTestMetricsComponent } from '@well-known-components/metrics'
+import { checkFileExists, saveContentFileToDisk, streamToBuffer } from '../src/utils'
+import { test } from './components'
 
 const maxRetries = 10
 const waitTimeBetweenRetries = 100
@@ -23,42 +23,42 @@ test('saveToDisk', ({ components, stubComponents }) => {
   it('prepares the endpoints', () => {
     components.router.get(`/working`, async () => {
       return {
-        body: content.toString(),
+        body: content.toString()
       }
     })
     components.router.get(`/working-redirected-302`, async () => {
       return {
         status: 302,
         headers: {
-          location: '/working',
-        },
+          location: '/working'
+        }
       }
     })
     components.router.get(`/working-redirected-301`, async () => {
       return {
         status: 301,
         headers: {
-          location: '/working',
-        },
+          location: '/working'
+        }
       }
     })
     components.router.get(`/forever-redirecting-301`, async () => {
       return {
         status: 301,
         headers: {
-          location: '/forever-redirecting-301',
-        },
+          location: '/forever-redirecting-301'
+        }
       }
     })
     components.router.get(`/QmInValidHash`, async () => {
       return {
-        body: content.toString(),
+        body: content.toString()
       }
     })
 
     components.router.get(`/contents/alwaysFails`, async () => {
       return {
-        status: 503,
+        status: 503
       }
     })
 
@@ -67,7 +67,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     components.router.get(`/contents/bafkreigwey5vc6q25ilofdu2vjvcag72eqj46lzipi6mredsfpe42ls2ri`, async () => {
       if (wasCalled) {
         return {
-          status: 503,
+          status: 503
         }
       }
 
@@ -76,8 +76,8 @@ test('saveToDisk', ({ components, stubComponents }) => {
         status: 200,
         body: gzipSync('some file'),
         headers: {
-          'content-encoding': 'gzip',
-        },
+          'content-encoding': 'gzip'
+        }
       }
     })
 
@@ -95,9 +95,9 @@ test('saveToDisk', ({ components, stubComponents }) => {
 
       return {
         headers: {
-          'content-length': '100000',
+          'content-length': '100000'
         },
-        body: Readable.from(streamContent(), { encoding: 'utf-8' }),
+        body: Readable.from(streamContent(), { encoding: 'utf-8' })
       }
     })
   })
@@ -106,7 +106,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     const filename = resolve(contentFolder, 'working')
     try {
       unlinkSync(filename)
-    } catch { }
+    } catch {}
 
     await saveContentFileToDisk(
       { metrics, storage: components.storage },
@@ -126,7 +126,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     const filename = resolve(contentFolder, 'working')
     try {
       unlinkSync(filename)
-    } catch { }
+    } catch {}
 
     await saveContentFileToDisk(
       { metrics, storage: components.storage },
@@ -146,7 +146,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     const filename = resolve(contentFolder, 'working')
     try {
       unlinkSync(filename)
-    } catch { }
+    } catch {}
 
     await saveContentFileToDisk(
       { metrics, storage: components.storage },
@@ -179,7 +179,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     const filename = resolve(contentFolder, 'fails')
     try {
       unlinkSync(filename)
-    } catch { }
+    } catch {}
 
     // check file exists and has correct content
     expect(await checkFileExists(filename)).toEqual(false)
@@ -202,7 +202,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     const filename = resolve(contentFolder, 'fails404')
     try {
       unlinkSync(filename)
-    } catch { }
+    } catch {}
 
     // check file exists and has correct content
     expect(await checkFileExists(filename)).toEqual(false)
@@ -225,7 +225,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     const filename = resolve(contentFolder, 'failsECONNREFUSED')
     try {
       unlinkSync(filename)
-    } catch { }
+    } catch {}
 
     // check file exists and has correct content
     expect(await checkFileExists(filename)).toEqual(false)
@@ -249,7 +249,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     const filename = resolve(contentFolder, 'failsTLS')
     try {
       unlinkSync(filename)
-    } catch { }
+    } catch {}
 
     // check file exists and has correct content
     expect(await checkFileExists(filename)).toEqual(false)
@@ -273,7 +273,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     const filename = resolve(contentFolder, 'decentraland.org')
     try {
       unlinkSync(filename)
-    } catch { }
+    } catch {}
 
     // check file exists and has correct content
     expect(await checkFileExists(filename)).toEqual(false)
@@ -345,7 +345,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     const filename = resolve(contentFolder, 'QmInValidHash')
     try {
       unlinkSync(filename)
-    } catch { }
+    } catch {}
 
     // check file exists and has correct content
     expect(await checkFileExists(filename)).toEqual(false)

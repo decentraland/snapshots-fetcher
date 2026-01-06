@@ -27,10 +27,10 @@
   "dependencies": {
     "@dcl/catalyst-storage": "^4.0.0",
     "@dcl/hashing": "^3.0.3",
+    "@dcl/metrics": "^1.0.0",
     "@dcl/schemas": "^9.1.1",
     "@well-known-components/fetch-component": "^3.0.0",
     "@well-known-components/interfaces": "^1.4.0",
-    "@well-known-components/metrics": "^2.0.0",
     "p-queue": "^6.6.2"
   },
   "engines": {

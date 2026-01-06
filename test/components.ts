@@ -6,16 +6,16 @@ import { createJobQueue } from '../src/job-queue-port'
 import { SnapshotsFetcherComponents } from '../src/types'
 import { createFetchComponent, createProcessedSnapshotStorageComponent, createStorageComponent } from './test-component'
 
+import { createTestMetricsComponent } from '@dcl/metrics'
+import { createConfigComponent } from '@well-known-components/env-config-provider'
+import { IConfigComponent } from '@well-known-components/interfaces'
+import { createLogComponent } from '@well-known-components/logger'
+import { metricsDefinitions } from '../src'
 import {
   initTestServerComponents,
   TestServerComponents,
-  wireTestServerComponents,
+  wireTestServerComponents
 } from './functions-for-wkc-test-helpers'
-import { createLogComponent } from '@well-known-components/logger'
-import { createTestMetricsComponent } from '@well-known-components/metrics'
-import { metricsDefinitions } from '../src'
-import { IConfigComponent } from "@well-known-components/interfaces"
-import { createConfigComponent } from "@well-known-components/env-config-provider"
 
 // Record of components
 export type TestComponents = SnapshotsFetcherComponents & TestServerComponents<SnapshotsFetcherComponents>
@@ -37,9 +37,9 @@ export const test = createRunner<TestComponents>({
     const downloadQueue = createJobQueue({
       autoStart: true,
       concurrency: 1,
-      timeout: 100000,
+      timeout: 100000
     })
-    const config: IConfigComponent = createConfigComponent({ ...process.env, LOG_LEVEL: "INFO" })
+    const config: IConfigComponent = createConfigComponent({ ...process.env, LOG_LEVEL: 'INFO' })
     const logs = await createLogComponent({ config })
     const metrics = createTestMetricsComponent(metricsDefinitions)
     const testServerComponents = await initTestServerComponents()
@@ -61,5 +61,5 @@ export const test = createRunner<TestComponents>({
       processedSnapshotStorage,
       snapshotStorage
     }
-  },
+  }
 })
