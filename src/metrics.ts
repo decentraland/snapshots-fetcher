@@ -51,7 +51,7 @@ export const metricsDefinitions = validateMetricsDeclaration({
   dcl_deployments_stream_reconnection_count: {
     help: 'Counts the connection of a deployment stream',
     type: 'counter',
-    labelNames: ['remote_server']
+    labelNames: ['remote_server'] // test tests in CI
   },
 
   dcl_deployments_stream_failure_count: {
