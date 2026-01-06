@@ -8,7 +8,7 @@ module.exports = {
   transform: {
     '^.+\\.(ts|tsx)$': 'ts-jest',
   },
-  testTimeout: 65000,
+  testTimeout: 60000,
   coverageDirectory: 'coverage',
   verbose: true,
   testMatch: ['**/*.spec.(ts)'],
