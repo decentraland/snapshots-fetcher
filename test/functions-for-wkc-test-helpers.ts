@@ -1,7 +1,7 @@
 // The functions in this file may be migrated to http-server test helpers
 
+import { createServerComponent, Router } from '@dcl/http-server'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
-import { createServerComponent, Router } from '@well-known-components/http-server'
 import { IConfigComponent, IHttpServerComponent, ILoggerComponent } from '@well-known-components/interfaces'
 import { createLogComponent } from '@well-known-components/logger'
 import { defaultServerConfig } from '@well-known-components/test-helpers'
@@ -73,8 +73,7 @@ export async function wireTestServerComponents<T>(context: TestServerAppContext<
  * Creates a test server and returns all the components and helpers
  */
 export async function initTestServerComponents(): Promise<TestServerComponents<any>> {
-
-  const config = createConfigComponent({...defaultServerConfig(), LOG_LEVEL: "INFO"})
+  const config = createConfigComponent({ ...defaultServerConfig(), LOG_LEVEL: 'INFO' })
 
   const logs = await createLogComponent({ config })
 
@@ -91,6 +90,6 @@ export async function initTestServerComponents(): Promise<TestServerComponents<a
     config,
     getBaseUrl,
     router,
-    server,
+    server
   }
 }
