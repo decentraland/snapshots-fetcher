@@ -85,11 +85,12 @@ test('saveToDisk', ({ components, stubComponents }) => {
       let chunk = 0
 
       function* streamContent() {
-        // sleep to fool the nagle algorithm
-        chunk++
-        yield 'a'
-        if (chunk == 100) {
-          throw new Error('aborted')
+        while (true) {
+          chunk++
+          yield 'a'
+          if (chunk == 100) {
+            throw new Error('aborted')
+          }
         }
       }
 
