@@ -83,24 +83,21 @@ test('saveToDisk', ({ components, stubComponents }) => {
 
     components.router.get(`/fails`, async () => {
       let chunk = 0
-      const stream = new Readable({
-        encoding: 'utf-8',
-        read() {
-          chunk++
-          if (chunk <= 100) {
-            this.push('a')
-          } else {
-            // Abort the stream after 100 chunks
-            this.destroy(new Error('aborted'))
-          }
+
+      function* streamContent() {
+        // sleep to fool the nagle algorithm
+        chunk++
+        yield 'a'
+        if (chunk == 100) {
+          throw new Error('aborted')
         }
-      })
+      }
 
       return {
         headers: {
           'content-length': '100000'
         },
-        body: stream
+        body: Readable.from(streamContent(), { encoding: 'utf-8' })
       }
     })
   })
