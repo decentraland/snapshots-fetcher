@@ -675,10 +675,10 @@
   resolved "https://registry.yarnpkg.com/@dcl/hashing/-/hashing-3.0.4.tgz#4df2a4cb3a8114765aed34cb57b91c93bf33bfb3"
   integrity sha512-Cg+MoIOn+BYmQV2q8zSFnNYY+GldlnUazwBnfgrq3i66ZxOaZ65h01btd8OUtSAlfWG4VTNIOHDjtKqmuwJNBg==
 
-"@dcl/http-server@^1.0.0":
-  version "1.0.0"
-  resolved "https://registry.yarnpkg.com/@dcl/http-server/-/http-server-1.0.0.tgz#202fe016e755ac9798668051f466fe496737c232"
-  integrity sha512-Dq7hjrOfwUY2VztmZlk70OwOFkwiLO360BgJw4h2BFfYc0RACmw7TFI/uq/nHMJPNSs2Zi1htzuWQQsPAg1RQw==
+"@dcl/http-server@^1.0.1":
+  version "1.0.1"
+  resolved "https://registry.yarnpkg.com/@dcl/http-server/-/http-server-1.0.1.tgz#aa0d93b1a9d945c62cf46ba72cfa8d52f55c0332"
+  integrity sha512-dFKJtSr0ESS388PkzOnJLNd2KfsV3nacRZvOlaIH0GpVwemZfYe5SjZv3VTGygKxUA5C/knqiKrUtBiYFP2j3w==
   dependencies:
     "@types/http-errors" "^2.0.4"
     destroy "^1.2.0"

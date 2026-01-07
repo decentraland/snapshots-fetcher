@@ -40,7 +40,7 @@
   "devDependencies": {
     "@babel/core": "^7.0.0",
     "@dcl/eslint-config": "^1.1.1",
-    "@dcl/http-server": "^1.0.0",
+    "@dcl/http-server": "^1.0.1",
     "@types/node": "^18.15.11",
     "@well-known-components/env-config-provider": "^1.1.1",
     "@well-known-components/logger": "^3.0.0",
