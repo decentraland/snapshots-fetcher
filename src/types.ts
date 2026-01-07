@@ -1,7 +1,6 @@
 import { IContentStorageComponent } from '@dcl/catalyst-storage'
 import { SyncDeployment } from '@dcl/schemas'
-import { IFetchComponent } from '@well-known-components/http-server'
-import { IBaseComponent, ILoggerComponent, IMetricsComponent } from '@well-known-components/interfaces'
+import { IBaseComponent, IFetchComponent, ILoggerComponent, IMetricsComponent } from '@well-known-components/interfaces'
 import { ExponentialFallofRetryComponent } from './exponential-fallof-retry'
 import { IJobQueue } from './job-queue-port'
 import { metricsDefinitions } from './metrics'

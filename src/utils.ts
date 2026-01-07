@@ -1,5 +1,5 @@
 import { hashV0, hashV1 } from '@dcl/hashing'
-import { IFetchComponent } from '@well-known-components/http-server'
+import { IFetchComponent } from '@well-known-components/interfaces'
 import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as http from 'http'

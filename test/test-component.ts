@@ -1,11 +1,11 @@
-import { IFetchComponent } from '@well-known-components/http-server'
-import * as nodeFetch from 'node-fetch'
+import { createInMemoryStorage, IContentStorageComponent } from '@dcl/catalyst-storage'
+import { IFetchComponent } from '@well-known-components/interfaces'
 import { readFileSync } from 'fs'
 import { readdir, stat } from 'fs/promises'
+import * as nodeFetch from 'node-fetch'
 import { resolve } from 'path'
-import { createInMemoryStorage, IContentStorageComponent } from '@dcl/catalyst-storage'
-import { IProcessedSnapshotStorageComponent } from '../src/types'
 import { Readable } from 'stream'
+import { IProcessedSnapshotStorageComponent } from '../src/types'
 
 export function createFetchComponent() {
   const fetch: IFetchComponent = {
