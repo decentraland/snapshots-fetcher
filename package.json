@@ -25,7 +25,7 @@
     "tabWidth": 2
   },
   "dependencies": {
-    "@dcl/catalyst-storage": "^4.0.0",
+    "@dcl/catalyst-storage": "https://sdk-team-cdn.decentraland.org/@dcl/catalyst-storage/branch/claude/admiring-goldstine/dcl-catalyst-storage-4.5.1-24399976164.commit-4ce56b3.tgz",
     "@dcl/hashing": "^3.0.3",
     "@dcl/metrics": "^1.0.0",
     "@dcl/schemas": "^9.1.1",
