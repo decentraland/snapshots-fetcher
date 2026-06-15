@@ -6,8 +6,9 @@ import {
   deployEntitiesFromPointerChanges,
   deployEntitiesFromSnapshot
 } from './deploy-entities'
-import { ExponentialFallofRetryComponent, createExponentialFallofRetry } from './exponential-fallof-retry'
+import { createExponentialFallofRetry } from './exponential-fallof-retry'
 import { createJobLifecycleManagerComponent } from './job-lifecycle-manager'
+import { createSerialJobRunner } from './serial-job-runner'
 import {
   IDeployerComponent,
   SnapshotMetadata,
@@ -33,7 +34,8 @@ export async function createSynchronizer(
   const bootstrappingServersFromPointerChanges: Set<string> = new Set()
   const syncingServers: Set<string> = new Set()
   const lastEntityTimestampFromSnapshotsByServer: Map<string, number> = new Map()
-  const syncJobs: ExponentialFallofRetryComponent[] = []
+  // Sync jobs are serialized: only one runs at a time, the rest queue (FIFO).
+  const syncJobsRunner = createSerialJobRunner(logger)
   const pointerChangesShiftFix = 20 * 60_000
 
   let isStopped = false
@@ -350,21 +352,6 @@ export async function createSynchronizer(
     }
   }
 
-  // Runs queued sync jobs one at a time, in FIFO order. Each job re-arms the chain in its finally,
-  // so the queue keeps draining no matter how many jobs were enqueued while one was running.
-  function startNextSyncJob() {
-    if (syncJobs.length === 0) {
-      return
-    }
-    syncJobs[0]
-      .start()
-      .catch((err) => logger.error(err))
-      .finally(() => {
-        syncJobs.shift()
-        startNextSyncJob()
-      })
-  }
-
   return {
     async syncWithServers(serversToSync: Set<string>) {
       if (isStopped) {
@@ -398,12 +385,7 @@ export async function createSynchronizer(
           )
         })
       }
-      syncJobs.push(newSyncJob)
-      // Only kick off the chain when this is the sole queued job; otherwise the currently-running
-      // chain will pick it up when it finishes (see startNextSyncJob).
-      if (syncJobs.length === 1) {
-        startNextSyncJob()
-      }
+      syncJobsRunner.enqueue(newSyncJob)
       return newSyncJob
     },
     async stop() {
@@ -411,12 +393,7 @@ export async function createSynchronizer(
       if (!isStopped) {
         isStopped = true
 
-        if (syncJobs.length > 0) {
-          await syncJobs[0].stop()
-          while (syncJobs.length > 0) {
-            syncJobs.shift()
-          }
-        }
+        await syncJobsRunner.stop()
         syncingServers.clear()
         if (deployPointerChangesAfterBootstrapJobManager.stop) {
           await deployPointerChangesAfterBootstrapJobManager.stop()

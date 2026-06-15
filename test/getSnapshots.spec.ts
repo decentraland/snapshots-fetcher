@@ -25,6 +25,12 @@ test('getSnapshots when the response mixes valid and invalid snapshot metadata',
         { timeRange: { initTimestamp: 0, endTimestamp: 10 } },
         // missing timeRange
         { hash: 'notimerange' },
+        // valid hash but a replaced-snapshot hash that is not a valid content hash
+        {
+          hash: 'bafkreig6sfhegnp4okzecgx3v6gj6pohh5qzw6zjtrdqtggx64743rkmz4',
+          timeRange: { initTimestamp: 0, endTimestamp: 60 },
+          replacedSnapshotHashes: ['../../evil']
+        },
         // not an object
         'not-an-object'
       ]

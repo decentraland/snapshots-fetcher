@@ -23,7 +23,7 @@ function isValidSnapshotMetadata(snapshot: any): snapshot is SnapshotMetadata {
     typeof snapshot.timeRange.endTimestamp === 'number' &&
     (snapshot.replacedSnapshotHashes === undefined ||
       (Array.isArray(snapshot.replacedSnapshotHashes) &&
-        snapshot.replacedSnapshotHashes.every((hash: any) => typeof hash === 'string')))
+        snapshot.replacedSnapshotHashes.every((hash: any) => isValidContentHash(hash))))
   )
 }
 

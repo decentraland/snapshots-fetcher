@@ -19,7 +19,8 @@ const streamPipeline = promisify(pipeline)
 const MAX_JSON_RESPONSE_SIZE_IN_BYTES = 50 * 1024 * 1024 // 50 MiB
 
 export async function fetchJson(url: string, fetcher: IFetchComponent, init?: fetch.RequestInit): Promise<any> {
-  const response = await fetcher.fetch(url, { size: MAX_JSON_RESPONSE_SIZE_IN_BYTES, ...init })
+  // `size` is spread last so the cap can't be accidentally overridden (or removed) by a caller.
+  const response = await fetcher.fetch(url, { ...init, size: MAX_JSON_RESPONSE_SIZE_IN_BYTES })
 
   if (!response.ok) {
     throw new Error('Error fetching ' + url + '. Status code was: ' + response.status)
@@ -238,6 +239,9 @@ function downloadFile(
 }
 
 export function pickRandomServer(serversToPickFrom: Server[]): string {
+  if (serversToPickFrom.length === 0) {
+    throw new Error('Cannot pick a server from an empty list of servers')
+  }
   // We could use round-robin or a fancier load-balancing algorithm to spread downloads across
   // servers, but with thousands of "load balancing events" a uniformly-random pick spreads the
   // load evenly enough in practice while staying dead simple.

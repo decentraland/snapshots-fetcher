@@ -1,5 +1,5 @@
 import { downloadFileWithRetries } from '../src/downloader'
-import { isValidContentHash } from '../src/utils'
+import { isValidContentHash, pickRandomServer } from '../src/utils'
 
 describe('isValidContentHash', () => {
   describe('when the hash is a valid CIDv0 (Qm) content hash', () => {
@@ -62,6 +62,21 @@ describe('downloadFileWithRetries', () => {
         downloadFileWithRetries({ storage } as any, '../../etc/passwd', '/tmp/downloads', [], new Map(), 1, 0)
       ).rejects.toThrow('Invalid content hash')
       expect(storage.exist).not.toHaveBeenCalled()
+    })
+  })
+})
+
+describe('pickRandomServer', () => {
+  describe('when the list contains at least one server', () => {
+    it('should return one of the servers in the list', () => {
+      const servers = ['https://a.example.com', 'https://b.example.com']
+      expect(servers).toContain(pickRandomServer(servers))
+    })
+  })
+
+  describe('when the list of servers is empty', () => {
+    it('should throw instead of returning undefined', () => {
+      expect(() => pickRandomServer([])).toThrow('empty list of servers')
     })
   })
 })
