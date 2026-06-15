@@ -14,9 +14,10 @@ export { IDeployerComponent, SynchronizerComponent } from './types'
 export { createSynchronizer } from './synchronizer'
 export { getDeployedEntitiesStreamFromSnapshot, getDeployedEntitiesStreamFromPointerChanges } from './stream-entities'
 
-// Max number of content files downloaded in parallel for a single entity. Bounds socket / file
-// descriptor / temp-file usage so an entity declaring a huge content[] can't exhaust resources.
-const ENTITY_FILE_DOWNLOAD_CONCURRENCY = 10
+// Default maximum number of content files downloaded in parallel for a single entity. Bounds
+// socket / file descriptor / temp-file usage so an entity declaring a huge content[] can't exhaust
+// resources. Overridable per call via downloadEntityAndContentFiles's contentFilesConcurrency arg.
+const DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY = 10
 
 if (parseInt(process.version.split('.')[0]) < 16) {
   const { name } = require('../package.json')
@@ -31,6 +32,7 @@ async function downloadProfileAvatars(
   targetFolder: string,
   maxRetries: number,
   waitTimeBetweenRetries: number,
+  concurrency: number,
   entityMetadata:
     {
       type: string
@@ -47,7 +49,7 @@ async function downloadProfileAvatars(
     .filter(snapshot => !entityMetadata.content || entityMetadata.content.find(content => content.hash === snapshot) === undefined)
   if (snapshots.length > 0) {
     logger.info(`Downloading snapshots ${snapshots} for fixing entity ${JSON.stringify(entityMetadata)}`)
-    const downloadQueue = new PQueue({ concurrency: ENTITY_FILE_DOWNLOAD_CONCURRENCY })
+    const downloadQueue = new PQueue({ concurrency })
     await Promise.all(
       snapshots.map(snapshot => downloadQueue.add(() => downloadFileWithRetries(
         components,
@@ -67,6 +69,8 @@ async function downloadProfileAvatars(
  * Downloads an entity and its dependency files to a folder in the disk.
  *
  * Returns the parsed JSON file of the deployed entityHash
+ * @param contentFilesConcurrency - Maximum number of content files to download in parallel for this
+ *   entity. Defaults to {@link DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY} (10).
  * @public
  */
 export async function downloadEntityAndContentFiles(
@@ -76,7 +80,8 @@ export async function downloadEntityAndContentFiles(
   _serverMapLRU: Map<Server, number>,
   targetFolder: string,
   maxRetries: number,
-  waitTimeBetweenRetries: number
+  waitTimeBetweenRetries: number,
+  contentFilesConcurrency: number = DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY
 ): Promise<unknown> {
   const logger = components.logs.getLogger(`downloadEntityAndContentFiles)`)
 
@@ -125,11 +130,12 @@ export async function downloadEntityAndContentFiles(
       targetFolder,
       maxRetries,
       waitTimeBetweenRetries,
+      contentFilesConcurrency,
       entityMetadata)
   }
 
   if (entityMetadata.content) {
-    const downloadQueue = new PQueue({ concurrency: ENTITY_FILE_DOWNLOAD_CONCURRENCY })
+    const downloadQueue = new PQueue({ concurrency: contentFilesConcurrency })
     await Promise.all(
       entityMetadata.content.map((content) =>
         downloadQueue.add(() =>
