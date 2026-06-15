@@ -55,7 +55,7 @@ test('job-manager-1', ({ components, stubComponents }) => {
   })
 
   afterAll(async () => {
-    await jobManager.stop()
+    await jobManager.stop!()
   })
 })
 
@@ -90,7 +90,7 @@ test('job-manager-stops-all', ({ components, stubComponents }) => {
   it('stopping the component kills all the jobs', async () => {
     jobManager.setDesiredJobs(new Set(['a', 'b', 'c']))
     expect(Array.from(jobManager.getRunningJobs())).toEqual(['a', 'b', 'c'])
-    await jobManager.stop()
+    await jobManager.stop!()
     expect(Array.from(jobManager.getRunningJobs())).toEqual([])
   })
 })

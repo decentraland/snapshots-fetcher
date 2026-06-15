@@ -10,6 +10,7 @@
     ],
     "strict": true,
     "outDir": "./dist", /* Redirect output structure to the directory. */
+    "rootDir": "./src", /* Root of source files; keeps dist layout stable (required since TypeScript 6). */
     "esModuleInterop": true, /* Enables emit interoperability between CommonJS and ES Modules via creation of namespace objects for all imports. Implies 'allowSyntheticDefaultImports'. */
     "skipLibCheck": true, /* Skip type checking of declaration files. */
     "forceConsistentCasingInFileNames": true /* Disallow inconsistently-cased references to the same file. */

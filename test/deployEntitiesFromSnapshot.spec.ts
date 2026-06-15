@@ -103,7 +103,7 @@ describe('deployEntitiesFromSnapshot', () => {
         { entityId: 'id2', entityType: 't2', pointers: ['p2'], entityTimestamp: 1, authChain: [], snapshotHash, servers },
       ])
 
-      const entitiesToDeploy = []
+      const entitiesToDeploy: Array<() => Promise<void>> = []
       const deployerMock = {
         async scheduleEntityDeployment(entity: DeployableEntity) {
           if (entity.markAsDeployed) {

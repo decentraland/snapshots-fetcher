@@ -118,7 +118,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     )
 
     // check file exists and has correct content
-    const fileContent = await streamToBuffer(await (await components.storage.retrieve('working')).asStream())
+    const fileContent = await streamToBuffer(await (await components.storage.retrieve('working'))!.asStream())
 
     expect(fileContent).toEqual(content)
   })
@@ -137,7 +137,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
       false
     )
 
-    const fileContent = await streamToBuffer(await (await components.storage.retrieve('working')).asStream())
+    const fileContent = await streamToBuffer(await (await components.storage.retrieve('working'))!.asStream())
 
     // check file exists and has correct content
     expect(fileContent).toEqual(content)
@@ -157,7 +157,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
       false
     )
 
-    const fileContent = await streamToBuffer(await (await components.storage.retrieve('working')).asStream())
+    const fileContent = await streamToBuffer(await (await components.storage.retrieve('working'))!.asStream())
 
     // check file exists and has correct content
     expect(fileContent).toEqual(content)

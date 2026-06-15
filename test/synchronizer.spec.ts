@@ -118,7 +118,7 @@ test('synchronizer deploys entities from snapshots and pointer-changes at bootst
       bootstrapFinished.resolve()
     })
     await bootstrapFinished
-    await synchronizer.stop()
+    await synchronizer.stop!()
     const entityIds = [
       // snapshot entities
       'ba000000000000000000000000000000000000000000000000000000001',
@@ -243,7 +243,7 @@ test('synchronizer should not deploy entities from snapshot if it has itdx as ow
       bootstrapFinished.resolve()
     })
     await bootstrapFinished
-    await synchronizer.stop()
+    await synchronizer.stop!()
     expect(deployerMock.scheduleEntityDeployment).not.toBeCalled()
     // expect snapshot is not deleted
     expect(storageDeleteSpy).not.toBeCalled()
