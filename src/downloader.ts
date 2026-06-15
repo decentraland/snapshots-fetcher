@@ -1,7 +1,7 @@
 import * as path from 'path'
 import { saveContentFileToDisk } from './client'
 import { Path, SnapshotsFetcherComponents } from './types'
-import { pickLeastRecentlyUsedServer, sleep } from './utils'
+import { isValidContentHash, pickRandomServer, sleep } from './utils'
 
 const downloadFileJobsMap = new Map<Path, ReturnType<typeof downloadFileWithRetries>>()
 
@@ -16,14 +16,16 @@ async function downloadJob(
   // cancel early if the file is already downloaded
   if (await components.storage.exist(hashToDownload)) return
 
+  // Sample the number of candidate servers once per job, not once per retry (which would skew the histogram).
+  components.metrics?.observe('dcl_available_servers_histogram', {}, presentInServers.length)
+
   let retries = 0
   let serversToPickFrom: string[] = presentInServers
 
   for (;;) {
     retries++
-    const serverToUse = pickLeastRecentlyUsedServer(serversToPickFrom)
+    const serverToUse = pickRandomServer(serversToPickFrom)
     try {
-      components.metrics?.observe('dcl_available_servers_histogram', {}, presentInServers.length)
       await downloadContentFile(components, hashToDownload, finalFileName, serverToUse)
       components.metrics?.observe('dcl_content_download_job_succeed_retries', {}, retries)
 
@@ -56,6 +58,12 @@ export async function downloadFileWithRetries(
   maxRetries: number,
   waitTimeBetweenRetries: number
 ): Promise<void> {
+  // Reject untrusted hashes that are not plain content addresses before using them to build a
+  // filesystem path. Without this, a value like "../../etc/x" would escape targetTempFolder.
+  if (!isValidContentHash(hashToDownload)) {
+    throw new Error(`Invalid content hash: ${JSON.stringify(hashToDownload)}`)
+  }
+
   const finalFileName = path.resolve(targetTempFolder, hashToDownload)
 
   if (downloadFileJobsMap.has(finalFileName)) {
@@ -86,7 +94,9 @@ async function downloadContentFile(
   finalFileName: string,
   serverToUse: string
 ): Promise<void> {
-  if (!(await components.storage.exist(finalFileName))) {
+  // Storage is keyed by content hash, not by the filesystem path. Checking the hash lets a
+  // concurrent download that targets a different folder short-circuit this one.
+  if (!(await components.storage.exist(hash))) {
     return saveContentFileToDisk(components, serverToUse, hash, finalFileName)
   }
 }

@@ -5,7 +5,7 @@ import * as fs from 'fs'
 import * as http from 'http'
 import * as https from 'https'
 import * as fetch from 'node-fetch'
-import { pipeline, Readable } from 'stream'
+import { pipeline, Readable, Transform } from 'stream'
 import { promisify } from 'util'
 import * as zlib from 'zlib'
 import { ContentServerMetricLabels } from './metrics'
@@ -13,8 +13,13 @@ import { Server, SnapshotsFetcherComponents } from './types'
 
 const streamPipeline = promisify(pipeline)
 
+// Upper bound for buffered JSON responses (snapshot lists, pointer-change pages). Without it,
+// node-fetch's response.json() buffers the whole body, so a malicious/compromised server could
+// OOM the process with a huge payload. node-fetch rejects responses larger than `size`.
+const MAX_JSON_RESPONSE_SIZE_IN_BYTES = 50 * 1024 * 1024 // 50 MiB
+
 export async function fetchJson(url: string, fetcher: IFetchComponent, init?: fetch.RequestInit): Promise<any> {
-  const response = await fetcher.fetch(url, init)
+  const response = await fetcher.fetch(url, { size: MAX_JSON_RESPONSE_SIZE_IN_BYTES, ...init })
 
   if (!response.ok) {
     throw new Error('Error fetching ' + url + '. Status code was: ' + response.status)
@@ -34,6 +39,14 @@ export async function checkFileExists(file: string): Promise<boolean> {
 export async function sleep(time: number): Promise<void> {
   if (time <= 0) return
   return new Promise<void>((resolve) => setTimeout(resolve, time))
+}
+
+// Content hashes are IPFS CIDs (base58 "Qm..." or base32 "ba...") and are therefore strictly
+// alphanumeric. Validating against this charset before using a hash to build a filesystem path
+// (path.resolve) or a storage key prevents path traversal from untrusted/remote hash values.
+const VALID_CONTENT_HASH = /^[a-zA-Z0-9]+$/
+export function isValidContentHash(hash: string): boolean {
+  return typeof hash === 'string' && hash.length > 0 && hash.length <= 128 && VALID_CONTENT_HASH.test(hash)
 }
 
 export async function assertHash(filename: string, hash: string) {
@@ -116,6 +129,31 @@ export async function saveContentFileToDisk(
   }
 }
 
+// Stop following redirects after this many hops.
+const MAX_REDIRECTS = 10
+// Abort a download after this many milliseconds of socket inactivity. Healthy downloads keep the
+// socket busy, so this only trips on stalled connections (e.g. a server that stops sending bytes).
+const DOWNLOAD_INACTIVITY_TIMEOUT_MS = 30_000
+// Hard cap on the number of bytes written to disk (after decompression). Protects against gzip
+// bombs and otherwise unbounded responses that could exhaust the disk.
+const MAX_DOWNLOADED_FILE_SIZE_IN_BYTES = 1024 * 1024 * 1024 // 1 GiB
+
+// Fails the pipeline once more than maxBytes have flowed through it. Placed *after* gunzip so it
+// bounds the decompressed size.
+function createSizeLimiter(maxBytes: number): Transform {
+  let total = 0
+  return new Transform({
+    transform(chunk, _encoding, callback) {
+      total += chunk.length
+      if (total > maxBytes) {
+        callback(new Error(`Downloaded file exceeds the maximum allowed size of ${maxBytes} bytes`))
+      } else {
+        callback(null, chunk)
+      }
+    }
+  })
+}
+
 function downloadFile(
   originalUrlString: string,
   metricsLabels: ContentServerMetricLabels,
@@ -123,10 +161,14 @@ function downloadFile(
   tmpFileName: string
 ) {
   return new Promise<void>((resolve, reject) => {
-    const MAX_REDIRECTS = 10
-
-    function requestWithRedirects(redirectedUrl: string, redirects: number) {
-      const url = new URL(redirectedUrl, originalUrlString)
+    function requestWithRedirects(redirectedUrl: string, baseUrl: string, redirects: number) {
+      // Relative redirects must be resolved against the URL that issued them, not the original URL.
+      const url = new URL(redirectedUrl, baseUrl)
+      // Only http(s) is supported; reject other schemes (e.g. file:) a redirect could point to.
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+        reject(new Error('Unsupported protocol in URL ' + url.toString()))
+        return
+      }
       const httpModule = url.protocol === 'https:' ? https : http
       if (redirects > MAX_REDIRECTS) {
         reject(new Error('Too much redirects'))
@@ -140,58 +182,65 @@ function downloadFile(
         metricsLabels
       ) || { end: () => {} }
 
-      httpModule
-        .get(url.toString(), { headers: { 'accept-encoding': 'gzip' } }, (response) => {
-          if ((response.statusCode === 302 || response.statusCode === 301) && response.headers.location) {
-            // handle redirection
-            requestWithRedirects(response.headers.location!, redirects + 1)
-            return
-          } else if (!response.statusCode || response.statusCode > 300) {
-            reject(new Error('Invalid response from ' + url + ' status: ' + response.statusCode))
-            return
-          } else {
-            const file = fs.createWriteStream(tmpFileName, {
-              emitClose: true
+      const request = httpModule.get(url.toString(), { headers: { 'accept-encoding': 'gzip' } }, (response) => {
+        if ((response.statusCode === 302 || response.statusCode === 301) && response.headers.location) {
+          // drain the redirect response so its socket is freed (and its inactivity timer cleared)
+          response.resume()
+          // handle redirection
+          requestWithRedirects(response.headers.location!, url.toString(), redirects + 1)
+          return
+        } else if (!response.statusCode || response.statusCode > 300) {
+          response.resume()
+          reject(new Error('Invalid response from ' + url + ' status: ' + response.statusCode))
+          return
+        } else {
+          const file = fs.createWriteStream(tmpFileName, {
+            emitClose: true
+          })
+
+          const isGzip = response.headers['content-encoding'] === 'gzip'
+          const sizeLimiter = createSizeLimiter(MAX_DOWNLOADED_FILE_SIZE_IN_BYTES)
+
+          const pipe = isGzip
+            ? streamPipeline(response, zlib.createGunzip(), sizeLimiter, file)
+            : streamPipeline(response, sizeLimiter, file)
+
+          pipe
+            .then(() => {
+              file.close() // close() is async, call cb after close completes.
+              components.metrics?.increment('dcl_content_download_bytes_total', metricsLabels, file.bytesWritten)
+              endTimeMeasurement()
+              resolve()
             })
+            .catch((err) => {
+              file.close()
+              reject(err)
+              components.metrics?.increment('dcl_content_download_errors_total', metricsLabels)
+              endTimeMeasurement()
+            })
+        }
+      })
 
-            const isGzip = response.headers['content-encoding'] === 'gzip'
+      // Reject (instead of hanging forever) when the connection stalls before/while downloading.
+      request.setTimeout(DOWNLOAD_INACTIVITY_TIMEOUT_MS, () => {
+        request.destroy(new Error('Timeout while downloading ' + url.toString()))
+      })
 
-            const pipe = isGzip ? streamPipeline(response, zlib.createGunzip(), file) : streamPipeline(response, file)
-
-            pipe
-              .then(() => {
-                file.close() // close() is async, call cb after close completes.
-                components.metrics?.increment('dcl_content_download_bytes_total', metricsLabels, file.bytesWritten)
-                endTimeMeasurement()
-                resolve()
-              })
-              .catch((err) => {
-                file.close()
-                reject(err)
-                components.metrics?.increment('dcl_content_download_errors_total', metricsLabels)
-                endTimeMeasurement()
-              })
-          }
-        })
-        .on('error', function (err) {
-          reject(err)
-          components.metrics?.increment('dcl_content_download_errors_total', metricsLabels)
-          endTimeMeasurement()
-        })
+      request.on('error', function (err) {
+        reject(err)
+        components.metrics?.increment('dcl_content_download_errors_total', metricsLabels)
+        endTimeMeasurement()
+      })
     }
 
-    requestWithRedirects(originalUrlString, 0)
+    requestWithRedirects(originalUrlString, originalUrlString, 0)
   })
 }
 
-export function pickLeastRecentlyUsedServer(serversToPickFrom: Server[]): string {
-  // Here is the thing. We could perfectly use round-robin to download content files
-  // and/or spend precious CPU cycles in a fancy load balancing algorithm.
-  // But we are dealing with thousands of "load balancing events". And Math.random()
-  // has a **normal distribution**, which has in practice (and big numbers) the same
-  // effect, load balancing.
-  //
-  // Math is lovely.
+export function pickRandomServer(serversToPickFrom: Server[]): string {
+  // We could use round-robin or a fancier load-balancing algorithm to spread downloads across
+  // servers, but with thousands of "load balancing events" a uniformly-random pick spreads the
+  // load evenly enough in practice while staying dead simple.
   return serversToPickFrom[Math.floor(Math.random() * serversToPickFrom.length)]
 }
 

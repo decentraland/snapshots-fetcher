@@ -132,3 +132,74 @@ test('fetches a stream from pointer-changes from 0 if timestamp is not specified
     ])
   })
 })
+
+test('does not re-yield boundary deployments across polls', ({ components }) => {
+  const authChain = [
+    {
+      type: AuthLinkType.SIGNER,
+      payload: '0x3b21028719a4aca7ebee35b0157a6f1b0cf0d0c5',
+      signature: '',
+    },
+  ]
+  const idA = 'ba000000000000000000000000000000000000000000000000000000010'
+  const idB = 'ba000000000000000000000000000000000000000000000000000000011'
+
+  it('prepares the endpoints', () => {
+    // The poll re-fetches from the high-water timestamp (inclusive), so the deployment at that
+    // timestamp comes back every cycle. from=1 re-returns idA (ts 1) alongside the new idB (ts 2).
+    components.router.get('/pointer-changes', async (ctx) => {
+      const from = ctx.url.searchParams.get('from')
+      if (from === '0') {
+        return {
+          body: {
+            deltas: [
+              { entityType: 'profile', entityId: idA, entityTimestamp: 1, localTimestamp: 1, authChain, pointers: ['0x1'] }
+            ],
+            pagination: {}
+          }
+        }
+      }
+      if (from === '1') {
+        return {
+          body: {
+            deltas: [
+              { entityType: 'profile', entityId: idA, entityTimestamp: 1, localTimestamp: 1, authChain, pointers: ['0x1'] },
+              { entityType: 'profile', entityId: idB, entityTimestamp: 2, localTimestamp: 2, authChain, pointers: ['0x1'] }
+            ],
+            pagination: {}
+          }
+        }
+      }
+      return {
+        body: {
+          deltas: [
+            { entityType: 'profile', entityId: idB, entityTimestamp: 2, localTimestamp: 2, authChain, pointers: ['0x1'] }
+          ],
+          pagination: {}
+        }
+      }
+    })
+  })
+
+  it('yields each deployment at the boundary timestamp only once', async () => {
+    const yieldedEntityIds: string[] = []
+    const stream = getDeployedEntitiesStreamFromPointerChanges(
+      components,
+      {
+        pointerChangesWaitTime: 20,
+        fromTimestamp: 0
+      },
+      await components.getBaseUrl()
+    )
+
+    for await (const deployment of stream) {
+      yieldedEntityIds.push(deployment.entityId)
+      // stop once the second poll has surfaced the new deployment
+      if (deployment.entityId === idB) {
+        break
+      }
+    }
+
+    expect(yieldedEntityIds).toEqual([idA, idB])
+  })
+})
