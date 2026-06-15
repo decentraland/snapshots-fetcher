@@ -1,10 +1,9 @@
 import { hashV0, hashV1 } from '@dcl/hashing'
-import { IFetchComponent } from '@well-known-components/interfaces'
+import { IFetchComponent, RequestOptions } from '@well-known-components/interfaces'
 import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as http from 'http'
 import * as https from 'https'
-import * as fetch from 'node-fetch'
 import { pipeline, Readable, Transform } from 'stream'
 import { promisify } from 'util'
 import * as zlib from 'zlib'
@@ -14,10 +13,10 @@ import { Server, SnapshotsFetcherComponents } from './types'
 const streamPipeline = promisify(pipeline)
 
 // Bounds buffered JSON responses so a malicious server can't OOM the process via response.json().
-// node-fetch rejects bodies larger than `size`.
+// The underlying fetch implementation rejects bodies larger than `size`.
 const MAX_JSON_RESPONSE_SIZE_IN_BYTES = 50 * 1024 * 1024 // 50 MiB
 
-export async function fetchJson(url: string, fetcher: IFetchComponent, init?: fetch.RequestInit): Promise<any> {
+export async function fetchJson(url: string, fetcher: IFetchComponent, init?: RequestOptions): Promise<any> {
   // `size` is spread last so the cap can't be accidentally overridden (or removed) by a caller.
   const response = await fetcher.fetch(url, { ...init, size: MAX_JSON_RESPONSE_SIZE_IN_BYTES })
 

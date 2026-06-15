@@ -5,7 +5,6 @@ import { createConfigComponent } from '@well-known-components/env-config-provide
 import { IConfigComponent, IHttpServerComponent, ILoggerComponent } from '@well-known-components/interfaces'
 import { createLogComponent } from '@well-known-components/logger'
 import { defaultServerConfig } from '@well-known-components/test-helpers'
-import { Headers } from 'node-fetch'
 import { Readable } from 'stream'
 
 export type TestServerAppContext<OtherComponents> = {
@@ -77,7 +76,9 @@ export async function initTestServerComponents(): Promise<TestServerComponents<a
 
   const logs = await createLogComponent({ config })
 
-  const server = await createServerComponent<TestServerAppContext<any>>({ logs, config }, {})
+  // Low keep-alive timeout so the server drops idle sockets promptly. Native fetch (undici) pools
+  // connections by default; without this, each test's server teardown waits seconds for them to close.
+  const server = await createServerComponent<TestServerAppContext<any>>({ logs, config }, { keepAliveTimeout: 1 })
 
   const router = new Router<TestServerAppContext<any>>()
 

@@ -2,19 +2,19 @@ import { createInMemoryStorage, IContentStorageComponent } from '@dcl/catalyst-s
 import { IFetchComponent } from '@well-known-components/interfaces'
 import { readFileSync } from 'fs'
 import { readdir, stat } from 'fs/promises'
-import * as nodeFetch from 'node-fetch'
 import { resolve } from 'path'
 import { Readable } from 'stream'
 import { IProcessedSnapshotStorageComponent } from '../src/types'
 
-export function createFetchComponent() {
-  const fetch: IFetchComponent = {
-    async fetch(url: nodeFetch.RequestInfo, init?: nodeFetch.RequestInit): Promise<nodeFetch.Response> {
-      return nodeFetch.default(url, init)
+export function createFetchComponent(): IFetchComponent {
+  return {
+    // Bridge Node's native fetch to IFetchComponent (which is typed against node-fetch). The
+    // node-fetch-specific init options (timeout/size) are ignored by native fetch, which is fine
+    // for tests; the production fetcher honors them.
+    async fetch(url: any, init?: any): Promise<any> {
+      return globalThis.fetch(url, init)
     }
   }
-
-  return fetch
 }
 
 export async function createStorageComponent(): Promise<IContentStorageComponent> {
