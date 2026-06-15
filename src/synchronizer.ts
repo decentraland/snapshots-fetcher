@@ -2,12 +2,13 @@ import future from 'fp-future'
 import PQueue from 'p-queue'
 import { getSnapshots } from './client'
 import {
+  decideSnapshotDeploymentFromProcessedSet,
   deployEntitiesFromPointerChanges,
-  deployEntitiesFromSnapshot,
-  shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded
+  deployEntitiesFromSnapshot
 } from './deploy-entities'
-import { ExponentialFallofRetryComponent, createExponentialFallofRetry } from './exponential-fallof-retry'
+import { createExponentialFallofRetry } from './exponential-fallof-retry'
 import { createJobLifecycleManagerComponent } from './job-lifecycle-manager'
+import { createSerialJobRunner } from './serial-job-runner'
 import {
   IDeployerComponent,
   SnapshotMetadata,
@@ -33,7 +34,8 @@ export async function createSynchronizer(
   const bootstrappingServersFromPointerChanges: Set<string> = new Set()
   const syncingServers: Set<string> = new Set()
   const lastEntityTimestampFromSnapshotsByServer: Map<string, number> = new Map()
-  const syncJobs: ExponentialFallofRetryComponent[] = []
+  // Sync jobs are serialized: only one runs at a time, the rest queue (FIFO).
+  const syncJobsRunner = createSerialJobRunner(logger)
   const pointerChangesShiftFix = 20 * 60_000
 
   let isStopped = false
@@ -46,8 +48,9 @@ export async function createSynchronizer(
       try {
         await syncFromSnapshots(syncingServers)
       } catch (e: any) {
-        // we don't log the exception here because createExponentialFallofRetry(logger, options) receives the logger
-        logger.error(`Error syncing snapshots: ${JSON.stringify(e)}`)
+        // The full error (with stack) is logged by createExponentialFallofRetry; here we add context.
+        // Note: JSON.stringify(error) is "{}", so log the message explicitly.
+        logger.error(`Error syncing snapshots: ${e?.message ?? JSON.stringify(e)}`)
         throw e
       }
     },
@@ -60,7 +63,8 @@ export async function createSynchronizer(
 
   function pointerChangesStartingTimestamp(server: string): number {
     const lastTimestamp = lastEntityTimestampFromSnapshotsByServer.get(server)
-    if (!lastTimestamp) {
+    // Note: a last timestamp of 0 (genesis) is valid, so we must check for undefined explicitly.
+    if (lastTimestamp === undefined) {
       throw new Error(
         `Can't start pointer changes stream without last entity timestamp for ${server}. This should never happen.`
       )
@@ -92,46 +96,78 @@ export async function createSynchronizer(
     type Snapshot = SnapshotMetadata & { server: string }
     const snapshotsByHash: Map<string, Snapshot[]> = new Map()
     const snapshotLastTimestampByServer: Map<string, number> = new Map()
-    for (const server of serversToSync) {
-      try {
-        const snapshots = await getSnapshots(components, server, options.requestMaxRetries)
-        snapshotLastTimestampByServer.set(server, Math.max(...snapshots.map((s) => s.timeRange.endTimestamp)))
-        for (const snapshot of snapshots) {
-          const snapshotMetadatas = snapshotsByHash.get(snapshot.hash) ?? []
-          snapshotMetadatas.push({ ...snapshot, server })
-          snapshotsByHash.set(snapshot.hash, snapshotMetadatas)
+    // Fetch all servers concurrently; getSnapshots already runs through the concurrency-limited
+    // downloadQueue. The synchronous map mutations below can't interleave (no await between them).
+    await Promise.all(
+      Array.from(serversToSync).map(async (server) => {
+        try {
+          const snapshots = await getSnapshots(components, server, options.requestMaxRetries)
+          // A server may legitimately have no snapshots yet (e.g. brand new). Math.max() of an empty
+          // list is -Infinity, so fall back to the genesis timestamp to keep a sane starting point.
+          const lastTimestamp =
+            snapshots.length > 0 ? Math.max(...snapshots.map((s) => s.timeRange.endTimestamp)) : genesisTimestamp
+          snapshotLastTimestampByServer.set(server, lastTimestamp)
+          for (const snapshot of snapshots) {
+            const snapshotMetadatas = snapshotsByHash.get(snapshot.hash) ?? []
+            snapshotMetadatas.push({ ...snapshot, server })
+            snapshotsByHash.set(snapshot.hash, snapshotMetadatas)
+          }
+        } catch (error) {
+          logger.info(`Error getting snapshots from ${server}.`)
         }
-      } catch (error) {
-        logger.info(`Error getting snapshots from ${server}.`)
-      }
-    }
+      })
+    )
 
     const deploymentsProcessorsQueue = new PQueue({
       concurrency: 10,
       autoStart: false
     })
 
-    const timeRangesOfEntitiesToDeploy: TimeRange[] = []
+    // Resolve all processed snapshot hashes in one storage call instead of one per snapshot; the
+    // per-snapshot decisions below read from this set.
+    const allSnapshotHashesToCheck = new Set<string>()
     for (const [snapshotHash, snapshots] of snapshotsByHash) {
-      const replacedSnapshotHashes = snapshots.map((s) => s.replacedSnapshotHashes ?? [])
-      const greatestEndTimestamp = Math.max(...snapshots.map((s) => s.timeRange.endTimestamp))
-      const shouldProcessSnapshot = await shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(
-        components,
-        genesisTimestamp,
-        snapshotHash,
-        greatestEndTimestamp,
-        replacedSnapshotHashes
-      )
-      if (shouldProcessSnapshot) {
-        const servers = new Set(snapshots.map((s) => s.server))
-        timeRangesOfEntitiesToDeploy.push(...snapshots.map((s) => s.timeRange))
-        deploymentsProcessorsQueue
-          .add(async () => {
-            await deployEntitiesFromSnapshot(components, options, snapshotHash, servers, () => isStopped)
-          })
-          .catch(logger.error)
+      allSnapshotHashesToCheck.add(snapshotHash)
+      for (const snapshot of snapshots) {
+        for (const replacedHash of snapshot.replacedSnapshotHashes ?? []) {
+          allSnapshotHashesToCheck.add(replacedHash)
+        }
       }
     }
+    const processedSnapshots =
+      allSnapshotHashesToCheck.size > 0
+        ? await components.processedSnapshotStorage.filterProcessedSnapshotsFrom(Array.from(allSnapshotHashesToCheck))
+        : new Set<string>()
+
+    const timeRangesOfEntitiesToDeploy: TimeRange[] = []
+    // Each decision may still hit snapshotStorage; run them with bounded concurrency instead of a
+    // serial chain. The synchronous push/enqueue after each await can't interleave.
+    const shouldProcessChecksQueue = new PQueue({ concurrency: 10 })
+    await Promise.all(
+      Array.from(snapshotsByHash).map(([snapshotHash, snapshots]) =>
+        shouldProcessChecksQueue.add(async () => {
+          const replacedSnapshotHashes = snapshots.map((s) => s.replacedSnapshotHashes ?? [])
+          const greatestEndTimestamp = Math.max(...snapshots.map((s) => s.timeRange.endTimestamp))
+          const shouldProcessSnapshot = await decideSnapshotDeploymentFromProcessedSet(
+            components,
+            processedSnapshots,
+            genesisTimestamp,
+            snapshotHash,
+            greatestEndTimestamp,
+            replacedSnapshotHashes
+          )
+          if (shouldProcessSnapshot) {
+            const servers = new Set(snapshots.map((s) => s.server))
+            timeRangesOfEntitiesToDeploy.push(...snapshots.map((s) => s.timeRange))
+            deploymentsProcessorsQueue
+              .add(async () => {
+                await deployEntitiesFromSnapshot(components, options, snapshotHash, servers, () => isStopped)
+              })
+              .catch((err) => logger.error(err))
+          }
+        })
+      )
+    )
 
     logger.info('Warming up deployer.')
     await components.deployer.prepareForDeploymentsIn(timeRangesOfEntitiesToDeploy)
@@ -187,7 +223,7 @@ export async function createSynchronizer(
       })
     }
 
-    if (minStartingPoint) {
+    if (minStartingPoint !== undefined) {
       await components.deployer.prepareForDeploymentsIn([
         {
           initTimestamp: minStartingPoint,
@@ -347,15 +383,7 @@ export async function createSynchronizer(
           )
         })
       }
-      syncJobs.push(newSyncJob)
-      if (syncJobs.length === 1) {
-        syncJobs[0].start().finally(async () => {
-          syncJobs.shift()
-          if (syncJobs.length > 0) {
-            syncJobs[0].start().catch(logger.error)
-          }
-        })
-      }
+      syncJobsRunner.enqueue(newSyncJob)
       return newSyncJob
     },
     async stop() {
@@ -363,12 +391,7 @@ export async function createSynchronizer(
       if (!isStopped) {
         isStopped = true
 
-        if (syncJobs.length > 0) {
-          await syncJobs[0].stop()
-          while (syncJobs.length > 0) {
-            syncJobs.shift()
-          }
-        }
+        await syncJobsRunner.stop()
         syncingServers.clear()
         if (deployPointerChangesAfterBootstrapJobManager.stop) {
           await deployPointerChangesAfterBootstrapJobManager.stop()

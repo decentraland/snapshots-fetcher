@@ -79,6 +79,9 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
   // fetch the /pointer-changes of the remote server using the last timestamp from the previous step with a grace period of 20 min
   const genesisTimestamp = options.fromTimestamp || 0
   let greatestLocalTimestampProcessed = genesisTimestamp
+  // `from` is inclusive, so each poll re-returns the deployments at the high-water timestamp. Track
+  // the entityIds already yielded at that timestamp to skip those re-yields (never a distinct one).
+  let entityIdsYieldedAtGreatestTimestamp = new Set<string>()
   logs.debug('Starting to stream entities from Pointer-Changes.', {
     contentServer,
     timestamp: new Date(genesisTimestamp).toISOString()
@@ -87,15 +90,25 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
     // 1. download pointer changes and yield
     const pointerChanges = fetchPointerChanges(components, contentServer, greatestLocalTimestampProcessed, logs)
     for await (const deployment of pointerChanges) {
-      // selectively ignore deployments by localTimestamp
-      if (deployment.localTimestamp >= genesisTimestamp) {
-        components.metrics?.increment('dcl_entities_deployments_streamed_total', { source: 'pointer-changes' })
-        yield deployment
+      const localTimestamp = deployment.localTimestamp
+
+      // when we move past the previous high-water timestamp, reset the per-timestamp dedup set
+      if (localTimestamp > greatestLocalTimestampProcessed) {
+        greatestLocalTimestampProcessed = localTimestamp
+        entityIdsYieldedAtGreatestTimestamp = new Set<string>()
       }
 
-      // update greatest processed local timestamp
-      if (deployment.localTimestamp) {
-        greatestLocalTimestampProcessed = Math.max(greatestLocalTimestampProcessed, deployment.localTimestamp)
+      const alreadyYielded =
+        localTimestamp === greatestLocalTimestampProcessed &&
+        entityIdsYieldedAtGreatestTimestamp.has(deployment.entityId)
+
+      // selectively ignore deployments by localTimestamp, and skip ones already yielded this run
+      if (localTimestamp >= genesisTimestamp && !alreadyYielded) {
+        components.metrics?.increment('dcl_entities_deployments_streamed_total', { source: 'pointer-changes' })
+        yield deployment
+        if (localTimestamp === greatestLocalTimestampProcessed) {
+          entityIdsYieldedAtGreatestTimestamp.add(deployment.entityId)
+        }
       }
     }
 

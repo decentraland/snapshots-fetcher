@@ -40,26 +40,51 @@ export async function* processDeploymentsInFile(
  * Parses every line and yields RemoteEntityDeployment.
  * @public
  */
+// Maximum number of invalid-line errors logged per snapshot file, so a single corrupt file can't
+// flood the logs.
+const MAX_LINE_ERRORS_TO_LOG = 100
+
 export async function* processDeploymentsInStream(
   stream: NodeJS.ReadableStream,
   logger: ILoggerComponent.ILogger
 ): AsyncIterable<SyncDeployment> {
+  let lineErrorsLogged = 0
+  function logLineError(message: string, extra: Record<string, string>) {
+    if (lineErrorsLogged >= MAX_LINE_ERRORS_TO_LOG) {
+      return
+    }
+    lineErrorsLogged++
+    logger.error(message, extra)
+    if (lineErrorsLogged === MAX_LINE_ERRORS_TO_LOG) {
+      logger.error('Too many invalid lines in snapshot file, suppressing further line errors', {
+        suppressedAfter: String(MAX_LINE_ERRORS_TO_LOG)
+      })
+    }
+  }
+
   for await (const line of processLineByLine(stream)) {
     const theLine = line.trim()
     if (theLine.startsWith('{') && theLine.endsWith('}')) {
-      const parsedLine = JSON.parse(theLine)
+      let parsedLine: any
+      try {
+        parsedLine = JSON.parse(theLine)
+      } catch (error: any) {
+        // A single malformed line should not abort processing of the whole snapshot file.
+        logLineError('ERROR: Could not parse line in snapshot file', {
+          line: theLine,
+          error: error?.message ?? JSON.stringify(error)
+        })
+        continue
+      }
       if (SnapshotSyncDeployment.validate(parsedLine)) {
         yield parsedLine
       } else if (PointerChangesSyncDeployment.validate(parsedLine)) {
         yield parsedLine
       } else {
-        const errors = {
-          ...SnapshotSyncDeployment.validate.errors,
-          ...PointerChangesSyncDeployment.validate.errors
-        }
-        logger.error('ERROR: Invalid entity deployment in snapshot file', {
-          deployment: parsedLine,
-          error: JSON.stringify(errors)
+        logLineError('ERROR: Invalid entity deployment in snapshot file', {
+          deployment: JSON.stringify(parsedLine),
+          snapshotErrors: JSON.stringify(SnapshotSyncDeployment.validate.errors),
+          pointerChangesErrors: JSON.stringify(PointerChangesSyncDeployment.validate.errors)
         })
       }
     }
