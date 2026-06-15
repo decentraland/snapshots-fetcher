@@ -52,3 +52,33 @@ test('getSnapshots when the response is not an array', ({ components }) => {
     await expect(getSnapshots(components, await components.getBaseUrl(), 10)).rejects.toThrow('expected an array')
   })
 })
+
+test('getSnapshots when the response contains many invalid entries', ({ components }) => {
+  const numberOfInvalidEntries = 150
+
+  it('prepares the endpoints', () => {
+    components.router.get('/snapshots', async () => ({
+      // every entry has a path-traversal hash, so all are rejected
+      body: Array.from({ length: numberOfInvalidEntries }, (_unused, index) => ({ hash: `../bad-${index}` }))
+    }))
+  })
+
+  it('caps the invalid-entry error logs and still returns no snapshots', async () => {
+    const errorMock = jest.fn()
+    jest.spyOn(components.logs, 'getLogger').mockReturnValue({
+      log: jest.fn(),
+      debug: jest.fn(),
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: errorMock
+    })
+
+    const snapshots = await getSnapshots(components, await components.getBaseUrl(), 10)
+
+    expect(snapshots).toEqual([])
+    // 100 per-entry errors + 1 summary line
+    expect(errorMock).toHaveBeenCalledTimes(101)
+
+    jest.restoreAllMocks()
+  })
+})

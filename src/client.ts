@@ -9,6 +9,10 @@ import {
   saveContentFileToDisk as saveContentFile
 } from './utils'
 
+// Cap how many invalid snapshot entries we log per response, so a server returning many of them
+// (the body can be up to MAX_JSON_RESPONSE_SIZE_IN_BYTES) can't flood the logs.
+const MAX_INVALID_SNAPSHOT_LOGS = 100
+
 // Snapshot metadata comes from untrusted servers; keep only entries with the shape we rely on
 // (valid content hash + numeric time range) so a malformed response can't break downstream logic.
 function isValidSnapshotMetadata(snapshot: any): snapshot is SnapshotMetadata {
@@ -42,15 +46,25 @@ export async function getSnapshots(
   }
 
   const validSnapshots: SnapshotMetadata[] = []
+  let invalidSnapshots = 0
   for (const snapshot of response) {
     if (isValidSnapshotMetadata(snapshot)) {
       validSnapshots.push(snapshot)
-    } else {
+      continue
+    }
+    invalidSnapshots++
+    if (invalidSnapshots <= MAX_INVALID_SNAPSHOT_LOGS) {
       logger.error('Ignoring invalid snapshot metadata received from server', {
         server,
         snapshot: JSON.stringify(snapshot)
       })
     }
+  }
+  if (invalidSnapshots > MAX_INVALID_SNAPSHOT_LOGS) {
+    logger.error('Ignored additional invalid snapshot metadata entries from server', {
+      server,
+      total: String(invalidSnapshots)
+    })
   }
 
   // newest first
