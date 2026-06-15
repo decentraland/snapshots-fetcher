@@ -66,8 +66,16 @@ export async function deployEntitiesFromSnapshot(
   let snapshotWasCompletelyStreamed = false
   let numberOfStreamedEntities = 0
   let numberOfProcessedEntities = 0
+  let snapshotWasMarkedAsProcessed = false
   async function saveIfStreamEndedAndAllEntitiesWereProcessed() {
-    if (snapshotWasCompletelyStreamed && numberOfStreamedEntities === numberOfProcessedEntities) {
+    // >= (not ===) so an extra markAsDeployed call can't leave the snapshot unmarked forever; the
+    // flag (set synchronously before any await) ensures we still mark only once.
+    if (
+      !snapshotWasMarkedAsProcessed &&
+      snapshotWasCompletelyStreamed &&
+      numberOfProcessedEntities >= numberOfStreamedEntities
+    ) {
+      snapshotWasMarkedAsProcessed = true
       await components.processedSnapshotStorage.markSnapshotAsProcessed(snapshotHash)
       components.metrics.increment('dcl_processed_snapshots_total', { state: 'saved' })
     }
@@ -121,6 +129,29 @@ export async function shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded
     ...replacedSnapshotHashes.flat()
   ])
 
+  return decideSnapshotDeploymentFromProcessedSet(
+    components,
+    processedSnapshots,
+    genesisTimestamp,
+    snapshotHash,
+    greatestEndTimestamp,
+    replacedSnapshotHashes
+  )
+}
+
+/**
+ * Same decision as shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded, but operating on an
+ * already-fetched set of processed snapshot hashes. This lets a caller batch the (potentially
+ * expensive) filterProcessedSnapshotsFrom lookup for many snapshots into a single storage call.
+ */
+export async function decideSnapshotDeploymentFromProcessedSet(
+  components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage' | 'snapshotStorage'>,
+  processedSnapshots: Set<string>,
+  genesisTimestamp: number,
+  snapshotHash: string,
+  greatestEndTimestamp: number,
+  replacedSnapshotHashes: string[][]
+): Promise<boolean> {
   const snapshotWasProcessed = processedSnapshots.has(snapshotHash)
   const aReplacedGroupWasProcessed = replacedSnapshotHashes.some(
     (replacedGroup) => replacedGroup.length > 0 && replacedGroup.every((s) => processedSnapshots.has(s))

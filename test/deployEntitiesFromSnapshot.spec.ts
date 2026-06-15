@@ -163,6 +163,38 @@ describe('deployEntitiesFromSnapshot', () => {
     })
   })
 
+  test('when the deployer calls markAsDeployed more times than the streamed entities', ({ components }) => {
+    it('still marks the snapshot as processed exactly once', async () => {
+      mockDeployedEntitiesStreamWith([
+        { entityId: 'id1', entityType: 't1', pointers: ['p1'], entityTimestamp: 0, authChain: [], snapshotHash, servers },
+        { entityId: 'id2', entityType: 't2', pointers: ['p2'], entityTimestamp: 1, authChain: [], snapshotHash, servers }
+      ])
+      const deployerMock = {
+        async scheduleEntityDeployment(entity: DeployableEntity) {
+          if (entity.markAsDeployed) {
+            // a misbehaving/over-eager deployer marks the same entity as deployed twice
+            await entity.markAsDeployed()
+            await entity.markAsDeployed()
+          }
+        },
+        onIdle: jest.fn(),
+        prepareForDeploymentsIn: jest.fn()
+      }
+      const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
+
+      await deployEntitiesFromSnapshot(
+        componentsWithDeployer(components, deployerMock),
+        streamOptions,
+        snapshotHash,
+        new Set(servers),
+        () => false
+      )
+
+      expect(markSnapshotAsProcessedSpy).toBeCalledTimes(1)
+      expect(markSnapshotAsProcessedSpy).toBeCalledWith(snapshotHash)
+    })
+  })
+
   test('when the stream is cancelled', ({ components }) => {
     it('stops the deployments of the entities', async () => {
       mockDeployedEntitiesStreamWith([

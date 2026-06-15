@@ -2,20 +2,73 @@ import { PointerChangesSyncDeployment } from '@dcl/schemas'
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import { metricsDefinitions } from './metrics'
 import { SnapshotMetadata, SnapshotsFetcherComponents } from './types'
-import { contentServerMetricLabels, fetchJson, saveContentFileToDisk as saveContentFile } from './utils'
+import {
+  contentServerMetricLabels,
+  fetchJson,
+  isValidContentHash,
+  saveContentFileToDisk as saveContentFile
+} from './utils'
+
+// Cap how many invalid snapshot entries we log per response, so a server returning many of them
+// (the body can be up to MAX_JSON_RESPONSE_SIZE_IN_BYTES) can't flood the logs.
+const MAX_INVALID_SNAPSHOT_LOGS = 100
+
+// Snapshot metadata comes from untrusted servers; keep only entries with the shape we rely on
+// (valid content hash + numeric time range) so a malformed response can't break downstream logic.
+function isValidSnapshotMetadata(snapshot: any): snapshot is SnapshotMetadata {
+  return (
+    !!snapshot &&
+    typeof snapshot.hash === 'string' &&
+    isValidContentHash(snapshot.hash) &&
+    !!snapshot.timeRange &&
+    typeof snapshot.timeRange.initTimestamp === 'number' &&
+    typeof snapshot.timeRange.endTimestamp === 'number' &&
+    (snapshot.replacedSnapshotHashes === undefined ||
+      (Array.isArray(snapshot.replacedSnapshotHashes) &&
+        snapshot.replacedSnapshotHashes.every((hash: any) => isValidContentHash(hash))))
+  )
+}
 
 export async function getSnapshots(
   components: SnapshotsFetcherComponents,
   server: string,
   retries: number
 ): Promise<SnapshotMetadata[]> {
+  const logger = components.logs.getLogger('getSnapshots')
   const incrementalSnapshotsUrl = new URL(`${server}/snapshots`).toString()
-  const newSnapshots: SnapshotMetadata[] = await components.downloadQueue.scheduleJobWithRetries(
+  const response = await components.downloadQueue.scheduleJobWithRetries(
     () => fetchJson(incrementalSnapshotsUrl, components.fetcher, { timeout: 15000 }),
     retries
   )
+
+  if (!Array.isArray(response)) {
+    throw new Error(`Invalid /snapshots response from ${server}: expected an array`)
+  }
+
+  const validSnapshots: SnapshotMetadata[] = []
+  let invalidSnapshots = 0
+  for (const snapshot of response) {
+    if (isValidSnapshotMetadata(snapshot)) {
+      validSnapshots.push(snapshot)
+      continue
+    }
+    invalidSnapshots++
+    if (invalidSnapshots <= MAX_INVALID_SNAPSHOT_LOGS) {
+      logger.error('Ignoring invalid snapshot metadata received from server', {
+        server,
+        snapshot: JSON.stringify(snapshot)
+      })
+    }
+  }
+  if (invalidSnapshots > MAX_INVALID_SNAPSHOT_LOGS) {
+    logger.error('Ignored additional invalid snapshot metadata entries from server', {
+      server,
+      total: String(invalidSnapshots)
+    })
+  }
+
   // newest first
-  return newSnapshots.sort((s1, s2) => s2.timeRange.endTimestamp - s1.timeRange.endTimestamp)
+  return validSnapshots.sort((s1, s2) => s2.timeRange.endTimestamp - s1.timeRange.endTimestamp)
 }
 
 export async function* fetchJsonPaginated<T>(

@@ -1,4 +1,5 @@
 import { ILoggerComponent } from '@well-known-components/interfaces'
+import PQueue from 'p-queue'
 import { downloadFileWithRetries } from './downloader'
 import {
   ContentMapping,
@@ -13,6 +14,10 @@ export { IDeployerComponent, SynchronizerComponent } from './types'
 export { createSynchronizer } from './synchronizer'
 export { getDeployedEntitiesStreamFromSnapshot, getDeployedEntitiesStreamFromPointerChanges } from './stream-entities'
 
+// Default cap on content files downloaded in parallel per entity, so a huge content[] can't exhaust
+// sockets / file descriptors. Overridable via downloadEntityAndContentFiles's last argument.
+const DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY = 10
+
 if (parseInt(process.version.split('.')[0]) < 16) {
   const { name } = require('../package.json')
   throw new Error(`In order to work, the package ${name} needs to run in Node v16 or newer to handle streams properly.`)
@@ -26,6 +31,7 @@ async function downloadProfileAvatars(
   targetFolder: string,
   maxRetries: number,
   waitTimeBetweenRetries: number,
+  concurrency: number,
   entityMetadata:
     {
       type: string
@@ -42,8 +48,9 @@ async function downloadProfileAvatars(
     .filter(snapshot => !entityMetadata.content || entityMetadata.content.find(content => content.hash === snapshot) === undefined)
   if (snapshots.length > 0) {
     logger.info(`Downloading snapshots ${snapshots} for fixing entity ${JSON.stringify(entityMetadata)}`)
+    const downloadQueue = new PQueue({ concurrency })
     await Promise.all(
-      snapshots.map(snapshot => downloadFileWithRetries(
+      snapshots.map(snapshot => downloadQueue.add(() => downloadFileWithRetries(
         components,
         snapshot,
         targetFolder,
@@ -52,7 +59,7 @@ async function downloadProfileAvatars(
         maxRetries,
         waitTimeBetweenRetries
       ).catch(() => logger.info(`File ${snapshot} not available for download.`))
-      )
+      ))
     )
   }
 }
@@ -61,6 +68,8 @@ async function downloadProfileAvatars(
  * Downloads an entity and its dependency files to a folder in the disk.
  *
  * Returns the parsed JSON file of the deployed entityHash
+ * @param contentFilesConcurrency - Maximum number of content files to download in parallel for this
+ *   entity. Defaults to {@link DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY} (10).
  * @public
  */
 export async function downloadEntityAndContentFiles(
@@ -70,7 +79,8 @@ export async function downloadEntityAndContentFiles(
   _serverMapLRU: Map<Server, number>,
   targetFolder: string,
   maxRetries: number,
-  waitTimeBetweenRetries: number
+  waitTimeBetweenRetries: number,
+  contentFilesConcurrency: number = DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY
 ): Promise<unknown> {
   const logger = components.logs.getLogger(`downloadEntityAndContentFiles)`)
 
@@ -87,13 +97,13 @@ export async function downloadEntityAndContentFiles(
 
   const content = await components.storage.retrieve(entityId)
 
-  let contentStream = ''
-
-  if (content) {
-    const stream = await content.asStream()
-    const buffer = await streamToBuffer(stream)
-    contentStream = await buffer.toString()
+  if (!content) {
+    throw new Error(`Entity file ${entityId} could not be retrieved from storage after download`)
   }
+
+  const stream = await content.asStream()
+  const buffer = await streamToBuffer(stream)
+  const contentStream = buffer.toString()
 
   const entityMetadata: {
     type: string,
@@ -119,20 +129,24 @@ export async function downloadEntityAndContentFiles(
       targetFolder,
       maxRetries,
       waitTimeBetweenRetries,
+      contentFilesConcurrency,
       entityMetadata)
   }
 
   if (entityMetadata.content) {
+    const downloadQueue = new PQueue({ concurrency: contentFilesConcurrency })
     await Promise.all(
       entityMetadata.content.map((content) =>
-        downloadFileWithRetries(
-          components,
-          content.hash,
-          targetFolder,
-          presentInServers,
-          _serverMapLRU,
-          maxRetries,
-          waitTimeBetweenRetries
+        downloadQueue.add(() =>
+          downloadFileWithRetries(
+            components,
+            content.hash,
+            targetFolder,
+            presentInServers,
+            _serverMapLRU,
+            maxRetries,
+            waitTimeBetweenRetries
+          )
         )
       )
     )

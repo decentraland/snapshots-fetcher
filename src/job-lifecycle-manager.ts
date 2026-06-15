@@ -42,7 +42,7 @@ export function createJobLifecycleManagerComponent(
       for (const [name, job] of createdJobs) {
         if (!desiredJobNames.has(name)) {
           logs.info('Stopping job', { name })
-          job.stop().catch(logs.error)
+          job.stop().catch((err) => logs.error(err))
           createdJobs.delete(name)
         }
       }
@@ -55,7 +55,7 @@ export function createJobLifecycleManagerComponent(
           createdJobs.set(name, job)
           job
             .start()
-            .catch(logs.error)
+            .catch((err) => logs.error(err))
             .finally(() => {
               // then remove it from the list of running jobs after it ends
               if (createdJobs.get(name) === job) {

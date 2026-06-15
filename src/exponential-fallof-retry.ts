@@ -1,6 +1,5 @@
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import { IJobWithLifecycle } from './job-lifecycle-manager'
-import { sleep } from './utils'
 
 /**
  * @public
@@ -46,6 +45,28 @@ export function createExponentialFallofRetry(
 
   let reconnectionCount = 0
 
+  // Allows stop() to interrupt an in-flight retry sleep instead of waiting out the full (possibly
+  // multi-day) interval before the loop notices it was stopped.
+  let cancelCurrentSleep: (() => void) | undefined
+
+  function interruptibleSleep(ms: number): Promise<void> {
+    return new Promise<void>((resolve) => {
+      if (ms <= 0) {
+        resolve()
+        return
+      }
+      const timeout = setTimeout(() => {
+        cancelCurrentSleep = undefined
+        resolve()
+      }, ms)
+      cancelCurrentSleep = () => {
+        clearTimeout(timeout)
+        cancelCurrentSleep = undefined
+        resolve()
+      }
+    })
+  }
+
   async function start() {
     // reset reconnection time
     let reconnectionTime = options.retryTime
@@ -88,7 +109,7 @@ export function createExponentialFallofRetry(
       }
 
       logs.info('Retrying in ' + reconnectionTime.toFixed(1) + 'ms')
-      await sleep(reconnectionTime)
+      await interruptibleSleep(reconnectionTime)
     }
   }
 
@@ -102,10 +123,19 @@ export function createExponentialFallofRetry(
     async start() {
       if (started === true) return
       started = true
-      await start()
+      try {
+        await start()
+      } finally {
+        // Reset so isStopped() is accurate once the loop exits (e.g. exitOnSuccess) and the
+        // component can be started again.
+        started = false
+      }
     },
     async stop() {
       started = false
+      if (cancelCurrentSleep) {
+        cancelCurrentSleep()
+      }
     }
   }
 }
