@@ -13,9 +13,8 @@ import { Server, SnapshotsFetcherComponents } from './types'
 
 const streamPipeline = promisify(pipeline)
 
-// Upper bound for buffered JSON responses (snapshot lists, pointer-change pages). Without it,
-// node-fetch's response.json() buffers the whole body, so a malicious/compromised server could
-// OOM the process with a huge payload. node-fetch rejects responses larger than `size`.
+// Bounds buffered JSON responses so a malicious server can't OOM the process via response.json().
+// node-fetch rejects bodies larger than `size`.
 const MAX_JSON_RESPONSE_SIZE_IN_BYTES = 50 * 1024 * 1024 // 50 MiB
 
 export async function fetchJson(url: string, fetcher: IFetchComponent, init?: fetch.RequestInit): Promise<any> {
@@ -42,9 +41,8 @@ export async function sleep(time: number): Promise<void> {
   return new Promise<void>((resolve) => setTimeout(resolve, time))
 }
 
-// Content hashes are IPFS CIDs (base58 "Qm..." or base32 "ba...") and are therefore strictly
-// alphanumeric. Validating against this charset before using a hash to build a filesystem path
-// (path.resolve) or a storage key prevents path traversal from untrusted/remote hash values.
+// Content hashes are IPFS CIDs (base58/base32), hence alphanumeric. Validating against this charset
+// before using a hash in a path or storage key prevents path traversal from untrusted hashes.
 const VALID_CONTENT_HASH = /^[a-zA-Z0-9]+$/
 export function isValidContentHash(hash: string): boolean {
   return typeof hash === 'string' && hash.length > 0 && hash.length <= 128 && VALID_CONTENT_HASH.test(hash)
@@ -242,9 +240,7 @@ export function pickRandomServer(serversToPickFrom: Server[]): string {
   if (serversToPickFrom.length === 0) {
     throw new Error('Cannot pick a server from an empty list of servers')
   }
-  // We could use round-robin or a fancier load-balancing algorithm to spread downloads across
-  // servers, but with thousands of "load balancing events" a uniformly-random pick spreads the
-  // load evenly enough in practice while staying dead simple.
+  // A uniformly-random pick spreads load across servers well enough at scale, without round-robin bookkeeping.
   return serversToPickFrom[Math.floor(Math.random() * serversToPickFrom.length)]
 }
 

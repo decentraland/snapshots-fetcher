@@ -9,10 +9,8 @@ import {
   saveContentFileToDisk as saveContentFile
 } from './utils'
 
-// The /snapshots payload comes from remote, untrusted servers. We only trust entries that have the
-// shape we actually rely on (a valid content hash and a numeric time range) so that a malformed or
-// malicious response can't break downstream logic (e.g. Math.max over timestamps) or smuggle a
-// path-traversal value through the snapshot hash.
+// Snapshot metadata comes from untrusted servers; keep only entries with the shape we rely on
+// (valid content hash + numeric time range) so a malformed response can't break downstream logic.
 function isValidSnapshotMetadata(snapshot: any): snapshot is SnapshotMetadata {
   return (
     !!snapshot &&

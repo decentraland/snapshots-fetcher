@@ -14,9 +14,8 @@ export { IDeployerComponent, SynchronizerComponent } from './types'
 export { createSynchronizer } from './synchronizer'
 export { getDeployedEntitiesStreamFromSnapshot, getDeployedEntitiesStreamFromPointerChanges } from './stream-entities'
 
-// Default maximum number of content files downloaded in parallel for a single entity. Bounds
-// socket / file descriptor / temp-file usage so an entity declaring a huge content[] can't exhaust
-// resources. Overridable per call via downloadEntityAndContentFiles's contentFilesConcurrency arg.
+// Default cap on content files downloaded in parallel per entity, so a huge content[] can't exhaust
+// sockets / file descriptors. Overridable via downloadEntityAndContentFiles's last argument.
 const DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY = 10
 
 if (parseInt(process.version.split('.')[0]) < 16) {

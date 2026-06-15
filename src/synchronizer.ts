@@ -96,9 +96,8 @@ export async function createSynchronizer(
     type Snapshot = SnapshotMetadata & { server: string }
     const snapshotsByHash: Map<string, Snapshot[]> = new Map()
     const snapshotLastTimestampByServer: Map<string, number> = new Map()
-    // Fetch every server's snapshots concurrently. getSnapshots already runs through the
-    // concurrency-limited downloadQueue, so this just feeds that queue instead of starving it with
-    // one serial round-trip per server. The synchronous map mutations below run without interleaving.
+    // Fetch all servers concurrently; getSnapshots already runs through the concurrency-limited
+    // downloadQueue. The synchronous map mutations below can't interleave (no await between them).
     await Promise.all(
       Array.from(serversToSync).map(async (server) => {
         try {
@@ -124,9 +123,8 @@ export async function createSynchronizer(
       autoStart: false
     })
 
-    // Resolve which snapshot hashes were already processed in a single storage call for the whole
-    // set, instead of one round-trip per snapshot. The per-snapshot decisions below then read from
-    // this set (and only hit snapshotStorage.has / markSnapshotAsProcessed in the branches that need it).
+    // Resolve all processed snapshot hashes in one storage call instead of one per snapshot; the
+    // per-snapshot decisions below read from this set.
     const allSnapshotHashesToCheck = new Set<string>()
     for (const [snapshotHash, snapshots] of snapshotsByHash) {
       allSnapshotHashesToCheck.add(snapshotHash)

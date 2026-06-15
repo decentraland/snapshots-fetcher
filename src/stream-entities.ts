@@ -79,11 +79,8 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
   // fetch the /pointer-changes of the remote server using the last timestamp from the previous step with a grace period of 20 min
   const genesisTimestamp = options.fromTimestamp || 0
   let greatestLocalTimestampProcessed = genesisTimestamp
-  // Each poll re-fetches from `greatestLocalTimestampProcessed` (the server treats `from` as
-  // inclusive), so the deployments at exactly that timestamp come back every cycle. Track the
-  // entityIds already yielded at the high-water timestamp so we don't re-yield (and re-schedule)
-  // them. Keyed by entityId at that exact timestamp, this only suppresses true duplicates and never
-  // skips a distinct deployment.
+  // `from` is inclusive, so each poll re-returns the deployments at the high-water timestamp. Track
+  // the entityIds already yielded at that timestamp to skip those re-yields (never a distinct one).
   let entityIdsYieldedAtGreatestTimestamp = new Set<string>()
   logs.debug('Starting to stream entities from Pointer-Changes.', {
     contentServer,

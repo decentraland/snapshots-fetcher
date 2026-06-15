@@ -68,9 +68,8 @@ export async function deployEntitiesFromSnapshot(
   let numberOfProcessedEntities = 0
   let snapshotWasMarkedAsProcessed = false
   async function saveIfStreamEndedAndAllEntitiesWereProcessed() {
-    // Use >= (not ===) so an extra markAsDeployed call can't leave the snapshot permanently
-    // unmarked (which would re-download/re-stream it every sync). The flag set (synchronous, before
-    // any await) guarantees we only mark once even if this runs from several callbacks.
+    // >= (not ===) so an extra markAsDeployed call can't leave the snapshot unmarked forever; the
+    // flag (set synchronously before any await) ensures we still mark only once.
     if (
       !snapshotWasMarkedAsProcessed &&
       snapshotWasCompletelyStreamed &&
