@@ -1,10 +1,11 @@
 // This file is the "test-environment" analogous for src/components.ts
 // Here we define the test components to be used in the testing environment
 
-import { createRunner } from '@well-known-components/test-helpers'
+import { createFetchComponent } from '@dcl/fetch-component'
+import { createRunner } from '@dcl/test-helpers'
 import { createJobQueue } from '../src/job-queue-port'
 import { SnapshotsFetcherComponents } from '../src/types'
-import { createFetchComponent, createProcessedSnapshotStorageComponent, createStorageComponent } from './test-component'
+import { createProcessedSnapshotStorageComponent, createStorageComponent } from './test-component'
 
 import { createTestMetricsComponent } from '@dcl/metrics'
 import { createConfigComponent } from '@well-known-components/env-config-provider'

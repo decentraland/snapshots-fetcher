@@ -18,9 +18,9 @@ export { getDeployedEntitiesStreamFromSnapshot, getDeployedEntitiesStreamFromPoi
 // sockets / file descriptors. Overridable via downloadEntityAndContentFiles's last argument.
 const DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY = 10
 
-if (parseInt(process.version.split('.')[0]) < 16) {
+if (parseInt(process.versions.node.split('.')[0], 10) < 22) {
   const { name } = require('../package.json')
-  throw new Error(`In order to work, the package ${name} needs to run in Node v16 or newer to handle streams properly.`)
+  throw new Error(`In order to work, the package ${name} needs to run in Node v22 or newer to handle streams properly.`)
 }
 
 async function downloadProfileAvatars(

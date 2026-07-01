@@ -1,11 +1,11 @@
 // The functions in this file may be migrated to http-server test helpers
 
+import { IHttpServerComponent } from '@dcl/core-commons'
 import { createServerComponent, Router } from '@dcl/http-server'
+import { defaultServerConfig } from '@dcl/test-helpers'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
-import { IConfigComponent, IHttpServerComponent, ILoggerComponent } from '@well-known-components/interfaces'
+import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
 import { createLogComponent } from '@well-known-components/logger'
-import { defaultServerConfig } from '@well-known-components/test-helpers'
-import { Headers } from 'node-fetch'
 import { Readable } from 'stream'
 
 export type TestServerAppContext<OtherComponents> = {
