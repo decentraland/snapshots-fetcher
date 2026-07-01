@@ -56,7 +56,12 @@ export async function fetchJson(url: string, fetcher: IFetchComponent, init?: Re
     throw new Error('Error fetching ' + url + '. Status code was: ' + response.status)
   }
 
-  return JSON.parse(await readBodyWithSizeLimit(response, MAX_JSON_RESPONSE_SIZE_IN_BYTES))
+  const body = await readBodyWithSizeLimit(response, MAX_JSON_RESPONSE_SIZE_IN_BYTES)
+  if (body === '') {
+    throw new Error('Error fetching ' + url + '. The response body was empty.')
+  }
+
+  return JSON.parse(body)
 }
 
 export async function checkFileExists(file: string): Promise<boolean> {
