@@ -1,21 +1,9 @@
 import { createInMemoryStorage, IContentStorageComponent } from '@dcl/catalyst-storage'
-import { IFetchComponent } from '@well-known-components/interfaces'
 import { readFileSync } from 'fs'
 import { readdir, stat } from 'fs/promises'
-import * as nodeFetch from 'node-fetch'
 import { resolve } from 'path'
 import { Readable } from 'stream'
 import { IProcessedSnapshotStorageComponent } from '../src/types'
-
-export function createFetchComponent() {
-  const fetch: IFetchComponent = {
-    async fetch(url: nodeFetch.RequestInfo, init?: nodeFetch.RequestInit): Promise<nodeFetch.Response> {
-      return nodeFetch.default(url, init)
-    }
-  }
-
-  return fetch
-}
 
 export async function createStorageComponent(): Promise<IContentStorageComponent> {
   const rootFixturesDir = 'test/fixtures'

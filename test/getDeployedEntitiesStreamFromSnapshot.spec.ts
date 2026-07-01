@@ -3,12 +3,11 @@ import { test } from './components'
 import { createReadStream, unlinkSync } from 'fs'
 import { resolve } from 'path'
 import { sleep } from '../src/utils'
-import Sinon from 'sinon'
 import { AuthLinkType } from '@dcl/schemas'
 
 const downloadedSnapshotFile = 'bafkreibivsdakhiouzuth2nr7c4d3iiolbobj32xhat3nzm5uwyi4raxwu'
 
-test('fetches a stream from snapshots deleting the downloaded file', ({ components, stubComponents }) => {
+test('fetches a stream from snapshots deleting the downloaded file', ({ components, spyComponents }) => {
   const contentFolder = resolve('downloads')
   const authChain = [
     {
@@ -39,10 +38,7 @@ test('fetches a stream from snapshots deleting the downloaded file', ({ componen
   })
 
   it('fetches stream', async () => {
-    const { storage } = stubComponents
-
-    storage.storeStream.callThrough()
-    storage.retrieve.callThrough()
+    const { storage } = spyComponents
 
     const servers = [await components.getBaseUrl()]
 
@@ -62,14 +58,14 @@ test('fetches a stream from snapshots deleting the downloaded file', ({ componen
       new Set(servers)
     )
 
-    Sinon.assert.callCount(storage.delete, 0)
+    expect(storage.delete).toHaveBeenCalledTimes(0)
 
     for await (const deployment of stream) {
       r.push(deployment)
     }
 
     // the downloaded file must be deleted
-    Sinon.assert.calledOnce(storage.delete)
+    expect(storage.delete).toHaveBeenCalledTimes(1)
 
     expect(r).toEqual([
       { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000001', entityTimestamp: 1, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile, servers },
@@ -85,7 +81,7 @@ test('fetches a stream from snapshots deleting the downloaded file', ({ componen
   })
 })
 
-test('fetches a stream without deleting the downloaded file', ({ components, stubComponents }) => {
+test('fetches a stream without deleting the downloaded file', ({ components, spyComponents }) => {
   const contentFolder = resolve('downloads')
   const authChain = [
     {
@@ -116,10 +112,7 @@ test('fetches a stream without deleting the downloaded file', ({ components, stu
   })
 
   it('fetch stream', async () => {
-    const { storage } = stubComponents
-
-    storage.storeStream.callThrough()
-    storage.retrieve.callThrough()
+    const { storage } = spyComponents
 
     const servers = [await components.getBaseUrl()]
 
@@ -140,7 +133,7 @@ test('fetches a stream without deleting the downloaded file', ({ components, stu
       new Set(servers)
     )
 
-    Sinon.assert.callCount(storage.delete, 0)
+    expect(storage.delete).toHaveBeenCalledTimes(0)
 
     for await (const deployment of stream) {
       r.push(deployment)
@@ -160,11 +153,11 @@ test('fetches a stream without deleting the downloaded file', ({ components, stu
     ])
 
     // the downloaded file must not be deleted
-    Sinon.assert.callCount(storage.delete, 0)
+    expect(storage.delete).toHaveBeenCalledTimes(0)
   })
 })
 
-test('does not fetch a stream if fromTimestamp is after the snapshot endTimestamp', ({ components, stubComponents }) => {
+test('does not fetch a stream if fromTimestamp is after the snapshot endTimestamp', ({ components, spyComponents }) => {
   const contentFolder = resolve('downloads')
 
   it('prepares the endpoints', () => {
@@ -188,10 +181,7 @@ test('does not fetch a stream if fromTimestamp is after the snapshot endTimestam
   })
 
   it('fetch stream', async () => {
-    const { storage } = stubComponents
-
-    storage.storeStream.callThrough()
-    storage.retrieve.callThrough()
+    const { storage } = spyComponents
 
     const servers = [await components.getBaseUrl()]
 
@@ -222,7 +212,7 @@ test('does not fetch a stream if fromTimestamp is after the snapshot endTimestam
   })
 })
 
-test('does delete snapshot after usage if its not own snapshot', ({ components, stubComponents }) => {
+test('does delete snapshot after usage if its not own snapshot', ({ components, spyComponents }) => {
   const contentFolder = resolve('downloads')
 
   it('prepares the endpoints', () => {
@@ -246,10 +236,7 @@ test('does delete snapshot after usage if its not own snapshot', ({ components, 
   })
 
   it('fetch stream', async () => {
-    const { storage } = stubComponents
-
-    storage.storeStream.callThrough()
-    storage.retrieve.callThrough()
+    const { storage } = spyComponents
 
     const storageDeleteSpy = jest.spyOn(storage, 'delete')
 

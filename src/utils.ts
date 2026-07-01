@@ -1,10 +1,9 @@
 import { hashV0, hashV1 } from '@dcl/hashing'
-import { IFetchComponent } from '@well-known-components/interfaces'
+import { IFetchComponent, RequestOptions } from '@dcl/core-commons'
 import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as http from 'http'
 import * as https from 'https'
-import * as fetch from 'node-fetch'
 import { pipeline, Readable, Transform } from 'stream'
 import { promisify } from 'util'
 import * as zlib from 'zlib'
@@ -14,19 +13,50 @@ import { Server, SnapshotsFetcherComponents } from './types'
 const streamPipeline = promisify(pipeline)
 
 // Bounds buffered JSON responses so a malicious server can't OOM the process via response.json().
-// node-fetch rejects bodies larger than `size`.
 const MAX_JSON_RESPONSE_SIZE_IN_BYTES = 50 * 1024 * 1024 // 50 MiB
 
-export async function fetchJson(url: string, fetcher: IFetchComponent, init?: fetch.RequestInit): Promise<any> {
-  // `size` is spread last so the cap can't be accidentally overridden (or removed) by a caller.
-  const response = await fetcher.fetch(url, { ...init, size: MAX_JSON_RESPONSE_SIZE_IN_BYTES })
+// Reads a response body while enforcing a maximum size. The native fetcher (unlike node-fetch) has
+// no `size` option, so we cap manually: read the stream with a running byte count and abort —
+// cancelling the stream to free its socket — if it exceeds the limit.
+async function readBodyWithSizeLimit(response: Response, maxBytes: number): Promise<string> {
+  const reader = response.body?.getReader()
+  if (!reader) {
+    return ''
+  }
+
+  const chunks: Uint8Array[] = []
+  let total = 0
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value) {
+        total += value.byteLength
+        if (total > maxBytes) {
+          throw new Error(`Response body exceeds the maximum allowed size of ${maxBytes} bytes`)
+        }
+        chunks.push(value)
+      }
+    }
+  } finally {
+    // Frees the socket on the size-exceeded path; a no-op once the stream has been fully read.
+    await reader.cancel().catch(() => undefined)
+  }
+
+  return Buffer.concat(chunks).toString('utf8')
+}
+
+export async function fetchJson(url: string, fetcher: IFetchComponent, init?: RequestOptions): Promise<any> {
+  const response = await fetcher.fetch(url, init)
 
   if (!response.ok) {
+    // Drain the body so undici releases the socket back to the pool before throwing.
+    await response.body?.cancel().catch(() => undefined)
     throw new Error('Error fetching ' + url + '. Status code was: ' + response.status)
   }
 
-  const body = await response.json()
-  return body
+  return JSON.parse(await readBodyWithSizeLimit(response, MAX_JSON_RESPONSE_SIZE_IN_BYTES))
 }
 
 export async function checkFileExists(file: string): Promise<boolean> {
