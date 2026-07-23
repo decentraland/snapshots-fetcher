@@ -107,6 +107,60 @@ test('downloadEntityAndContentFiles with a corrupt stored entity file', ({ compo
     })
   })
 
+  describe('when the stored bytes are valid JSON but fail hash verification', () => {
+    let storage: IContentStorageComponent
+    let entityId: string
+    let thrownError: Error | undefined
+
+    beforeEach(async () => {
+      storage = createInMemoryStorage()
+      // A mis-keyed local file: parse-valid entity JSON stored under a DIFFERENT entity's hash.
+      // Without the pre-parse hash gate it would be processed as the wrong entity's metadata.
+      entityId = await hashV1(Buffer.from('{"type":"scene","content":[{"file":"a.glb","hash":"x"}]}'))
+      await storage.storeStream(entityId, Readable.from([Buffer.from('{"type":"profile","content":[]}')]))
+      thrownError = await downloadWith(storage, entityId)
+    })
+
+    it('should reject with an entity-scoped hash-verification error instead of processing the wrong entity', () => {
+      expect(thrownError?.message).toContain(`${entityId} failed content-hash verification`)
+    })
+
+    it('should evict the mis-keyed file so a later retry re-downloads it', async () => {
+      expect(await storage.exist(entityId)).toBe(false)
+    })
+  })
+
+  describe('when the entity id uses an unverifiable hash scheme and the bytes are not JSON', () => {
+    let storage: IContentStorageComponent
+    let entityId: string
+    let deleteCalls: string[][]
+    let thrownError: Error | undefined
+
+    beforeEach(async () => {
+      // Neither Qm nor ba: corruption cannot be proven, so the copy must never be deleted.
+      entityId = 'zUnknownSchemeEntityId'
+      const inner = createInMemoryStorage()
+      await inner.storeStream(entityId, Readable.from([Buffer.from('')]))
+      deleteCalls = []
+      storage = {
+        ...inner,
+        async delete(ids: string[]) {
+          deleteCalls.push(ids)
+          return inner.delete(ids)
+        }
+      }
+      thrownError = await downloadWith(storage, entityId)
+    })
+
+    it('should explain the copy was kept because corruption is unprovable', () => {
+      expect(thrownError?.message).toContain('could not be proven corrupt (unverifiable hash scheme)')
+    })
+
+    it('should not delete the stored file', () => {
+      expect(deleteCalls).toEqual([])
+    })
+  })
+
   describe('when the stored entity file is corrupt and evicting it fails', () => {
     let storage: IContentStorageComponent
     let entityId: string

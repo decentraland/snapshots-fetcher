@@ -20,22 +20,25 @@ export { getDeployedEntitiesStreamFromSnapshot, getDeployedEntitiesStreamFromPoi
 const DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY = 10
 
 /**
- * True only when the bytes can be hashed with the id's scheme AND the result differs — i.e. the
- * local copy is proven not to be the content the id addresses (a truncated/partial write). An
- * unknown scheme or a hashing failure proves nothing, so it never reports corruption.
+ * Verifies stored bytes against the content-addressed id that claims them. 'mismatch' proves the
+ * local copy is not the content the id addresses (a truncated/partial or mis-keyed write); 'match'
+ * proves it is byte-identical to what a re-download would return. An unknown scheme or a hashing
+ * failure proves nothing either way.
  */
-async function isLocalCopyCorrupt(buffer: Uint8Array, entityId: string): Promise<boolean> {
+type HashVerification = 'match' | 'mismatch' | 'unverifiable'
+
+async function verifyBufferHash(buffer: Uint8Array, entityId: string): Promise<HashVerification> {
   try {
     if (entityId.startsWith('Qm')) {
-      return (await hashV0(buffer)) !== entityId
+      return (await hashV0(buffer)) === entityId ? 'match' : 'mismatch'
     }
     if (entityId.startsWith('ba')) {
-      return (await hashV1(buffer)) !== entityId
+      return (await hashV1(buffer)) === entityId ? 'match' : 'mismatch'
     }
   } catch {
     // fall through: unprovable
   }
-  return false
+  return 'unverifiable'
 }
 
 if (parseInt(process.versions.node.split('.')[0], 10) < 22) {
@@ -121,44 +124,23 @@ export async function downloadEntityAndContentFiles(
     throw new Error(`Entity file ${entityId} could not be retrieved from storage after download`)
   }
 
-  // Read the bytes outside the eviction path below. A failure here is a transient storage/read error,
-  // not proof the stored bytes are corrupt, so it must not trigger the destructive delete.
+  // Read the bytes outside any destructive path. A failure here is a transient storage/read error,
+  // not proof the stored bytes are corrupt, so it must not trigger an eviction.
   const stream = await content.asStream()
   const buffer = await streamToBuffer(stream)
   const contentStream = buffer.toString()
 
-  let entityMetadata: {
-    type: string
-    metadata?: any
-    content?: Array<ContentMapping>
-  }
-  try {
-    if (contentStream === '') {
-      throw new Error('the stored entity file was empty')
-    }
-    entityMetadata = JSON.parse(contentStream)
-  } catch (error: any) {
-    const cause = error?.message ?? String(error)
-
-    // A parse failure alone does not prove the LOCAL copy is corrupt: storage is content-addressed
-    // and shared between entity and content files, so a malformed (or malicious) remote feed can
-    // advertise an entityId that is really the hash of an already-cached, perfectly valid non-JSON
-    // content file — evicting on parse failure would let such a feed delete arbitrary cached
-    // content. Only evict when the bytes fail hash verification against the entityId, which pins
-    // the failure to a truncated/partial local write; hash-valid bytes would be re-downloaded
-    // byte-identical anyway, so eviction could never help.
-    if (!(await isLocalCopyCorrupt(buffer, entityId))) {
-      throw new Error(
-        `Failed to parse the downloaded entity file for ${entityId}; the stored bytes match the content hash, so the local copy was kept. Cause: ${cause}`
-      )
-    }
-
-    // The local copy is proven corrupt — typically a truncated/partial file left by an interrupted
-    // write, which `storage.exist` reports as present so `downloadJob` skips re-downloading it. Left
-    // in place it is a permanent poison pill: every retry re-reads the same bytes and re-fails with
-    // a context-free "Unexpected end of JSON input". Evict it so the next attempt re-downloads (and
-    // hash-verifies) a clean copy, and surface an entity-scoped error. The eviction is best-effort:
-    // if it fails, the descriptive error must still win, and the next retry will attempt it again.
+  // Enforce the content-addressed invariant BEFORE trusting the bytes at all. `downloadJob` skips
+  // the download when `storage.exist(entityId)` is true, so a truncated/partial or mis-keyed local
+  // file is served here unverified — and if it happens to parse as JSON it would otherwise be
+  // processed as the wrong entity. A proven mismatch is the only ground for the destructive
+  // eviction: hash-valid bytes would be re-downloaded byte-identical, so removing them never helps,
+  // and a malformed (or malicious) remote feed advertising the hash of an already-cached non-JSON
+  // content file must not be able to delete that legitimate content. Left in place, a corrupt copy
+  // is a permanent poison pill: every retry re-reads the same bytes and re-fails. The eviction is
+  // best-effort: if it fails, the descriptive error still wins and the next retry re-attempts it.
+  const verification = await verifyBufferHash(buffer, entityId)
+  if (verification === 'mismatch') {
     let evicted = false
     try {
       await components.storage.delete([entityId])
@@ -172,7 +154,28 @@ export async function downloadEntityAndContentFiles(
     const outcome = evicted
       ? 'removed the corrupt local copy so it can be re-downloaded'
       : 'could not remove the corrupt local copy; a later retry will attempt it again'
-    throw new Error(`Failed to parse the downloaded entity file for ${entityId}; ${outcome}. Cause: ${cause}`)
+    throw new Error(`The stored entity file for ${entityId} failed content-hash verification; ${outcome}.`)
+  }
+
+  let entityMetadata: {
+    type: string
+    metadata?: any
+    content?: Array<ContentMapping>
+  }
+  try {
+    if (contentStream === '') {
+      throw new Error('the stored entity file was empty')
+    }
+    entityMetadata = JSON.parse(contentStream)
+  } catch (error: any) {
+    // The bytes are hash-valid (or unverifiable) yet not entity JSON, so this is not local
+    // corruption — surface an entity-scoped error without touching the stored file.
+    const cause = error?.message ?? String(error)
+    const kept =
+      verification === 'match'
+        ? 'the stored bytes match the content hash, so the local copy was kept'
+        : 'the stored bytes could not be proven corrupt (unverifiable hash scheme), so the local copy was kept'
+    throw new Error(`Failed to parse the downloaded entity file for ${entityId}; ${kept}. Cause: ${cause}`)
   }
 
   if (entityMetadata.type === 'profile' && entityMetadata.metadata) {
