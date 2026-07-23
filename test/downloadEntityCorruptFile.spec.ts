@@ -130,6 +130,38 @@ test('downloadEntityAndContentFiles with a corrupt stored entity file', ({ compo
     })
   })
 
+  describe('when the entity id has a known prefix but is not a syntactically valid cid', () => {
+    let storage: IContentStorageComponent
+    let entityId: string
+    let deleteCalls: string[][]
+    let thrownError: Error | undefined
+
+    beforeEach(async () => {
+      // Starts with 'Qm' but is not a valid CID: a computed hash can never equal it, so treating it
+      // as verifiable would make EVERY such id grounds for destructive eviction.
+      entityId = 'Qmnotavalidcid'
+      const inner = createInMemoryStorage()
+      await inner.storeStream(entityId, Readable.from([Buffer.from('arbitrary cached bytes')]))
+      deleteCalls = []
+      storage = {
+        ...inner,
+        async delete(ids: string[]) {
+          deleteCalls.push(ids)
+          return inner.delete(ids)
+        }
+      }
+      thrownError = await downloadWith(storage, entityId)
+    })
+
+    it('should explain the copy was kept because corruption is unprovable', () => {
+      expect(thrownError?.message).toContain('could not be proven corrupt (unverifiable hash scheme)')
+    })
+
+    it('should not delete the stored file', () => {
+      expect(deleteCalls).toEqual([])
+    })
+  })
+
   describe('when the entity id uses an unverifiable hash scheme and the bytes are not JSON', () => {
     let storage: IContentStorageComponent
     let entityId: string

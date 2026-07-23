@@ -22,17 +22,24 @@ const DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY = 10
 /**
  * Verifies stored bytes against the content-addressed id that claims them. 'mismatch' proves the
  * local copy is not the content the id addresses (a truncated/partial or mis-keyed write); 'match'
- * proves it is byte-identical to what a re-download would return. An unknown scheme or a hashing
- * failure proves nothing either way.
+ * proves it is byte-identical to what a re-download would return. An unknown scheme, a
+ * syntactically invalid CID or a hashing failure proves nothing either way — a computed hash can
+ * never equal a malformed id, so treating such ids as verifiable would turn every one of them into
+ * grounds for destructive eviction.
  */
 type HashVerification = 'match' | 'mismatch' | 'unverifiable'
 
+// hashV0 emits Qm + 44 base58btc chars; hashV1 emits ba + 57 lowercase base32 chars (sha256 CIDv1,
+// the only shapes content entities use). Ids outside these shapes are unverifiable, not mismatched.
+const HASH_V0_CID = /^Qm[1-9A-HJ-NP-Za-km-z]{44}$/
+const HASH_V1_CID = /^ba[a-z2-7]{57}$/
+
 async function verifyBufferHash(buffer: Uint8Array, entityId: string): Promise<HashVerification> {
   try {
-    if (entityId.startsWith('Qm')) {
+    if (HASH_V0_CID.test(entityId)) {
       return (await hashV0(buffer)) === entityId ? 'match' : 'mismatch'
     }
-    if (entityId.startsWith('ba')) {
+    if (HASH_V1_CID.test(entityId)) {
       return (await hashV1(buffer)) === entityId ? 'match' : 'mismatch'
     }
   } catch {
@@ -128,7 +135,6 @@ export async function downloadEntityAndContentFiles(
   // not proof the stored bytes are corrupt, so it must not trigger an eviction.
   const stream = await content.asStream()
   const buffer = await streamToBuffer(stream)
-  const contentStream = buffer.toString()
 
   // Enforce the content-addressed invariant BEFORE trusting the bytes at all. `downloadJob` skips
   // the download when `storage.exist(entityId)` is true, so a truncated/partial or mis-keyed local
@@ -156,6 +162,9 @@ export async function downloadEntityAndContentFiles(
       : 'could not remove the corrupt local copy; a later retry will attempt it again'
     throw new Error(`The stored entity file for ${entityId} failed content-hash verification; ${outcome}.`)
   }
+
+  // Decode only bytes that survived (or could not be subjected to) hash verification.
+  const contentStream = buffer.toString()
 
   let entityMetadata: {
     type: string
