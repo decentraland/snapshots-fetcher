@@ -76,4 +76,56 @@ test('downloadEntityAndContentFiles with a corrupt stored entity file', ({ compo
       expect(await storage.exist(entityId)).toBe(false)
     })
   })
+
+  describe('when reading the stored entity file fails transiently', () => {
+    let storage: IContentStorageComponent
+    let entityId: string
+    let deleteCalls: string[][]
+    let thrownError: Error | undefined
+
+    beforeEach(async () => {
+      entityId = 'transientreaderrorentitytest'
+      const inner = createInMemoryStorage()
+      // Seed a valid entity so exist() is true (the download is skipped) and there is something to
+      // delete; the read itself is then made to fail transiently.
+      await inner.storeStream(entityId, Readable.from([Buffer.from('{"type":"scene"}')]))
+      deleteCalls = []
+      storage = {
+        ...inner,
+        async retrieve() {
+          return {
+            async asStream() {
+              throw new Error('transient read failure')
+            }
+          } as any
+        },
+        async delete(ids: string[]) {
+          deleteCalls.push(ids)
+          return inner.delete(ids)
+        }
+      }
+      thrownError = undefined
+      try {
+        await downloadEntityAndContentFiles(
+          { fetcher: components.fetcher, logs: components.logs, metrics: components.metrics, storage },
+          entityId,
+          [await components.getBaseUrl()],
+          new Map(),
+          contentFolder,
+          10,
+          0
+        )
+      } catch (error: any) {
+        thrownError = error
+      }
+    })
+
+    it('should propagate the read error rather than a parse error', () => {
+      expect(thrownError?.message).toContain('transient read failure')
+    })
+
+    it('should not evict the stored file', () => {
+      expect(deleteCalls).toEqual([])
+    })
+  })
 })

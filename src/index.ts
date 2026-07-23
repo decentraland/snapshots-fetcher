@@ -101,27 +101,30 @@ export async function downloadEntityAndContentFiles(
     throw new Error(`Entity file ${entityId} could not be retrieved from storage after download`)
   }
 
+  // Read the bytes outside the eviction path below. A failure here is a transient storage/read error,
+  // not proof the stored bytes are corrupt, so it must not trigger the destructive delete.
+  const stream = await content.asStream()
+  const buffer = await streamToBuffer(stream)
+  const contentStream = buffer.toString()
+
   let entityMetadata: {
     type: string
     metadata?: any
     content?: Array<ContentMapping>
   }
   try {
-    const stream = await content.asStream()
-    const buffer = await streamToBuffer(stream)
-    const contentStream = buffer.toString()
     if (contentStream === '') {
       throw new Error('the stored entity file was empty')
     }
     entityMetadata = JSON.parse(contentStream)
   } catch (error: any) {
-    // The stored entity file is empty or not valid JSON — almost always a truncated/partial local
-    // copy left by an interrupted write, which `storage.exist` reports as present so `downloadJob`
+    // The bytes were read successfully but are empty or not valid JSON — typically a truncated/partial
+    // local copy left by an interrupted write, which `storage.exist` reports as present so `downloadJob`
     // skips re-downloading it. Left in place it is a permanent poison pill: every retry re-reads the
-    // same bytes and re-fails with a context-free "Unexpected end of JSON input". Evict it so the
-    // next attempt re-downloads (and hash-verifies) a clean copy, and surface an entity-scoped error.
-    // The eviction is best-effort: if it fails, the descriptive error must still win, and the next
-    // retry will attempt the eviction again.
+    // same bytes and re-fails with a context-free "Unexpected end of JSON input". Evict it so the next
+    // attempt re-downloads (and hash-verifies) a clean copy, and surface an entity-scoped error. The
+    // eviction is best-effort: if it fails, the descriptive error must still win, and the next retry
+    // will attempt the eviction again.
     await components.storage.delete([entityId]).catch(() => {})
     components.metrics.increment('dcl_corrupt_entity_files_evicted_total')
     const cause = error?.message ?? String(error)
