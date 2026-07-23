@@ -101,15 +101,30 @@ export async function downloadEntityAndContentFiles(
     throw new Error(`Entity file ${entityId} could not be retrieved from storage after download`)
   }
 
-  const stream = await content.asStream()
-  const buffer = await streamToBuffer(stream)
-  const contentStream = buffer.toString()
-
-  const entityMetadata: {
-    type: string,
-    metadata?: any,
+  let entityMetadata: {
+    type: string
+    metadata?: any
     content?: Array<ContentMapping>
-  } = JSON.parse(contentStream)
+  }
+  try {
+    const stream = await content.asStream()
+    const buffer = await streamToBuffer(stream)
+    const contentStream = buffer.toString()
+    if (contentStream === '') {
+      throw new Error('the stored entity file was empty')
+    }
+    entityMetadata = JSON.parse(contentStream)
+  } catch (error: any) {
+    // The stored entity file is empty or not valid JSON — almost always a truncated/partial local
+    // copy left by an interrupted write, which `storage.exist` reports as present so `downloadJob`
+    // skips re-downloading it. Left in place it is a permanent poison pill: every retry re-reads the
+    // same bytes and re-fails with a context-free "Unexpected end of JSON input". Evict it so the
+    // next attempt re-downloads (and hash-verifies) a clean copy, and surface an entity-scoped error.
+    await components.storage.delete([entityId])
+    throw new Error(
+      `Failed to parse the downloaded entity file for ${entityId}; removed the corrupt local copy so it can be re-downloaded. Cause: ${error.message}`
+    )
+  }
 
   if (entityMetadata.type === 'profile' && entityMetadata.metadata) {
     /*
