@@ -167,10 +167,10 @@ export async function downloadEntityAndContentFiles(
       throw new Error('the stored entity file was empty')
     }
     entityMetadata = JSON.parse(contentStream)
-  } catch (error: any) {
+  } catch (error: unknown) {
     // The bytes are hash-valid (or unverifiable) yet not entity JSON, so this is not local
     // corruption — surface an entity-scoped error without touching the stored file.
-    const cause = error?.message ?? String(error)
+    const cause = error instanceof Error ? error.message : String(error)
     const kept =
       verification === 'match'
         ? 'the stored bytes match the content hash, so the local copy was kept'
