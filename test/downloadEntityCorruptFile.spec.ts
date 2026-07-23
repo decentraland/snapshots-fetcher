@@ -77,6 +77,46 @@ test('downloadEntityAndContentFiles with a corrupt stored entity file', ({ compo
     })
   })
 
+  describe('when the stored entity file is empty and evicting it fails', () => {
+    let storage: IContentStorageComponent
+    let entityId: string
+    let thrownError: Error | undefined
+
+    beforeEach(async () => {
+      entityId = 'evictionfailureentitytest'
+      const inner = createInMemoryStorage()
+      await inner.storeStream(entityId, Readable.from([Buffer.from('')]))
+      storage = {
+        ...inner,
+        async delete() {
+          throw new Error('delete is unavailable')
+        }
+      }
+      thrownError = undefined
+      try {
+        await downloadEntityAndContentFiles(
+          { fetcher: components.fetcher, logs: components.logs, metrics: components.metrics, storage },
+          entityId,
+          [await components.getBaseUrl()],
+          new Map(),
+          contentFolder,
+          10,
+          0
+        )
+      } catch (error: any) {
+        thrownError = error
+      }
+    })
+
+    it('should still surface the entity-scoped parse error, not the delete error', () => {
+      expect(thrownError?.message).toContain(entityId)
+    })
+
+    it('should report that the corrupt copy could not be removed', () => {
+      expect(thrownError?.message).toContain('could not remove the corrupt local copy')
+    })
+  })
+
   describe('when reading the stored entity file fails transiently', () => {
     let storage: IContentStorageComponent
     let entityId: string
