@@ -1,4 +1,5 @@
 import { createInMemoryStorage, IContentStorageComponent } from '@dcl/catalyst-storage'
+import { hashV0, hashV1 } from '@dcl/hashing'
 import { resolve } from 'path'
 import { Readable } from 'stream'
 import { downloadEntityAndContentFiles } from '../src'
@@ -7,31 +8,35 @@ import { test } from './components'
 test('downloadEntityAndContentFiles with a corrupt stored entity file', ({ components }) => {
   const contentFolder = resolve('downloads')
 
-  describe('when the stored entity file is empty', () => {
+  async function downloadWith(storage: IContentStorageComponent, entityId: string): Promise<Error | undefined> {
+    try {
+      await downloadEntityAndContentFiles(
+        { fetcher: components.fetcher, logs: components.logs, metrics: components.metrics, storage },
+        entityId,
+        [await components.getBaseUrl()],
+        new Map(),
+        contentFolder,
+        10,
+        0
+      )
+      return undefined
+    } catch (error: any) {
+      return error
+    }
+  }
+
+  describe('when the stored entity file is empty and fails hash verification', () => {
     let storage: IContentStorageComponent
     let entityId: string
     let thrownError: Error | undefined
 
     beforeEach(async () => {
       storage = createInMemoryStorage()
-      entityId = 'emptyentityfilepoisonpilltest'
-      // Seed an empty file so exist() is true and the download step is skipped, reproducing the
-      // truncated local copy an interrupted write leaves behind.
+      // The id addresses the original (non-empty) entity, so the empty local copy is a proven
+      // truncated write: hash('') can never equal it.
+      entityId = await hashV1(Buffer.from('{"type":"profile","content":[]}'))
       await storage.storeStream(entityId, Readable.from([Buffer.from('')]))
-      thrownError = undefined
-      try {
-        await downloadEntityAndContentFiles(
-          { fetcher: components.fetcher, logs: components.logs, metrics: components.metrics, storage },
-          entityId,
-          [await components.getBaseUrl()],
-          new Map(),
-          contentFolder,
-          10,
-          0
-        )
-      } catch (error: any) {
-        thrownError = error
-      }
+      thrownError = await downloadWith(storage, entityId)
     })
 
     it('should reject with an error naming the entity instead of a context-free parse error', () => {
@@ -43,29 +48,17 @@ test('downloadEntityAndContentFiles with a corrupt stored entity file', ({ compo
     })
   })
 
-  describe('when the stored entity file is not valid JSON', () => {
+  describe('when the stored entity file is truncated JSON and fails hash verification', () => {
     let storage: IContentStorageComponent
     let entityId: string
     let thrownError: Error | undefined
 
     beforeEach(async () => {
       storage = createInMemoryStorage()
-      entityId = 'invalidjsonentityfilepoisonpilltest'
+      // A Qm-addressed entity whose local copy lost its tail mid-write.
+      entityId = await hashV0(Buffer.from('{"type":"profile","content":[]}'))
       await storage.storeStream(entityId, Readable.from([Buffer.from('{ "type": "profile"')]))
-      thrownError = undefined
-      try {
-        await downloadEntityAndContentFiles(
-          { fetcher: components.fetcher, logs: components.logs, metrics: components.metrics, storage },
-          entityId,
-          [await components.getBaseUrl()],
-          new Map(),
-          contentFolder,
-          10,
-          0
-        )
-      } catch (error: any) {
-        thrownError = error
-      }
+      thrownError = await downloadWith(storage, entityId)
     })
 
     it('should reject with an error naming the entity instead of a context-free parse error', () => {
@@ -77,13 +70,50 @@ test('downloadEntityAndContentFiles with a corrupt stored entity file', ({ compo
     })
   })
 
-  describe('when the stored entity file is empty and evicting it fails', () => {
+  describe('when the stored bytes are not JSON but match the content hash', () => {
+    let storage: IContentStorageComponent
+    let entityId: string
+    let deleteCalls: string[][]
+    let thrownError: Error | undefined
+
+    beforeEach(async () => {
+      // A valid, hash-correct non-JSON file (e.g. an image) that a malformed or malicious remote
+      // feed advertises as an entityId. Evicting it would delete legitimate cached content.
+      const bytes = Buffer.from('not json at all — could be a cached png')
+      entityId = await hashV1(bytes)
+      const inner = createInMemoryStorage()
+      await inner.storeStream(entityId, Readable.from([bytes]))
+      deleteCalls = []
+      storage = {
+        ...inner,
+        async delete(ids: string[]) {
+          deleteCalls.push(ids)
+          return inner.delete(ids)
+        }
+      }
+      thrownError = await downloadWith(storage, entityId)
+    })
+
+    it('should surface an entity-scoped parse error explaining the copy was kept', () => {
+      expect(thrownError?.message).toContain('the stored bytes match the content hash, so the local copy was kept')
+    })
+
+    it('should not delete the hash-valid cached content', () => {
+      expect(deleteCalls).toEqual([])
+    })
+
+    it('should keep the file in storage', async () => {
+      expect(await storage.exist(entityId)).toBe(true)
+    })
+  })
+
+  describe('when the stored entity file is corrupt and evicting it fails', () => {
     let storage: IContentStorageComponent
     let entityId: string
     let thrownError: Error | undefined
 
     beforeEach(async () => {
-      entityId = 'evictionfailureentitytest'
+      entityId = await hashV1(Buffer.from('{"type":"scene","content":[]}'))
       const inner = createInMemoryStorage()
       await inner.storeStream(entityId, Readable.from([Buffer.from('')]))
       storage = {
@@ -92,20 +122,7 @@ test('downloadEntityAndContentFiles with a corrupt stored entity file', ({ compo
           throw new Error('delete is unavailable')
         }
       }
-      thrownError = undefined
-      try {
-        await downloadEntityAndContentFiles(
-          { fetcher: components.fetcher, logs: components.logs, metrics: components.metrics, storage },
-          entityId,
-          [await components.getBaseUrl()],
-          new Map(),
-          contentFolder,
-          10,
-          0
-        )
-      } catch (error: any) {
-        thrownError = error
-      }
+      thrownError = await downloadWith(storage, entityId)
     })
 
     it('should still surface the entity-scoped parse error, not the delete error', () => {
@@ -124,7 +141,7 @@ test('downloadEntityAndContentFiles with a corrupt stored entity file', ({ compo
     let thrownError: Error | undefined
 
     beforeEach(async () => {
-      entityId = 'transientreaderrorentitytest'
+      entityId = await hashV1(Buffer.from('{"type":"scene"}'))
       const inner = createInMemoryStorage()
       // Seed a valid entity so exist() is true (the download is skipped) and there is something to
       // delete; the read itself is then made to fail transiently.
@@ -144,20 +161,7 @@ test('downloadEntityAndContentFiles with a corrupt stored entity file', ({ compo
           return inner.delete(ids)
         }
       }
-      thrownError = undefined
-      try {
-        await downloadEntityAndContentFiles(
-          { fetcher: components.fetcher, logs: components.logs, metrics: components.metrics, storage },
-          entityId,
-          [await components.getBaseUrl()],
-          new Map(),
-          contentFolder,
-          10,
-          0
-        )
-      } catch (error: any) {
-        thrownError = error
-      }
+      thrownError = await downloadWith(storage, entityId)
     })
 
     it('should propagate the read error rather than a parse error', () => {

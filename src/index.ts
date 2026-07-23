@@ -1,3 +1,4 @@
+import { hashV0, hashV1 } from '@dcl/hashing'
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import PQueue from 'p-queue'
 import { downloadFileWithRetries } from './downloader'
@@ -17,6 +18,25 @@ export { getDeployedEntitiesStreamFromSnapshot, getDeployedEntitiesStreamFromPoi
 // Default cap on content files downloaded in parallel per entity, so a huge content[] can't exhaust
 // sockets / file descriptors. Overridable via downloadEntityAndContentFiles's last argument.
 const DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY = 10
+
+/**
+ * True only when the bytes can be hashed with the id's scheme AND the result differs — i.e. the
+ * local copy is proven not to be the content the id addresses (a truncated/partial write). An
+ * unknown scheme or a hashing failure proves nothing, so it never reports corruption.
+ */
+async function isLocalCopyCorrupt(buffer: Uint8Array, entityId: string): Promise<boolean> {
+  try {
+    if (entityId.startsWith('Qm')) {
+      return (await hashV0(buffer)) !== entityId
+    }
+    if (entityId.startsWith('ba')) {
+      return (await hashV1(buffer)) !== entityId
+    }
+  } catch {
+    // fall through: unprovable
+  }
+  return false
+}
 
 if (parseInt(process.versions.node.split('.')[0], 10) < 22) {
   const { name } = require('../package.json')
@@ -118,13 +138,27 @@ export async function downloadEntityAndContentFiles(
     }
     entityMetadata = JSON.parse(contentStream)
   } catch (error: any) {
-    // The bytes were read successfully but are empty or not valid JSON — typically a truncated/partial
-    // local copy left by an interrupted write, which `storage.exist` reports as present so `downloadJob`
-    // skips re-downloading it. Left in place it is a permanent poison pill: every retry re-reads the
-    // same bytes and re-fails with a context-free "Unexpected end of JSON input". Evict it so the next
-    // attempt re-downloads (and hash-verifies) a clean copy, and surface an entity-scoped error. The
-    // eviction is best-effort: if it fails, the descriptive error must still win, and the next retry
-    // will attempt the eviction again.
+    const cause = error?.message ?? String(error)
+
+    // A parse failure alone does not prove the LOCAL copy is corrupt: storage is content-addressed
+    // and shared between entity and content files, so a malformed (or malicious) remote feed can
+    // advertise an entityId that is really the hash of an already-cached, perfectly valid non-JSON
+    // content file — evicting on parse failure would let such a feed delete arbitrary cached
+    // content. Only evict when the bytes fail hash verification against the entityId, which pins
+    // the failure to a truncated/partial local write; hash-valid bytes would be re-downloaded
+    // byte-identical anyway, so eviction could never help.
+    if (!(await isLocalCopyCorrupt(buffer, entityId))) {
+      throw new Error(
+        `Failed to parse the downloaded entity file for ${entityId}; the stored bytes match the content hash, so the local copy was kept. Cause: ${cause}`
+      )
+    }
+
+    // The local copy is proven corrupt — typically a truncated/partial file left by an interrupted
+    // write, which `storage.exist` reports as present so `downloadJob` skips re-downloading it. Left
+    // in place it is a permanent poison pill: every retry re-reads the same bytes and re-fails with
+    // a context-free "Unexpected end of JSON input". Evict it so the next attempt re-downloads (and
+    // hash-verifies) a clean copy, and surface an entity-scoped error. The eviction is best-effort:
+    // if it fails, the descriptive error must still win, and the next retry will attempt it again.
     let evicted = false
     try {
       await components.storage.delete([entityId])
@@ -135,7 +169,6 @@ export async function downloadEntityAndContentFiles(
     if (evicted) {
       components.metrics.increment('dcl_corrupt_entity_files_evicted_total')
     }
-    const cause = error?.message ?? String(error)
     const outcome = evicted
       ? 'removed the corrupt local copy so it can be re-downloaded'
       : 'could not remove the corrupt local copy; a later retry will attempt it again'
