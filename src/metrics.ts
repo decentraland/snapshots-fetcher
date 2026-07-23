@@ -30,7 +30,7 @@ export const metricsDefinitions = validateMetricsDeclaration({
   },
 
   dcl_corrupt_entity_files_evicted_total: {
-    help: 'Total entity files evicted from storage because they were empty or could not be parsed',
+    help: 'Total stored entity files evicted after failing content-hash verification (truncated or partial local writes)',
     type: 'counter',
     labelNames: []
   },
