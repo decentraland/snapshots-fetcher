@@ -29,6 +29,12 @@ export const metricsDefinitions = validateMetricsDeclaration({
     labelNames: ['remote_server']
   },
 
+  dcl_corrupt_entity_files_evicted_total: {
+    help: 'Total entity files evicted from storage because they were empty or could not be parsed',
+    type: 'counter',
+    labelNames: []
+  },
+
   dcl_entities_deployments_processed_total: {
     help: 'Entities processed from remote catalysts',
     type: 'counter',
