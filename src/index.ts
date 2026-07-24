@@ -98,6 +98,12 @@ async function downloadProfileAvatars(
  * Downloads an entity and its dependency files to a folder in the disk.
  *
  * Returns the parsed JSON file of the deployed entityHash
+ *
+ * @remarks When the locally stored entity file fails content-hash verification (a truncated or
+ * partial local write), the corrupt copy is evicted from storage and the call throws — recovery
+ * relies on the caller retrying, which re-downloads and hash-verifies a clean copy. One-shot
+ * callers that never retry should be aware the first such call only heals the cache, it does not
+ * return the entity.
  * @param contentFilesConcurrency - Maximum number of content files to download in parallel for this
  *   entity. Defaults to {@link DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY} (10).
  * @public
