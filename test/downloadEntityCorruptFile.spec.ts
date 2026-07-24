@@ -237,6 +237,73 @@ test('downloadEntityAndContentFiles with a corrupt stored entity file', ({ compo
     })
   })
 
+  describe('when two overlapping downloads race on the same corrupt entity', () => {
+    let storage: IContentStorageComponent
+    let entityId: string
+    let deleteCalls: string[][]
+    let outcomes: (Error | undefined)[]
+
+    beforeEach(async () => {
+      // Two real downloadEntityAndContentFiles calls overlap on the same id. A barrier holds both
+      // until each has read the corrupt copy, so the loser of the eviction lock is guaranteed to
+      // act on stale evidence; the heal (retry re-downloading a good copy) is planted inside the
+      // winner's delete, which the per-entity lock orders strictly before the loser's re-check.
+      const corruptBytes = Buffer.from('corrupt half-written bytes')
+      const goodBytes = Buffer.from('{"type":"scene","content":[]}')
+      entityId = await hashV1(goodBytes)
+      const inner = createInMemoryStorage()
+      await inner.storeStream(entityId, Readable.from([corruptBytes]))
+      deleteCalls = []
+      let retrieveCalls = 0
+      let arrivedReaders = 0
+      let releaseReaders: () => void = () => undefined
+      const bothReadersArrived = new Promise<void>((res) => (releaseReaders = res))
+      storage = {
+        ...inner,
+        async retrieve(fileId: string) {
+          retrieveCalls++
+          // The first two retrieves are the two callers' initial reads: hold both at the barrier so
+          // neither eviction can start until both hold the corrupt bytes.
+          if (retrieveCalls <= 2) {
+            arrivedReaders++
+            if (arrivedReaders === 2) releaseReaders()
+            await bothReadersArrived
+            return {
+              async asStream() {
+                return Readable.from([corruptBytes])
+              }
+            } as any
+          }
+          // Later retrieves are the serialized eviction re-checks: they see the CURRENT bytes.
+          return inner.retrieve(fileId)
+        },
+        async delete(ids: string[]) {
+          deleteCalls.push(ids)
+          await inner.delete(ids)
+          // Simulate the retry healing the cache before the loser's turn on the eviction lock.
+          await inner.storeStream(entityId, Readable.from([goodBytes]))
+        }
+      }
+      outcomes = await Promise.all([downloadWith(storage, entityId), downloadWith(storage, entityId)])
+    })
+
+    it('should evict exactly once across both callers', () => {
+      expect(deleteCalls).toHaveLength(1)
+    })
+
+    it('should let one caller evict and make the other keep the healed copy', () => {
+      const messages = outcomes.map((error) => error?.message ?? '')
+      expect(messages.filter((message) => message.includes('removed the corrupt local copy'))).toHaveLength(1)
+      expect(
+        messages.filter((message) => message.includes('replaced by a hash-valid one, which was kept'))
+      ).toHaveLength(1)
+    })
+
+    it('should keep the healed copy in storage', async () => {
+      expect(await storage.exist(entityId)).toBe(true)
+    })
+  })
+
   describe('when a concurrent eviction already removed the corrupt copy', () => {
     let storage: IContentStorageComponent
     let entityId: string
