@@ -48,6 +48,61 @@ async function verifyBufferHash(buffer: Uint8Array, entityId: string): Promise<H
   return 'unverifiable'
 }
 
+// Serializes evictions per entity (same pattern as the module-scoped download-job map above). Two
+// callers can read the same corrupt copy concurrently; without serialization + re-verification, the
+// first eviction plus a retry can heal the cache with a fresh good copy that the second (stale)
+// caller then deletes based on the old bytes it already read.
+const inflightEvictions = new Map<string, Promise<unknown>>()
+function withEvictionLock<T>(entityId: string, fn: () => Promise<T>): Promise<T> {
+  const prev = inflightEvictions.get(entityId) ?? Promise.resolve()
+  const run = prev.then(fn, fn)
+  const guard = run.then(
+    () => undefined,
+    () => undefined
+  )
+  inflightEvictions.set(entityId, guard)
+  void guard.then(() => {
+    if (inflightEvictions.get(entityId) === guard) inflightEvictions.delete(entityId)
+  })
+  return run
+}
+
+/**
+ * Evicts the stored entity file after its bytes failed hash verification, and returns a
+ * human-readable outcome for the caller's error message. Runs under a per-entity lock and
+ * re-verifies the bytes CURRENTLY in storage — not the ones the caller read earlier — so a copy
+ * that was already healed (evicted and re-downloaded hash-valid) by a concurrent caller is never
+ * deleted on stale evidence.
+ */
+async function evictCorruptEntityFile(
+  components: Pick<SnapshotsFetcherComponents, 'storage' | 'metrics'>,
+  entityId: string
+): Promise<string> {
+  return withEvictionLock(entityId, async () => {
+    try {
+      const current = await components.storage.retrieve(entityId)
+      if (!current) {
+        // A concurrent eviction already removed it.
+        return 'the corrupt local copy was already removed; a later retry will re-download it'
+      }
+      const currentBuffer = await streamToBuffer(await current.asStream())
+      if ((await verifyBufferHash(currentBuffer, entityId)) !== 'mismatch') {
+        return 'the local copy has since been replaced by a hash-valid one, which was kept'
+      }
+    } catch {
+      // The re-read failed (transient storage error): deleting on stale evidence alone is not safe.
+      return 'the local copy could not be re-verified; it was kept and a later retry will re-check it'
+    }
+    try {
+      await components.storage.delete([entityId])
+    } catch {
+      return 'could not remove the corrupt local copy; a later retry will attempt it again'
+    }
+    components.metrics.increment('dcl_corrupt_entity_files_evicted_total')
+    return 'removed the corrupt local copy so it can be re-downloaded'
+  })
+}
+
 if (parseInt(process.versions.node.split('.')[0], 10) < 22) {
   const { name } = require('../package.json')
   throw new Error(`In order to work, the package ${name} needs to run in Node v22 or newer to handle streams properly.`)
@@ -153,19 +208,7 @@ export async function downloadEntityAndContentFiles(
   // best-effort: if it fails, the descriptive error still wins and the next retry re-attempts it.
   const verification = await verifyBufferHash(buffer, entityId)
   if (verification === 'mismatch') {
-    let evicted = false
-    try {
-      await components.storage.delete([entityId])
-      evicted = true
-    } catch {
-      // keep evicted = false; the error thrown below reflects that the copy could not be removed
-    }
-    if (evicted) {
-      components.metrics.increment('dcl_corrupt_entity_files_evicted_total')
-    }
-    const outcome = evicted
-      ? 'removed the corrupt local copy so it can be re-downloaded'
-      : 'could not remove the corrupt local copy; a later retry will attempt it again'
+    const outcome = await evictCorruptEntityFile(components, entityId)
     throw new Error(`The stored entity file for ${entityId} failed content-hash verification; ${outcome}.`)
   }
 

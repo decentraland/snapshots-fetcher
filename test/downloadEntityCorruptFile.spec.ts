@@ -193,6 +193,123 @@ test('downloadEntityAndContentFiles with a corrupt stored entity file', ({ compo
     })
   })
 
+  describe('when the corrupt copy is healed by a concurrent caller before the eviction re-check', () => {
+    let storage: IContentStorageComponent
+    let entityId: string
+    let deleteCalls: string[][]
+    let thrownError: Error | undefined
+
+    beforeEach(async () => {
+      // The caller reads a corrupt copy; by the time its eviction runs, a concurrent eviction plus
+      // retry has already replaced the stored file with a hash-valid one — which must be kept.
+      const goodBytes = Buffer.from('{"type":"scene","content":[]}')
+      entityId = await hashV1(goodBytes)
+      const inner = createInMemoryStorage()
+      await inner.storeStream(entityId, Readable.from([Buffer.from('corrupt half-written bytes')]))
+      deleteCalls = []
+      let retrieveCalls = 0
+      storage = {
+        ...inner,
+        async retrieve(fileId: string) {
+          retrieveCalls++
+          // First read (the caller's) sees the corrupt copy; the eviction re-check sees the heal.
+          if (retrieveCalls === 1) return inner.retrieve(fileId)
+          return {
+            async asStream() {
+              return Readable.from([goodBytes])
+            }
+          } as any
+        },
+        async delete(ids: string[]) {
+          deleteCalls.push(ids)
+          return inner.delete(ids)
+        }
+      }
+      thrownError = await downloadWith(storage, entityId)
+    })
+
+    it('should explain the copy was replaced by a hash-valid one and kept', () => {
+      expect(thrownError?.message).toContain('replaced by a hash-valid one, which was kept')
+    })
+
+    it('should not delete the healed copy', () => {
+      expect(deleteCalls).toEqual([])
+    })
+  })
+
+  describe('when a concurrent eviction already removed the corrupt copy', () => {
+    let storage: IContentStorageComponent
+    let entityId: string
+    let deleteCalls: string[][]
+    let thrownError: Error | undefined
+
+    beforeEach(async () => {
+      entityId = await hashV1(Buffer.from('{"type":"scene","content":[]}'))
+      const inner = createInMemoryStorage()
+      await inner.storeStream(entityId, Readable.from([Buffer.from('corrupt half-written bytes')]))
+      deleteCalls = []
+      let retrieveCalls = 0
+      storage = {
+        ...inner,
+        async retrieve(fileId: string) {
+          retrieveCalls++
+          // First read sees the corrupt copy; the eviction re-check finds it already gone.
+          if (retrieveCalls === 1) return inner.retrieve(fileId)
+          return undefined
+        },
+        async delete(ids: string[]) {
+          deleteCalls.push(ids)
+          return inner.delete(ids)
+        }
+      }
+      thrownError = await downloadWith(storage, entityId)
+    })
+
+    it('should report the copy as already removed', () => {
+      expect(thrownError?.message).toContain('already removed; a later retry will re-download it')
+    })
+
+    it('should not issue a second delete', () => {
+      expect(deleteCalls).toEqual([])
+    })
+  })
+
+  describe('when the eviction re-check read fails transiently', () => {
+    let storage: IContentStorageComponent
+    let entityId: string
+    let deleteCalls: string[][]
+    let thrownError: Error | undefined
+
+    beforeEach(async () => {
+      entityId = await hashV1(Buffer.from('{"type":"scene","content":[]}'))
+      const inner = createInMemoryStorage()
+      await inner.storeStream(entityId, Readable.from([Buffer.from('corrupt half-written bytes')]))
+      deleteCalls = []
+      let retrieveCalls = 0
+      storage = {
+        ...inner,
+        async retrieve(fileId: string) {
+          retrieveCalls++
+          if (retrieveCalls === 1) return inner.retrieve(fileId)
+          throw new Error('transient re-read failure')
+        },
+        async delete(ids: string[]) {
+          deleteCalls.push(ids)
+          return inner.delete(ids)
+        }
+      }
+      thrownError = await downloadWith(storage, entityId)
+    })
+
+    it('should keep the copy because stale evidence alone is not enough to delete', () => {
+      expect(thrownError?.message).toContain('could not be re-verified')
+    })
+
+    it('should not delete the stored file', () => {
+      expect(deleteCalls).toEqual([])
+    })
+  })
+
   describe('when the stored entity file is corrupt and evicting it fails', () => {
     let storage: IContentStorageComponent
     let entityId: string
