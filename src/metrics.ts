@@ -29,6 +29,12 @@ export const metricsDefinitions = validateMetricsDeclaration({
     labelNames: ['remote_server']
   },
 
+  dcl_corrupt_entity_files_evicted_total: {
+    help: 'Total stored entity files evicted after failing content-hash verification (truncated or partial local writes)',
+    type: 'counter',
+    labelNames: []
+  },
+
   dcl_entities_deployments_processed_total: {
     help: 'Entities processed from remote catalysts',
     type: 'counter',

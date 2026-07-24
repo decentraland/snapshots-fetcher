@@ -1,3 +1,4 @@
+import { hashV0, hashV1 } from '@dcl/hashing'
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import PQueue from 'p-queue'
 import { downloadFileWithRetries } from './downloader'
@@ -17,6 +18,35 @@ export { getDeployedEntitiesStreamFromSnapshot, getDeployedEntitiesStreamFromPoi
 // Default cap on content files downloaded in parallel per entity, so a huge content[] can't exhaust
 // sockets / file descriptors. Overridable via downloadEntityAndContentFiles's last argument.
 const DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY = 10
+
+/**
+ * Verifies stored bytes against the content-addressed id that claims them. 'mismatch' proves the
+ * local copy is not the content the id addresses (a truncated/partial or mis-keyed write); 'match'
+ * proves it is byte-identical to what a re-download would return. An unknown scheme, a
+ * syntactically invalid CID or a hashing failure proves nothing either way — a computed hash can
+ * never equal a malformed id, so treating such ids as verifiable would turn every one of them into
+ * grounds for destructive eviction.
+ */
+type HashVerification = 'match' | 'mismatch' | 'unverifiable'
+
+// hashV0 emits Qm + 44 base58btc chars; hashV1 emits ba + 57 lowercase base32 chars (sha256 CIDv1,
+// the only shapes content entities use). Ids outside these shapes are unverifiable, not mismatched.
+const HASH_V0_CID = /^Qm[1-9A-HJ-NP-Za-km-z]{44}$/
+const HASH_V1_CID = /^ba[a-z2-7]{57}$/
+
+async function verifyBufferHash(buffer: Uint8Array, entityId: string): Promise<HashVerification> {
+  try {
+    if (HASH_V0_CID.test(entityId)) {
+      return (await hashV0(buffer)) === entityId ? 'match' : 'mismatch'
+    }
+    if (HASH_V1_CID.test(entityId)) {
+      return (await hashV1(buffer)) === entityId ? 'match' : 'mismatch'
+    }
+  } catch {
+    // fall through: unprovable
+  }
+  return 'unverifiable'
+}
 
 if (parseInt(process.versions.node.split('.')[0], 10) < 22) {
   const { name } = require('../package.json')
@@ -68,6 +98,12 @@ async function downloadProfileAvatars(
  * Downloads an entity and its dependency files to a folder in the disk.
  *
  * Returns the parsed JSON file of the deployed entityHash
+ *
+ * @remarks When the locally stored entity file fails content-hash verification (a truncated or
+ * partial local write), the corrupt copy is evicted from storage and the call throws — recovery
+ * relies on the caller retrying, which re-downloads and hash-verifies a clean copy. One-shot
+ * callers that never retry should be aware the first such call only heals the cache, it does not
+ * return the entity.
  * @param contentFilesConcurrency - Maximum number of content files to download in parallel for this
  *   entity. Defaults to {@link DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY} (10).
  * @public
@@ -101,15 +137,61 @@ export async function downloadEntityAndContentFiles(
     throw new Error(`Entity file ${entityId} could not be retrieved from storage after download`)
   }
 
+  // Read the bytes outside any destructive path. A failure here is a transient storage/read error,
+  // not proof the stored bytes are corrupt, so it must not trigger an eviction.
   const stream = await content.asStream()
   const buffer = await streamToBuffer(stream)
+
+  // Enforce the content-addressed invariant BEFORE trusting the bytes at all. `downloadJob` skips
+  // the download when `storage.exist(entityId)` is true, so a truncated/partial or mis-keyed local
+  // file is served here unverified — and if it happens to parse as JSON it would otherwise be
+  // processed as the wrong entity. A proven mismatch is the only ground for the destructive
+  // eviction: hash-valid bytes would be re-downloaded byte-identical, so removing them never helps,
+  // and a malformed (or malicious) remote feed advertising the hash of an already-cached non-JSON
+  // content file must not be able to delete that legitimate content. Left in place, a corrupt copy
+  // is a permanent poison pill: every retry re-reads the same bytes and re-fails. The eviction is
+  // best-effort: if it fails, the descriptive error still wins and the next retry re-attempts it.
+  const verification = await verifyBufferHash(buffer, entityId)
+  if (verification === 'mismatch') {
+    let evicted = false
+    try {
+      await components.storage.delete([entityId])
+      evicted = true
+    } catch {
+      // keep evicted = false; the error thrown below reflects that the copy could not be removed
+    }
+    if (evicted) {
+      components.metrics.increment('dcl_corrupt_entity_files_evicted_total')
+    }
+    const outcome = evicted
+      ? 'removed the corrupt local copy so it can be re-downloaded'
+      : 'could not remove the corrupt local copy; a later retry will attempt it again'
+    throw new Error(`The stored entity file for ${entityId} failed content-hash verification; ${outcome}.`)
+  }
+
+  // Decode only bytes that survived (or could not be subjected to) hash verification.
   const contentStream = buffer.toString()
 
-  const entityMetadata: {
-    type: string,
-    metadata?: any,
+  let entityMetadata: {
+    type: string
+    metadata?: any
     content?: Array<ContentMapping>
-  } = JSON.parse(contentStream)
+  }
+  try {
+    if (contentStream === '') {
+      throw new Error('the stored entity file was empty')
+    }
+    entityMetadata = JSON.parse(contentStream)
+  } catch (error: unknown) {
+    // The bytes are hash-valid (or unverifiable) yet not entity JSON, so this is not local
+    // corruption — surface an entity-scoped error without touching the stored file.
+    const cause = error instanceof Error ? error.message : String(error)
+    const kept =
+      verification === 'match'
+        ? 'the stored bytes match the content hash, so the local copy was kept'
+        : 'the stored bytes could not be proven corrupt (unverifiable hash scheme), so the local copy was kept'
+    throw new Error(`Failed to parse the downloaded entity file for ${entityId}; ${kept}. Cause: ${cause}`)
+  }
 
   if (entityMetadata.type === 'profile' && entityMetadata.metadata) {
     /*
