@@ -21,7 +21,9 @@ export async function deployEntitiesFromPointerChanges(
   increaseLastTimestamp: (contentServer: string, ...newTimestamps: number[]) => void
 ) {
   const logger = components.logs.getLogger('deployEntitiesFromPointerChanges')
-  const deployments = getDeployedEntitiesStreamFromPointerChanges(components, options, contentServer)
+  // The predicate goes into the stream too: checking it only in the loop below cannot end a polling
+  // stream whose latest poll returned no deployments at all.
+  const deployments = getDeployedEntitiesStreamFromPointerChanges(components, options, contentServer, shouldStopStream)
 
   for await (const deployment of deployments) {
     // if the stream is closed then we should not process more deployments
@@ -115,10 +117,7 @@ export async function deployEntitiesFromSnapshot(
  * @public
  */
 export async function shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(
-  components: Pick<
-    SnapshotsFetcherComponents,
-    'processedSnapshotStorage' | 'snapshotStorage' | 'metrics' | 'logs' | 'storage'
-  >,
+  components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage' | 'snapshotStorage'>,
   genesisTimestamp: number,
   snapshotHash: string,
   greatestEndTimestamp: number,

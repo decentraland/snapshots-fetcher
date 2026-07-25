@@ -34,8 +34,31 @@ export function createJobQueue(options: createJobQueue.Options): IJobQueue & IBa
   const realQueue = new PQueue({
     concurrency: options.concurrency,
     autoStart: options.autoStart ?? true,
-    timeout: options.timeout
+    timeout: options.timeout,
+    // p-queue defaults throwOnTimeout to false, which makes a timed-out job *resolve* as if it had
+    // succeeded while its function keeps running uncancelled. That hid timeouts from
+    // scheduleJobWithRetries and let stop() report the queue drained while jobs were still in flight.
+    throwOnTimeout: options.timeout !== undefined
   })
+
+  // All onSizeLessThan waiters share a single 'next' subscription. One listener per call would grow
+  // with every pending waiter (tripping Node's max-listeners warning) and would stay attached for as
+  // long as a waiter's limit is unmet; here the subscription exists only while someone is waiting.
+  const sizeWaiters = new Set<{ limit: number; resolve: () => void }>()
+  let sizeListenerAttached = false
+
+  function notifySizeWaiters() {
+    for (const waiter of Array.from(sizeWaiters)) {
+      if (realQueue.size < waiter.limit) {
+        sizeWaiters.delete(waiter)
+        waiter.resolve()
+      }
+    }
+    if (sizeWaiters.size === 0 && sizeListenerAttached) {
+      realQueue.off('next', notifySizeWaiters)
+      sizeListenerAttached = false
+    }
+  }
 
   return {
     onIdle() {
@@ -45,20 +68,17 @@ export function createJobQueue(options: createJobQueue.Options): IJobQueue & IBa
       return realQueue.add(fn)
     },
     async onSizeLessThan(limit: number): Promise<void> {
-      // Instantly resolve if the queue is empty.
+      // Instantly resolve if the queue is already below the limit.
       if (realQueue.size < limit) {
         return
       }
 
-      return new Promise((resolve) => {
-        const listener = () => {
-          if (realQueue.size < limit) {
-            realQueue.off('next', listener)
-            resolve()
-          }
+      return new Promise<void>((resolve) => {
+        sizeWaiters.add({ limit, resolve })
+        if (!sizeListenerAttached) {
+          realQueue.on('next', notifySizeWaiters)
+          sizeListenerAttached = true
         }
-
-        realQueue.on('next', listener)
       })
     },
     scheduleJobWithPriority<T>(fn: () => Promise<T>, priority: number): Promise<T> {
@@ -71,20 +91,20 @@ export function createJobQueue(options: createJobQueue.Options): IJobQueue & IBa
         throw new Error('At least one retry is required')
       }
       return new Promise<T>((resolve, reject) => {
-        function schedule(retries: number) {
+        function schedule(remainingRetries: number) {
+          // The job is added as-is so the queue owns its outcome. Settling inside the queued function
+          // instead hid every queue-level rejection — a timeout in particular — from the retry logic,
+          // because the function's own try/catch never sees it.
           realQueue
-            .add(async () => {
-              try {
-                resolve(await fn())
-              } catch (e: any) {
-                if (retries <= 0) {
-                  reject(e)
-                } else {
-                  schedule(retries - 1)
-                }
+            .add(fn)
+            .then(resolve)
+            .catch((err: any) => {
+              if (remainingRetries <= 0) {
+                reject(err)
+              } else {
+                schedule(remainingRetries - 1)
               }
             })
-            .catch(reject)
         }
 
         schedule(retries)

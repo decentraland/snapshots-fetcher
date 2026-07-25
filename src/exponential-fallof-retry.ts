@@ -25,6 +25,18 @@ export type ExponentialFallofRetryOptions = {
    */
   maxInterval?: number
   exitOnSuccess?: boolean
+  /**
+   * When the action fails *after* running for at least this many milliseconds, the run is treated as
+   * healthy and the retry interval goes back to `retryTime` instead of growing.
+   *
+   * Set this for long-lived actions that only ever return by failing (e.g. a polling stream). Without
+   * it, such an action inherits the interval grown by failures from hours or days earlier and
+   * reconnects at the maxed-out delay even though it had been perfectly healthy in between.
+   *
+   * When unset, only a clean completion resets the interval — which is the right default for
+   * short actions whose normal duration may exceed `retryTime`.
+   */
+  healthyRunTime?: number
 }
 
 /**
@@ -40,6 +52,12 @@ export function createExponentialFallofRetry(
   let started: boolean = false
 
   if (options.maxInterval && options.maxInterval < 0) throw new Error('options.maxInterval must be >= 0')
+  // A negative retryTime passes the `!options.retryTime` guard below and then makes every retry sleep
+  // resolve immediately, turning the loop into a busy spin. Zero is allowed: it means "do not retry".
+  if (options.retryTime < 0) throw new Error('options.retryTime must be >= 0')
+  if (options.healthyRunTime !== undefined && options.healthyRunTime < 0) {
+    throw new Error('options.healthyRunTime must be >= 0')
+  }
 
   const exitOnSuccess = options.exitOnSuccess || false
 
@@ -75,6 +93,9 @@ export function createExponentialFallofRetry(
       logs.info('Starting...')
       reconnectionCount++
 
+      const actionStartedAt = Date.now()
+      let actionFailed = false
+
       try {
         await options.action()
         if (exitOnSuccess) {
@@ -83,11 +104,20 @@ export function createExponentialFallofRetry(
         }
       } catch (e: any) {
         logs.error(e)
-        // increment reconnection time
+        actionFailed = true
+      }
+
+      // A run counts as healthy when the action completed without throwing, or when it stayed up for
+      // at least healthyRunTime before failing. Only an unhealthy run grows the interval; otherwise
+      // the backoff would never come back down after a recovery.
+      const runWasHealthy =
+        !actionFailed ||
+        (options.healthyRunTime !== undefined && Date.now() - actionStartedAt >= options.healthyRunTime)
+
+      if (runWasHealthy) {
+        reconnectionTime = options.retryTime
+      } else {
         reconnectionTime = reconnectionTime * (options.retryTimeExponent ?? 1.1)
-        if (options.maxInterval) {
-          reconnectionTime = Math.min(reconnectionTime, options.maxInterval)
-        }
       }
 
       if (!started) {

@@ -27,14 +27,17 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
 ) {
   const genesisTimestamp = options.fromTimestamp || 0
   const logs = components.logs.getLogger('getDeployedEntitiesStreamFromSnapshot')
-  logs.info('Snapshot to be processed.', { hash: snapshotHash, contentServers: JSON.stringify(Array.from(servers)) })
+  // Materialised once. Every yielded deployment carries this list, and rebuilding it per entity meant
+  // one array allocation per entity in the snapshot.
+  const serversList = Array.from(servers)
+  logs.info('Snapshot to be processed.', { hash: snapshotHash, contentServers: JSON.stringify(serversList) })
   try {
     // 1. download the snapshot file if needed
     await downloadFileWithRetries(
       components,
       snapshotHash,
       options.tmpDownloadFolder,
-      Array.from(servers),
+      serversList,
       new Map(),
       options.requestMaxRetries,
       options.requestRetryWaitTime
@@ -48,7 +51,7 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
         yield {
           ...deployment,
           snapshotHash,
-          servers: Array.from(servers)
+          servers: serversList
         }
       }
     }
@@ -66,6 +69,10 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
 /**
  * Accepts a fromTimestamp option to filter out previous deployments.
  *
+ * @param shouldStop - Consulted before every poll and every yielded deployment. Required to end a
+ *   polling stream (`pointerChangesWaitTime > 0`), which otherwise runs forever: a consumer that
+ *   only breaks out of its own `for await` body never gets to decide anything on a poll that returns
+ *   no deployments at all.
  * @public
  */
 export async function* getDeployedEntitiesStreamFromPointerChanges(
@@ -73,7 +80,8 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
     metrics?: SnapshotsFetcherComponents['metrics']
   },
   options: PointerChangesDeployedEntityStreamOptions,
-  contentServer: string
+  contentServer: string,
+  shouldStop: () => boolean = () => false
 ) {
   const logs = components.logs.getLogger(`pointerChangesStream(${contentServer})`)
   // fetch the /pointer-changes of the remote server using the last timestamp from the previous step with a grace period of 20 min
@@ -87,9 +95,19 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
     timestamp: new Date(genesisTimestamp).toISOString()
   })
   do {
+    if (shouldStop()) {
+      logs.debug('Stopping the Pointer-Changes stream.', { contentServer })
+      return
+    }
+
     // 1. download pointer changes and yield
     const pointerChanges = fetchPointerChanges(components, contentServer, greatestLocalTimestampProcessed, logs)
     for await (const deployment of pointerChanges) {
+      if (shouldStop()) {
+        logs.debug('Stopping the Pointer-Changes stream.', { contentServer })
+        return
+      }
+
       const localTimestamp = deployment.localTimestamp
 
       // when we move past the previous high-water timestamp, reset the per-timestamp dedup set
@@ -113,5 +131,5 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
     }
 
     await sleep(options.pointerChangesWaitTime)
-  } while (options.pointerChangesWaitTime > 0)
+  } while (options.pointerChangesWaitTime > 0 && !shouldStop())
 }

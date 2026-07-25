@@ -19,6 +19,21 @@ import {
 } from './types'
 import { contentServerMetricLabels } from './utils'
 
+// Preserved as the defaults these two queues have always used, so omitting `options.concurrency`
+// keeps the previous behaviour exactly.
+const DEFAULT_SNAPSHOT_DEPLOYMENTS_CONCURRENCY = 10
+const DEFAULT_SNAPSHOT_CHECKS_CONCURRENCY = 10
+
+function resolveConcurrency(name: string, value: number | undefined, fallback: number): number {
+  if (value === undefined) {
+    return fallback
+  }
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`options.concurrency.${name} must be an integer >= 1, got ${value}`)
+  }
+  return value
+}
+
 /**
  * @public
  */
@@ -28,6 +43,26 @@ export async function createSynchronizer(
   },
   options: SynchronizerOptions
 ): Promise<SynchronizerComponent> {
+  // Fail fast on a value that would otherwise break sync silently: scheduleJobWithRetries throws
+  // synchronously when given 0, and that throw is swallowed by the per-server catch in
+  // syncFromSnapshots, so every server would just log "Error getting snapshots" forever.
+  if (!Number.isInteger(options.requestMaxRetries) || options.requestMaxRetries < 1) {
+    throw new Error(`options.requestMaxRetries must be an integer >= 1, got ${options.requestMaxRetries}`)
+  }
+
+  // Resolved up front so a bad value fails here with a clear message instead of inside p-queue's
+  // constructor, several stack frames deep in a background sync job.
+  const snapshotDeploymentsConcurrency = resolveConcurrency(
+    'snapshotDeployments',
+    options.concurrency?.snapshotDeployments,
+    DEFAULT_SNAPSHOT_DEPLOYMENTS_CONCURRENCY
+  )
+  const snapshotChecksConcurrency = resolveConcurrency(
+    'snapshotChecks',
+    options.concurrency?.snapshotChecks,
+    DEFAULT_SNAPSHOT_CHECKS_CONCURRENCY
+  )
+
   const logger = components.logs.getLogger('synchronizer')
   const genesisTimestamp = options.fromTimestamp || 0
   const bootstrappingServersFromSnapshots: Set<string> = new Set()
@@ -92,7 +127,33 @@ export async function createSynchronizer(
     components.metrics.observe('dcl_syncing_servers', {}, syncingServers.size)
   }
 
-  async function syncFromSnapshots(serversToSync: Set<string>): Promise<Set<string>> {
+  // Serializes every snapshot sync, whoever starts it. The periodic post-bootstrap job is not
+  // enqueued in syncJobsRunner (it loops forever, so it would block the queue), which used to let it
+  // run concurrently with a bootstrap sync job. Two concurrent runs can both decide to process a
+  // snapshot hash advertised by servers in different states, and the first stream to finish deletes
+  // the snapshot file from storage while the other is still reading it.
+  let snapshotsSyncChain: Promise<unknown> = Promise.resolve()
+
+  function syncFromSnapshots(serversToSync: Set<string>): Promise<Set<string>> {
+    const run = snapshotsSyncChain.then(
+      () => syncFromSnapshotsExclusively(serversToSync),
+      () => syncFromSnapshotsExclusively(serversToSync)
+    )
+    snapshotsSyncChain = run.then(
+      () => undefined,
+      () => undefined
+    )
+    return run
+  }
+
+  async function syncFromSnapshotsExclusively(serversToSync: Set<string>): Promise<Set<string>> {
+    // Callers check isStopped before asking for a sync, but queueing behind the lock means the check
+    // can go stale before this run starts. Re-check here so a shutdown that lands while a sync is
+    // queued doesn't kick off a fresh round of /snapshots requests and snapshot downloads.
+    if (isStopped) {
+      return new Set()
+    }
+
     type Snapshot = SnapshotMetadata & { server: string }
     const snapshotsByHash: Map<string, Snapshot[]> = new Map()
     const snapshotLastTimestampByServer: Map<string, number> = new Map()
@@ -119,7 +180,7 @@ export async function createSynchronizer(
     )
 
     const deploymentsProcessorsQueue = new PQueue({
-      concurrency: 10,
+      concurrency: snapshotDeploymentsConcurrency,
       autoStart: false
     })
 
@@ -140,9 +201,15 @@ export async function createSynchronizer(
         : new Set<string>()
 
     const timeRangesOfEntitiesToDeploy: TimeRange[] = []
+    // Servers with at least one snapshot that could not be fully deployed. Their bootstrap is
+    // incomplete, so they must neither advance their last-entity timestamp nor be reported as
+    // synced: either one would resume pointer-changes past entities that were never deployed, and
+    // (because the snapshot stays unmarked) those entities would only reappear on the next full
+    // snapshot sync — up to 14 days later.
+    const serversWithFailedSnapshots = new Set<string>()
     // Each decision may still hit snapshotStorage; run them with bounded concurrency instead of a
     // serial chain. The synchronous push/enqueue after each await can't interleave.
-    const shouldProcessChecksQueue = new PQueue({ concurrency: 10 })
+    const shouldProcessChecksQueue = new PQueue({ concurrency: snapshotChecksConcurrency })
     await Promise.all(
       Array.from(snapshotsByHash).map(([snapshotHash, snapshots]) =>
         shouldProcessChecksQueue.add(async () => {
@@ -161,7 +228,16 @@ export async function createSynchronizer(
             timeRangesOfEntitiesToDeploy.push(...snapshots.map((s) => s.timeRange))
             deploymentsProcessorsQueue
               .add(async () => {
-                await deployEntitiesFromSnapshot(components, options, snapshotHash, servers, () => isStopped)
+                try {
+                  await deployEntitiesFromSnapshot(components, options, snapshotHash, servers, () => isStopped)
+                } catch (err: any) {
+                  // Recorded inside the job (not in a .catch on the add() promise) so the set is
+                  // guaranteed to be populated before onIdle() resolves and it gets read below.
+                  logger.error(err)
+                  for (const server of servers) {
+                    serversWithFailedSnapshots.add(server)
+                  }
+                }
               })
               .catch((err) => logger.error(err))
           }
@@ -180,10 +256,17 @@ export async function createSynchronizer(
 
     // Once the snapshots were correctly streamed, update the last entity timestamps
     for (const [server, lastTimestamp] of snapshotLastTimestampByServer) {
+      if (serversWithFailedSnapshots.has(server)) {
+        logger.warn('Keeping the last entity timestamp: some of its snapshots failed to deploy.', { server })
+        continue
+      }
       increaseLastTimestamp(server, lastTimestamp)
     }
-    // We only return servers that didn't fail to get its snapshots
-    return new Set(snapshotLastTimestampByServer.keys())
+    // We only return servers that got their snapshots AND deployed every one of them, so a server
+    // with a failed snapshot stays in the bootstrapping state and the whole bootstrap is retried.
+    return new Set(
+      Array.from(snapshotLastTimestampByServer.keys()).filter((server) => !serversWithFailedSnapshots.has(server))
+    )
   }
 
   async function bootstrapFromSnapshots() {
@@ -242,17 +325,33 @@ export async function createSynchronizer(
   const deployPointerChangesAfterBootstrapJobManager = createJobLifecycleManagerComponent(components, {
     jobManagerName: 'SynchronizationJobManager',
     createJob(contentServer) {
-      const fromTimestamp = lastEntityTimestampFromSnapshotsByServer.get(contentServer)
-      if (fromTimestamp === undefined) {
+      if (lastEntityTimestampFromSnapshotsByServer.get(contentServer) === undefined) {
         throw new Error(
           `Can't start pointer changes stream without last entity timestamp for ${contentServer}. This should never happen.`
         )
       }
       const metricsLabels = contentServerMetricLabels(contentServer)
+      // Per-job stop signal. The retry component's stop() only prevents the NEXT iteration, and the
+      // in-flight pointer-changes stream polls forever on its own (pointerChangesWaitTime > 0), so
+      // without a job-scoped flag a server dropped from the desired set would keep being polled and
+      // deployed until the whole synchronizer stopped.
+      let jobStopped = false
+      const shouldStopStream = () => isStopped || jobStopped
+
       const exponentialFallofRetryComponent = createExponentialFallofRetry(logger, {
         async action() {
-          if (isStopped) {
+          if (shouldStopStream()) {
             return
+          }
+
+          // Read the timestamp on every attempt. increaseLastTimestamp advances it as entities are
+          // deployed, so a reconnect resumes from the latest processed entity; capturing it once at
+          // job creation made every reconnect re-stream everything since bootstrap.
+          const fromTimestamp = lastEntityTimestampFromSnapshotsByServer.get(contentServer)
+          if (fromTimestamp === undefined) {
+            throw new Error(
+              `Can't start pointer changes stream without last entity timestamp for ${contentServer}. This should never happen.`
+            )
           }
 
           try {
@@ -261,7 +360,7 @@ export async function createSynchronizer(
               components,
               { ...options, fromTimestamp },
               contentServer,
-              () => isStopped,
+              shouldStopStream,
               increaseLastTimestamp
             )
           } catch (e: any) {
@@ -272,9 +371,20 @@ export async function createSynchronizer(
         },
         retryTime: options.syncingReconnection.reconnectTime,
         retryTimeExponent: options.syncingReconnection.reconnectRetryTimeExponent ?? 1.1,
-        maxInterval: options.syncingReconnection.maxReconnectionTime
+        maxInterval: options.syncingReconnection.maxReconnectionTime,
+        // Surviving a full poll cycle is evidence the stream was healthy, so an isolated failure after
+        // hours of syncing reconnects at the base interval instead of the grown one.
+        healthyRunTime: Math.max(options.pointerChangesWaitTime, options.syncingReconnection.reconnectTime)
       })
-      return exponentialFallofRetryComponent
+
+      return {
+        ...exponentialFallofRetryComponent,
+        async stop() {
+          // Set before awaiting, so the in-flight stream sees it at its next check.
+          jobStopped = true
+          await exponentialFallofRetryComponent.stop()
+        }
+      }
     }
   })
 
@@ -282,9 +392,23 @@ export async function createSynchronizer(
     const onFirstBootstrapFinishedCallbacks: Array<() => Promise<void>> = []
     let firstBootstrapTryFinished = false
     const syncFinished = future<void>()
+    // onSyncFinished() hands this future to consumers, so every path that ends the job must settle
+    // it. Stopping the synchronizer makes the action short-circuit and exitOnSuccess ends the retry
+    // loop, which would otherwise leave the future pending and hang the consumer's shutdown forever.
+    // The no-op catch keeps that rejection from surfacing as an unhandled rejection for consumers
+    // that never call onSyncFinished().
+    syncFinished.catch(() => undefined)
+
+    function abortSyncFinished() {
+      if (syncFinished.isPending) {
+        syncFinished.reject(new Error('The synchronization job was stopped before it finished.'))
+      }
+    }
+
     const syncRetry = createExponentialFallofRetry(logger, {
       async action() {
         if (isStopped) {
+          abortSyncFinished()
           return
         }
 
@@ -297,6 +421,7 @@ export async function createSynchronizer(
         logger.info('Bootstrap finished')
 
         if (isStopped) {
+          abortSyncFinished()
           return
         }
 
@@ -328,6 +453,11 @@ export async function createSynchronizer(
     })
     return {
       ...syncRetry,
+      async stop() {
+        await syncRetry.stop()
+        // Also covers jobs the serial runner drops from its queue without ever starting them.
+        abortSyncFinished()
+      },
       async onInitialBootstrapFinished(cb: () => Promise<void>) {
         if (!firstBootstrapTryFinished) {
           onFirstBootstrapFinishedCallbacks.push(cb)
@@ -396,13 +526,13 @@ export async function createSynchronizer(
         if (deployPointerChangesAfterBootstrapJobManager.stop) {
           await deployPointerChangesAfterBootstrapJobManager.stop()
         }
-        if (regularSyncFromSnapshotsAfterBootstrapJob.stop) {
-          await regularSyncFromSnapshotsAfterBootstrapJob.stop()
-        }
+        // Cancel the pending start before stopping the job, so a timer that is about to fire cannot
+        // restart it after it was stopped.
         if (snapshotsSyncTimeout) {
           clearTimeout(snapshotsSyncTimeout)
-          await regularSyncFromSnapshotsAfterBootstrapJob.stop()
+          snapshotsSyncTimeout = undefined
         }
+        await regularSyncFromSnapshotsAfterBootstrapJob.stop()
       }
     }
   }

@@ -4,11 +4,12 @@ import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as http from 'http'
 import * as https from 'https'
+import * as path from 'path'
 import { pipeline, Readable, Transform } from 'stream'
 import { promisify } from 'util'
 import * as zlib from 'zlib'
 import { ContentServerMetricLabels } from './metrics'
-import { Server, SnapshotsFetcherComponents } from './types'
+import { Path, Server, SnapshotsFetcherComponents } from './types'
 
 const streamPipeline = promisify(pipeline)
 
@@ -120,12 +121,13 @@ export async function saveContentFileToDisk(
   hash: string,
   checkHash: boolean = true
 ): Promise<void> {
-  let tmpFileName: string
+  const tmpFolder = path.dirname(destinationFilename)
+  await ensureFolderExists(tmpFolder)
 
-  do {
-    tmpFileName = destinationFilename + crypto.randomBytes(16).toString('hex')
-    // this is impossible
-  } while (await checkFileExists(tmpFileName))
+  // A 128-bit random suffix on a content-addressed path: a collision needs the same hash *and* the
+  // same suffix, and concurrent downloads of one hash already share a single job. Not worth an
+  // existence check (a syscall) on every downloaded file.
+  const tmpFileName = destinationFilename + crypto.randomBytes(16).toString('hex')
 
   const metricsLabels: ContentServerMetricLabels = {
     remote_server: ''
@@ -144,23 +146,39 @@ export async function saveContentFileToDisk(
       } catch (e) {
         components.metrics?.increment('dcl_content_download_hash_errors_total', metricsLabels)
         // delete the downloaded file if failed
-        try {
-          if (await checkFileExists(tmpFileName)) {
-            await fs.promises.unlink(tmpFileName)
-          }
-        } catch {}
+        await deleteFileIfPresent(tmpFileName)
         throw e
       }
     }
 
     // move downloaded file to target folder
     await components.storage.storeStream(hash, fs.createReadStream(tmpFileName))
+  } catch (e) {
+    // The folder may have been removed from under us; forget it so a retry recreates it.
+    ensuredFolders.delete(tmpFolder)
+    throw e
   } finally {
-    // Delete the file async.
-    if (await checkFileExists(tmpFileName)) {
-      await fs.promises.unlink(tmpFileName)
-    }
+    await deleteFileIfPresent(tmpFileName)
   }
+}
+
+// Folders this process has already created. mkdir(recursive) still costs a syscall when the folder is
+// already there, and saveContentFileToDisk runs once per downloaded file — which is once per entry of
+// every entity's content[]. Invalidated on failure so an externally removed folder self-heals.
+const ensuredFolders = new Set<Path>()
+
+async function ensureFolderExists(folder: Path): Promise<void> {
+  if (ensuredFolders.has(folder)) {
+    return
+  }
+  await fs.promises.mkdir(folder, { recursive: true })
+  ensuredFolders.add(folder)
+}
+
+// unlink + ignore ENOENT rather than exists-then-unlink: one syscall instead of two, and no window
+// between the check and the delete.
+async function deleteFileIfPresent(filename: string): Promise<void> {
+  await fs.promises.unlink(filename).catch(() => undefined)
 }
 
 // Stop following redirects after this many hops.
@@ -195,26 +213,50 @@ function downloadFile(
   tmpFileName: string
 ) {
   return new Promise<void>((resolve, reject) => {
+    // One timer for the whole download instead of one per redirect hop: a hop that redirects never
+    // reaches a terminal state, so its timer was started and then silently dropped. The labels are
+    // supplied at end() (they are merged there) because the origin that ultimately served the file
+    // is only known after the last redirect.
+    const { end: endTimeMeasurement } = components.metrics?.startTimer('dcl_content_download_duration_seconds') || {
+      end: (_endLabels?: ContentServerMetricLabels) => {}
+    }
+
+    // A destroyed socket can reject the pipeline *and* emit 'error' on the request. Without this
+    // guard that records the duration twice and double-counts the error, so the first terminal
+    // outcome wins and the rest are ignored.
+    let settled = false
+
+    function settleWithSuccess(bytesWritten: number) {
+      if (settled) return
+      settled = true
+      components.metrics?.increment('dcl_content_download_bytes_total', metricsLabels, bytesWritten)
+      endTimeMeasurement({ ...metricsLabels })
+      resolve()
+    }
+
+    function settleWithError(err: Error) {
+      if (settled) return
+      settled = true
+      components.metrics?.increment('dcl_content_download_errors_total', metricsLabels)
+      endTimeMeasurement({ ...metricsLabels })
+      reject(err)
+    }
+
     function requestWithRedirects(redirectedUrl: string, baseUrl: string, redirects: number) {
       // Relative redirects must be resolved against the URL that issued them, not the original URL.
       const url = new URL(redirectedUrl, baseUrl)
       // Only http(s) is supported; reject other schemes (e.g. file:) a redirect could point to.
       if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-        reject(new Error('Unsupported protocol in URL ' + url.toString()))
+        settleWithError(new Error('Unsupported protocol in URL ' + url.toString()))
         return
       }
       const httpModule = url.protocol === 'https:' ? https : http
       if (redirects > MAX_REDIRECTS) {
-        reject(new Error('Too much redirects'))
+        settleWithError(new Error('Too much redirects'))
         return
       }
 
       Object.assign(metricsLabels, contentServerMetricLabels(url.toString()))
-
-      const { end: endTimeMeasurement } = components.metrics?.startTimer(
-        'dcl_content_download_duration_seconds',
-        metricsLabels
-      ) || { end: () => {} }
 
       const request = httpModule.get(url.toString(), { headers: { 'accept-encoding': 'gzip' } }, (response) => {
         if ((response.statusCode === 302 || response.statusCode === 301) && response.headers.location) {
@@ -225,7 +267,7 @@ function downloadFile(
           return
         } else if (!response.statusCode || response.statusCode > 300) {
           response.resume()
-          reject(new Error('Invalid response from ' + url + ' status: ' + response.statusCode))
+          settleWithError(new Error('Invalid response from ' + url + ' status: ' + response.statusCode))
           return
         } else {
           const file = fs.createWriteStream(tmpFileName, {
@@ -242,15 +284,11 @@ function downloadFile(
           pipe
             .then(() => {
               file.close() // close() is async, call cb after close completes.
-              components.metrics?.increment('dcl_content_download_bytes_total', metricsLabels, file.bytesWritten)
-              endTimeMeasurement()
-              resolve()
+              settleWithSuccess(file.bytesWritten)
             })
             .catch((err) => {
               file.close()
-              reject(err)
-              components.metrics?.increment('dcl_content_download_errors_total', metricsLabels)
-              endTimeMeasurement()
+              settleWithError(err)
             })
         }
       })
@@ -261,9 +299,7 @@ function downloadFile(
       })
 
       request.on('error', function (err) {
-        reject(err)
-        components.metrics?.increment('dcl_content_download_errors_total', metricsLabels)
-        endTimeMeasurement()
+        settleWithError(err)
       })
     }
 

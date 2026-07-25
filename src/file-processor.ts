@@ -1,13 +1,18 @@
 import { SnapshotsFetcherComponents } from './types'
 import { createInterface } from 'readline'
-import { PointerChangesSyncDeployment, SnapshotSyncDeployment, SyncDeployment } from '@dcl/schemas'
+import { SnapshotSyncDeployment, SyncDeployment } from '@dcl/schemas'
 import { ILoggerComponent } from '@well-known-components/interfaces'
 
-async function* processLineByLine(input: NodeJS.ReadableStream) {
-  yield* createInterface({
-    input,
-    crlfDelay: Infinity
-  })
+const CURLY_OPEN = 0x7b // {
+const CURLY_CLOSE = 0x7d // }
+
+/**
+ * True when the string already looks like a JSON object literal. charCodeAt instead of
+ * startsWith/endsWith because this runs once or twice per line of a snapshot that can hold millions
+ * of them.
+ */
+function isBraceDelimited(line: string): boolean {
+  return line.length > 1 && line.charCodeAt(0) === CURLY_OPEN && line.charCodeAt(line.length - 1) === CURLY_CLOSE
 }
 
 /**
@@ -62,9 +67,15 @@ export async function* processDeploymentsInStream(
     }
   }
 
-  for await (const line of processLineByLine(stream)) {
-    const theLine = line.trim()
-    if (theLine.startsWith('{') && theLine.endsWith('}')) {
+  // Iterate the readline interface directly. Wrapping it in an extra async generator added a promise
+  // and a microtask per line, which on a multi-million-entity snapshot is pure overhead.
+  const lines = createInterface({ input: stream, crlfDelay: Infinity })
+
+  for await (const line of lines) {
+    // trim() allocates a new string for every line. Snapshot lines are written without padding, so
+    // only pay for it when the raw line is not already a JSON object literal.
+    const theLine = isBraceDelimited(line) ? line : line.trim()
+    if (isBraceDelimited(theLine)) {
       let parsedLine: any
       try {
         parsedLine = JSON.parse(theLine)
@@ -76,15 +87,16 @@ export async function* processDeploymentsInStream(
         })
         continue
       }
+      // One check accepts both shapes. PointerChangesSyncDeployment requires everything
+      // SnapshotSyncDeployment requires plus localTimestamp, and neither forbids extra properties, so
+      // every valid pointer-changes deployment is also a valid snapshot deployment. A follow-up
+      // `else if (PointerChangesSyncDeployment.validate(...))` could therefore never be reached.
       if (SnapshotSyncDeployment.validate(parsedLine)) {
-        yield parsedLine
-      } else if (PointerChangesSyncDeployment.validate(parsedLine)) {
         yield parsedLine
       } else {
         logLineError('ERROR: Invalid entity deployment in snapshot file', {
           deployment: JSON.stringify(parsedLine),
-          snapshotErrors: JSON.stringify(SnapshotSyncDeployment.validate.errors),
-          pointerChangesErrors: JSON.stringify(PointerChangesSyncDeployment.validate.errors)
+          errors: JSON.stringify(SnapshotSyncDeployment.validate.errors)
         })
       }
     }

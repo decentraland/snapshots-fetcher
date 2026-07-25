@@ -1,9 +1,12 @@
 import * as path from 'path'
 import { saveContentFileToDisk } from './client'
-import { Path, SnapshotsFetcherComponents } from './types'
+import { SnapshotsFetcherComponents } from './types'
 import { isValidContentHash, pickRandomServer, sleep } from './utils'
 
-const downloadFileJobsMap = new Map<Path, ReturnType<typeof downloadFileWithRetries>>()
+// Keyed by content hash, not by the resolved temp path: storage is content-addressed, so two callers
+// asking for the same hash into different targetTempFolders are the same download and must share one
+// job. Keying by path let them run concurrently, duplicating the transfer.
+const downloadFileJobsMap = new Map<string, ReturnType<typeof downloadFileWithRetries>>()
 
 async function downloadJob(
   components: Pick<SnapshotsFetcherComponents, 'storage'> & { metrics?: SnapshotsFetcherComponents['metrics'] },
@@ -24,9 +27,18 @@ async function downloadJob(
 
   for (;;) {
     retries++
+    // Re-check the store only from the second attempt onwards. On the first one nothing is awaited
+    // between here and the check above, so it can never see a different answer — and for a remote
+    // (e.g. S3-backed) storage component that redundant call is a second network round trip on every
+    // single content file. From a retry it is worth paying: another process writing to the same
+    // content-addressed storage may have stored the file while this job was failing.
+    if (retries > 1 && (await components.storage.exist(hashToDownload))) {
+      return
+    }
+
     const serverToUse = pickRandomServer(serversToPickFrom)
     try {
-      await downloadContentFile(components, hashToDownload, finalFileName, serverToUse)
+      await saveContentFileToDisk(components, serverToUse, hashToDownload, finalFileName)
       components.metrics?.observe('dcl_content_download_job_succeed_retries', {}, retries)
 
       return
@@ -66,8 +78,9 @@ export async function downloadFileWithRetries(
 
   const finalFileName = path.resolve(targetTempFolder, hashToDownload)
 
-  if (downloadFileJobsMap.has(finalFileName)) {
-    return downloadFileJobsMap.get(finalFileName)!
+  const inflightJob = downloadFileJobsMap.get(hashToDownload)
+  if (inflightJob) {
+    return inflightJob
   }
 
   try {
@@ -79,24 +92,11 @@ export async function downloadFileWithRetries(
       maxRetries,
       waitTimeBetweenRetries
     )
-    downloadFileJobsMap.set(finalFileName, downloadWithRetriesJob)
+    downloadFileJobsMap.set(hashToDownload, downloadWithRetriesJob)
 
     await downloadWithRetriesJob
     return
   } finally {
-    downloadFileJobsMap.delete(finalFileName)
-  }
-}
-
-async function downloadContentFile(
-  components: Pick<SnapshotsFetcherComponents, 'storage'> & { metrics?: SnapshotsFetcherComponents['metrics'] },
-  hash: string,
-  finalFileName: string,
-  serverToUse: string
-): Promise<void> {
-  // Storage is keyed by content hash, not by the filesystem path. Checking the hash lets a
-  // concurrent download that targets a different folder short-circuit this one.
-  if (!(await components.storage.exist(hash))) {
-    return saveContentFileToDisk(components, serverToUse, hash, finalFileName)
+    downloadFileJobsMap.delete(hashToDownload)
   }
 }

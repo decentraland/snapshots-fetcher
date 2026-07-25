@@ -34,6 +34,11 @@ export function createJobLifecycleManagerComponent(
   const logs = components.logs.getLogger(options.jobManagerName)
 
   const createdJobs = new Map<string, IJobWithLifecycle>()
+  // Tracks each name's in-flight run, so a replacement for that name waits for its predecessor to
+  // wind down instead of running alongside it. It keys off start(), which per IJobWithLifecycle is
+  // where a job actually ends — stop() is only the signal to end and can resolve while the job is
+  // still finishing.
+  const runningJobs = new Map<string, Promise<void>>()
 
   return {
     setDesiredJobs(desiredJobNames: Set<string>): void {
@@ -44,6 +49,7 @@ export function createJobLifecycleManagerComponent(
           logs.info('Stopping job', { name })
           job.stop().catch((err) => logs.error(err))
           createdJobs.delete(name)
+          // Its entry in runningJobs stays until start() returns; a replacement chains onto it.
         }
       }
 
@@ -53,16 +59,39 @@ export function createJobLifecycleManagerComponent(
           logs.info('Creating job', { name })
           const job = options.createJob(name)
           createdJobs.set(name, job)
-          job
-            .start()
-            .catch((err) => logs.error(err))
-            .finally(() => {
-              // then remove it from the list of running jobs after it ends
-              if (createdJobs.get(name) === job) {
-                logs.info('Job finished', { name })
-                createdJobs.delete(name)
-              }
-            })
+
+          const startJob = () => {
+            // A newer setDesiredJobs may already have replaced or removed this job while it waited.
+            if (createdJobs.get(name) !== job) {
+              return
+            }
+            return job
+              .start()
+              .catch((err) => logs.error(err))
+              .finally(() => {
+                // then remove it from the list of running jobs after it ends
+                if (createdJobs.get(name) === job) {
+                  logs.info('Job finished', { name })
+                  createdJobs.delete(name)
+                }
+              })
+          }
+
+          // Start synchronously when no previous run of this name is still winding down, so callers
+          // observing the manager right after setDesiredJobs see the job already running.
+          const previousRun = runningJobs.get(name)
+          const run = previousRun ? previousRun.then(startJob) : startJob()
+
+          const settledRun = Promise.resolve(run).then(
+            () => undefined,
+            () => undefined
+          )
+          runningJobs.set(name, settledRun)
+          void settledRun.then(() => {
+            if (runningJobs.get(name) === settledRun) {
+              runningJobs.delete(name)
+            }
+          })
         }
       }
     },

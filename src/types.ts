@@ -27,13 +27,21 @@ export type Path = string
 export type ContentMapping = { file: string; hash: string }
 
 /**
+ * The only part of IJobQueue this package actually calls. Requiring just this lets callers supply
+ * their own bounded scheduler without implementing the queue methods nothing here uses; the queue
+ * returned by createJobQueue satisfies it as-is.
+ * @public
+ */
+export type IDownloadQueue = Pick<IJobQueue, 'scheduleJobWithRetries'>
+
+/**
  * Components needed by the DeploymentsFetcher to work
  * @public
  */
 export type SnapshotsFetcherComponents = {
   metrics: IMetricsComponent<keyof typeof metricsDefinitions>
   fetcher: IFetchComponent
-  downloadQueue: IJobQueue
+  downloadQueue: IDownloadQueue
   logs: ILoggerComponent
   storage: IContentStorageComponent
   processedSnapshotStorage: IProcessedSnapshotStorageComponent
@@ -143,7 +151,33 @@ export type SynchronizerOptions = SnapshotDeployedEntityStreamOptions &
   PointerChangesDeployedEntityStreamOptions & {
     bootstrapReconnection: ReconnectionOptions
     syncingReconnection: ReconnectionOptions
+    /**
+     * Tunes how much work the synchronizer runs at once. Omit it, or any of its fields, to keep the
+     * defaults.
+     */
+    concurrency?: SynchronizerConcurrencyOptions
   }
+
+/**
+ * Bounds on the work the synchronizer performs in parallel. The right values depend on the deployment:
+ * available bandwidth, how fast the deployer drains, and any rate limits the remote content servers
+ * apply. Every field must be an integer >= 1.
+ * @public
+ */
+export type SynchronizerConcurrencyOptions = {
+  /**
+   * Snapshots being streamed and deployed at the same time. Each one holds an open snapshot file and
+   * feeds entities to the deployer, so raising this multiplies both bandwidth and deployer pressure.
+   * @defaultValue 10
+   */
+  snapshotDeployments?: number
+  /**
+   * Decisions about whether a snapshot needs deploying, evaluated at the same time. Each one may hit
+   * `snapshotStorage`, so this mostly bounds load on that component.
+   * @defaultValue 10
+   */
+  snapshotChecks?: number
+}
 
 /**
  * @public
@@ -231,9 +265,14 @@ export type SynchronizerComponent = IBaseComponent & {
 export type SnapshotMetadata = {
   hash: string
   timeRange: TimeRange
-  numberOfEntities: number
   replacedSnapshotHashes?: string[]
-  generationTimestamp: number
+  /**
+   * Informational only: nothing in this package reads these, and content servers do not always
+   * include them. They are optional so the type matches what isValidSnapshotMetadata actually
+   * guarantees — declaring them as required made every validated snapshot a type lie.
+   */
+  numberOfEntities?: number
+  generationTimestamp?: number
 }
 
 /**

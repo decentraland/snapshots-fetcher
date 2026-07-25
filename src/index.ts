@@ -2,18 +2,52 @@ import { hashV0, hashV1 } from '@dcl/hashing'
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import PQueue from 'p-queue'
 import { downloadFileWithRetries } from './downloader'
-import {
-  ContentMapping,
-  EntityHash,
-  Server,
-  SnapshotsFetcherComponents,
-} from './types'
+import { ContentMapping, EntityHash, Server, SnapshotsFetcherComponents } from './types'
 import { streamToBuffer } from './utils'
 
+// Guard the runtime before anything else in the package is evaluated. The name is inlined rather than
+// read from package.json so this stays a plain import-time check with no filesystem access.
+const MINIMUM_NODE_MAJOR_VERSION = 22
+if (parseInt(process.versions.node.split('.')[0], 10) < MINIMUM_NODE_MAJOR_VERSION) {
+  throw new Error(
+    `In order to work, the package @dcl/snapshots-fetcher needs to run in Node v${MINIMUM_NODE_MAJOR_VERSION} or newer to handle streams properly.`
+  )
+}
+
 export { metricsDefinitions } from './metrics'
-export { IDeployerComponent, SynchronizerComponent } from './types'
 export { createSynchronizer } from './synchronizer'
 export { getDeployedEntitiesStreamFromSnapshot, getDeployedEntitiesStreamFromPointerChanges } from './stream-entities'
+// createSynchronizer requires a full SnapshotsFetcherComponents, so everything needed to build one
+// has to be reachable from the package root. Without this, callers had to deep-import
+// '@dcl/snapshots-fetcher/dist/job-queue-port' or reimplement IJobQueue themselves.
+export { createJobQueue, IJobQueue } from './job-queue-port'
+// Tagged @public but previously reachable only through a deep import into dist/.
+export {
+  decideSnapshotDeploymentFromProcessedSet,
+  shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded
+} from './deploy-entities'
+export {
+  ContentMapping,
+  DeployableEntity,
+  DeployedEntityStreamCommonOptions,
+  EntityHash,
+  IDeployerComponent,
+  IDownloadQueue,
+  IProcessedSnapshotStorageComponent,
+  ISnapshotStorageComponent,
+  Path,
+  PointerChangesDeployedEntityStreamOptions,
+  ReconnectionOptions,
+  Server,
+  SnapshotDeployedEntityStreamOptions,
+  SnapshotMetadata,
+  SnapshotsFetcherComponents,
+  SyncJob,
+  SynchronizerComponent,
+  SynchronizerConcurrencyOptions,
+  SynchronizerOptions,
+  TimeRange
+} from './types'
 
 // Default cap on content files downloaded in parallel per entity, so a huge content[] can't exhaust
 // sockets / file descriptors. Overridable via downloadEntityAndContentFiles's last argument.
@@ -103,9 +137,33 @@ async function evictCorruptEntityFile(
   })
 }
 
-if (parseInt(process.versions.node.split('.')[0], 10) < 22) {
-  const { name } = require('../package.json')
-  throw new Error(`In order to work, the package ${name} needs to run in Node v22 or newer to handle streams properly.`)
+/**
+ * Collects the avatar snapshot hashes that are referenced by a profile but absent from its
+ * content[]. Entity metadata is remote, untrusted and not schema-validated here, so every hop is
+ * shape-checked: a single malformed profile must not abort the download of an otherwise valid
+ * entity. Unexpected shapes contribute no hashes rather than throwing.
+ */
+function avatarSnapshotHashesFrom(entityMetadata: {
+  metadata?: any
+  content?: ContentMapping[] | undefined
+}): string[] {
+  const allAvatars: unknown = entityMetadata.metadata?.avatars
+  if (!Array.isArray(allAvatars)) {
+    return []
+  }
+
+  const declaredContentHashes = new Set(
+    (Array.isArray(entityMetadata.content) ? entityMetadata.content : []).map((content) => content?.hash)
+  )
+
+  return allAvatars
+    .flatMap((avatar) => Object.values(avatar?.avatar?.snapshots ?? {}))
+    .filter((snapshot): snapshot is string => typeof snapshot === 'string' && snapshot.length > 0)
+    .map((snapshot) => {
+      const matches = snapshot.match(/^http.*\/content\/contents\/(.*)/)
+      return matches ? matches[1] : snapshot
+    })
+    .filter((snapshot) => !declaredContentHashes.has(snapshot))
 }
 
 async function downloadProfileAvatars(
@@ -117,36 +175,34 @@ async function downloadProfileAvatars(
   maxRetries: number,
   waitTimeBetweenRetries: number,
   concurrency: number,
-  entityMetadata:
-    {
-      type: string
-      metadata?: any
-      content?: ContentMapping[] | undefined
-    }) {
-  const allAvatars: any[] = entityMetadata.metadata?.avatars ?? []
-  const snapshots = allAvatars.flatMap(avatar => Object.values(avatar.avatar.snapshots ?? {}) as string[])
-    .filter(snapshot => !!snapshot)
-    .map(snapshot => {
-      const matches = snapshot.match(/^http.*\/content\/contents\/(.*)/)
-      return matches ? matches[1] : snapshot
-    })
-    .filter(snapshot => !entityMetadata.content || entityMetadata.content.find(content => content.hash === snapshot) === undefined)
-  if (snapshots.length > 0) {
-    logger.info(`Downloading snapshots ${snapshots} for fixing entity ${JSON.stringify(entityMetadata)}`)
-    const downloadQueue = new PQueue({ concurrency })
-    await Promise.all(
-      snapshots.map(snapshot => downloadQueue.add(() => downloadFileWithRetries(
-        components,
-        snapshot,
-        targetFolder,
-        presentInServers,
-        _serverMapLRU,
-        maxRetries,
-        waitTimeBetweenRetries
-      ).catch(() => logger.info(`File ${snapshot} not available for download.`))
-      ))
-    )
+  entityMetadata: {
+    type: string
+    metadata?: any
+    content?: ContentMapping[] | undefined
   }
+) {
+  const snapshots = avatarSnapshotHashesFrom(entityMetadata)
+  if (snapshots.length === 0) {
+    return
+  }
+
+  logger.info(`Downloading snapshots ${snapshots} for fixing entity ${JSON.stringify(entityMetadata)}`)
+  const downloadQueue = new PQueue({ concurrency })
+  await Promise.all(
+    snapshots.map((snapshot) =>
+      downloadQueue.add(() =>
+        downloadFileWithRetries(
+          components,
+          snapshot,
+          targetFolder,
+          presentInServers,
+          _serverMapLRU,
+          maxRetries,
+          waitTimeBetweenRetries
+        ).catch(() => logger.info(`File ${snapshot} not available for download.`))
+      )
+    )
+  )
 }
 
 /**
@@ -255,17 +311,22 @@ export async function downloadEntityAndContentFiles(
       maxRetries,
       waitTimeBetweenRetries,
       contentFilesConcurrency,
-      entityMetadata)
+      entityMetadata
+    )
   }
 
-  if (entityMetadata.content) {
+  // Array.isArray (not a truthiness check): content[] is remote and untrusted, and a non-array
+  // value would make .map throw a TypeError instead of yielding a diagnosable error.
+  if (Array.isArray(entityMetadata.content)) {
     const downloadQueue = new PQueue({ concurrency: contentFilesConcurrency })
     await Promise.all(
       entityMetadata.content.map((content) =>
         downloadQueue.add(() =>
           downloadFileWithRetries(
             components,
-            content.hash,
+            // Optional chaining so a null entry surfaces the descriptive "Invalid content hash"
+            // rejection from downloadFileWithRetries rather than a bare TypeError.
+            content?.hash,
             targetFolder,
             presentInServers,
             _serverMapLRU,

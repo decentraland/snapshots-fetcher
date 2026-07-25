@@ -13,6 +13,18 @@ import {
 // (the body can be up to MAX_JSON_RESPONSE_SIZE_IN_BYTES) can't flood the logs.
 const MAX_INVALID_SNAPSHOT_LOGS = 100
 
+// Every request this module makes must be bounded. The fetch component applies no default timeout,
+// so without an explicit one a server that accepts the connection and then stops responding leaves
+// the promise pending forever — and a pending promise never reaches the exponential-falloff retry
+// that is supposed to reconnect, so the whole sync stream for that server stalls silently.
+const REQUEST_TIMEOUT_IN_MS = 15_000
+
+// Backstop on how many pages a single paginated call will follow. A server that keeps advertising a
+// `next` link makes the loop run forever (measured: ~670 requests/second), which silently pins the
+// sync stream on one server. Set far above any legitimate page count so it only ever trips on a
+// server that is broken or hostile.
+const MAX_PAGES_PER_PAGINATED_CALL = 50_000
+
 // Snapshot metadata comes from untrusted servers; keep only entries with the shape we rely on
 // (valid content hash + numeric time range) so a malformed response can't break downstream logic.
 function isValidSnapshotMetadata(snapshot: any): snapshot is SnapshotMetadata {
@@ -25,7 +37,10 @@ function isValidSnapshotMetadata(snapshot: any): snapshot is SnapshotMetadata {
     typeof snapshot.timeRange.endTimestamp === 'number' &&
     (snapshot.replacedSnapshotHashes === undefined ||
       (Array.isArray(snapshot.replacedSnapshotHashes) &&
-        snapshot.replacedSnapshotHashes.every((hash: any) => isValidContentHash(hash))))
+        snapshot.replacedSnapshotHashes.every((hash: any) => isValidContentHash(hash)))) &&
+    // Optional and unused by this package, but a present value must still have the declared type.
+    (snapshot.numberOfEntities === undefined || typeof snapshot.numberOfEntities === 'number') &&
+    (snapshot.generationTimestamp === undefined || typeof snapshot.generationTimestamp === 'number')
   )
 }
 
@@ -37,7 +52,7 @@ export async function getSnapshots(
   const logger = components.logs.getLogger('getSnapshots')
   const incrementalSnapshotsUrl = new URL(`${server}/snapshots`).toString()
   const response = await components.downloadQueue.scheduleJobWithRetries(
-    () => fetchJson(incrementalSnapshotsUrl, components.fetcher, { timeout: 15000 }),
+    () => fetchJson(incrementalSnapshotsUrl, components.fetcher, { timeout: REQUEST_TIMEOUT_IN_MS }),
     retries
   )
 
@@ -79,19 +94,47 @@ export async function* fetchJsonPaginated<T>(
 ): AsyncIterable<T> {
   // Perform the different queries
   let currentUrl = url
+  // Every page a paginated call has already fetched. A server that points `next` back at a page it
+  // already served would otherwise cycle forever; this catches that immediately instead of waiting
+  // for the page cap.
+  const visitedUrls = new Set<string>()
+
   while (currentUrl) {
+    if (visitedUrls.has(currentUrl)) {
+      throw new Error(`Pagination loop while fetching ${url}: ${currentUrl} was already fetched`)
+    }
+    if (visitedUrls.size >= MAX_PAGES_PER_PAGINATED_CALL) {
+      throw new Error(`Too many pages while fetching ${url}: stopped after ${MAX_PAGES_PER_PAGINATED_CALL}`)
+    }
+    visitedUrls.add(currentUrl)
+
     const metricLabels = contentServerMetricLabels(currentUrl)
     const { end: stopTimer } = components.metrics?.startTimer(responseTimeMetric) || { end: () => {} }
-    const partialHistory: any = await fetchJson(currentUrl, components.fetcher)
-    stopTimer({ ...metricLabels })
+    let partialHistory: any
+    try {
+      partialHistory = await fetchJson(currentUrl, components.fetcher, { timeout: REQUEST_TIMEOUT_IN_MS })
+    } finally {
+      // Stop the timer even when the request fails, so a failed page can't leak a running timer.
+      stopTimer({ ...metricLabels })
+    }
 
-    for (const elem of selector(partialHistory)) {
+    // The body is remote and untrusted: a bare `null` document, or a page whose element list is not an
+    // array, would otherwise surface as an opaque TypeError from the destructuring below.
+    if (!partialHistory || typeof partialHistory !== 'object') {
+      throw new Error(`Invalid paginated response from ${currentUrl}: expected a JSON object`)
+    }
+    const elements = selector(partialHistory)
+    if (!Array.isArray(elements)) {
+      throw new Error(`Invalid paginated response from ${currentUrl}: expected an array of elements`)
+    }
+
+    for (const elem of elements) {
       yield elem
     }
 
     if (partialHistory.pagination) {
-      const nextRelative: string | void = partialHistory.pagination.next
-      if (!nextRelative) break
+      const nextRelative: unknown = partialHistory.pagination.next
+      if (!nextRelative || typeof nextRelative !== 'string') break
       currentUrl = new URL(nextRelative, currentUrl).toString()
     } else {
       break
