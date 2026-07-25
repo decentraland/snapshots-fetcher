@@ -1,8 +1,3 @@
-
-ifneq ($(CI), true)
-LOCAL_ARG = --local --verbose --diagnostics
-endif
-
 test:
 	CI=true \
 		node --trace-warnings node_modules/.bin/jest --detectOpenHandles --coverage --colors --runInBand $(TESTARGS)
@@ -13,12 +8,12 @@ test-watch:
 
 build:
 	./node_modules/.bin/tsc -p tsconfig.json
-	rm -rf node_modules/@microsoft/api-extractor/node_modules/typescript || true
-	./node_modules/.bin/api-extractor run $(LOCAL_ARG) --typescript-compiler-folder ./node_modules/typescript
+
+lint:
+	./node_modules/.bin/eslint '**/*.{js,ts}'
 
 clean:
-	rm downloads/Qm*
-	rm downloads/ba*
 	rm -rf dist
+	rm -f downloads/Qm* downloads/ba*
 
-.PHONY: build test clean
+.PHONY: build test test-watch lint clean
