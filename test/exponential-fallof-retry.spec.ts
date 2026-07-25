@@ -73,6 +73,254 @@ describe('createExponentialFallofRetry', () => {
     })
   })
 
+  describe('the retry interval', () => {
+    let logger: any
+    let scheduledIntervals: number[]
+
+    beforeEach(() => {
+      scheduledIntervals = []
+      // The computed interval is only observable through the "Retrying in Xms" line. Reading it is
+      // deterministic, unlike timing the gaps between attempts.
+      logger = {
+        log: jest.fn(),
+        debug: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        info: jest.fn((message: string) => {
+          const match = typeof message === 'string' && message.match(/^Retrying in ([\d.]+)ms/)
+          if (match) {
+            scheduledIntervals.push(Number(match[1]))
+          }
+        })
+      }
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    describe('when the action fails repeatedly and then completes successfully', () => {
+      let component: ReturnType<typeof createExponentialFallofRetry>
+      let reachedFourthAttempt: ReturnType<typeof future<void>>
+
+      beforeEach(async () => {
+        reachedFourthAttempt = future<void>()
+        let attempt = 0
+
+        component = createExponentialFallofRetry(logger, {
+          async action() {
+            attempt++
+            if (attempt === 4) {
+              reachedFourthAttempt.resolve()
+              // Hold the loop here so the assertions read a settled list of intervals.
+              await sleep(10_000)
+              return
+            }
+            throw new Error('synthetic failure')
+          },
+          retryTime: 20,
+          retryTimeExponent: 3,
+          maxInterval: 100_000
+        })
+
+        void component.start()
+        await reachedFourthAttempt
+        await component.stop()
+      })
+
+      it('should grow while the action keeps failing', () => {
+        expect(scheduledIntervals.slice(0, 3)).toEqual([60, 180, 540])
+      })
+    })
+
+    describe('and a successful run follows the failures', () => {
+      let component: ReturnType<typeof createExponentialFallofRetry>
+      let reachedFifthAttempt: ReturnType<typeof future<void>>
+
+      beforeEach(async () => {
+        reachedFifthAttempt = future<void>()
+        let attempt = 0
+
+        component = createExponentialFallofRetry(logger, {
+          async action() {
+            attempt++
+            // fail, fail, succeed, then fail again
+            if (attempt === 3) return
+            if (attempt >= 5) {
+              reachedFifthAttempt.resolve()
+              await sleep(10_000)
+              return
+            }
+            throw new Error('synthetic failure')
+          },
+          retryTime: 20,
+          retryTimeExponent: 3,
+          maxInterval: 100_000
+        })
+
+        void component.start()
+        await reachedFifthAttempt
+        await component.stop()
+      })
+
+      it('should drop back to the base interval instead of staying at the grown one', () => {
+        // 60 and 180 from the two failures, then back to 20 after the success, then 60 again.
+        expect(scheduledIntervals.slice(0, 4)).toEqual([60, 180, 20, 60])
+      })
+    })
+
+    describe('and the action fails but had been running for longer than healthyRunTime', () => {
+      let component: ReturnType<typeof createExponentialFallofRetry>
+      let reachedThirdAttempt: ReturnType<typeof future<void>>
+
+      beforeEach(async () => {
+        reachedThirdAttempt = future<void>()
+        let attempt = 0
+
+        component = createExponentialFallofRetry(logger, {
+          async action() {
+            attempt++
+            if (attempt >= 3) {
+              reachedThirdAttempt.resolve()
+              await sleep(10_000)
+              return
+            }
+            // Stays up well past healthyRunTime before failing, like a stream that only ends on error.
+            await sleep(60)
+            throw new Error('synthetic failure after a healthy run')
+          },
+          retryTime: 20,
+          retryTimeExponent: 3,
+          maxInterval: 100_000,
+          healthyRunTime: 40
+        })
+
+        void component.start()
+        await reachedThirdAttempt
+        await component.stop()
+      })
+
+      it('should keep the base interval, so isolated failures after healthy runs do not compound', () => {
+        expect(scheduledIntervals.slice(0, 2)).toEqual([20, 20])
+      })
+    })
+  })
+
+  describe('when retryTime is zero', () => {
+    let logger: any
+    let attempts: number
+
+    beforeEach(async () => {
+      const config = createConfigComponent({})
+      const logs = await createLogComponent({ config })
+      logger = logs.getLogger('logger')
+      attempts = 0
+
+      const component = createExponentialFallofRetry(logger, {
+        async action() {
+          attempts++
+          throw new Error('synthetic failure')
+        },
+        retryTime: 0
+      })
+
+      await component.start()
+    })
+
+    it('should run the action once and stop iterating instead of spinning', () => {
+      expect(attempts).toBe(1)
+    })
+  })
+
+  describe('when maxInterval is negative', () => {
+    let logger: any
+
+    beforeEach(async () => {
+      const config = createConfigComponent({})
+      const logs = await createLogComponent({ config })
+      logger = logs.getLogger('logger')
+    })
+
+    it('should throw at construction time', () => {
+      expect(() =>
+        createExponentialFallofRetry(logger, {
+          async action() {},
+          retryTime: 10,
+          maxInterval: -1
+        })
+      ).toThrow('options.maxInterval must be >= 0')
+    })
+  })
+
+  describe('when retryTime is negative', () => {
+    let logger: any
+
+    beforeEach(async () => {
+      const config = createConfigComponent({})
+      const logs = await createLogComponent({ config })
+      logger = logs.getLogger('logger')
+    })
+
+    it('should throw at construction time rather than busy-spinning on zero-length sleeps', () => {
+      expect(() =>
+        createExponentialFallofRetry(logger, {
+          async action() {},
+          retryTime: -1
+        })
+      ).toThrow('options.retryTime must be >= 0')
+    })
+  })
+
+  describe('when healthyRunTime is negative', () => {
+    let logger: any
+
+    beforeEach(async () => {
+      const config = createConfigComponent({})
+      const logs = await createLogComponent({ config })
+      logger = logs.getLogger('logger')
+    })
+
+    it('should throw at construction time', () => {
+      expect(() =>
+        createExponentialFallofRetry(logger, {
+          async action() {},
+          retryTime: 10,
+          healthyRunTime: -1
+        })
+      ).toThrow('options.healthyRunTime must be >= 0')
+    })
+  })
+
+  describe('when start() is called while the component is already running', () => {
+    let logger: any
+    let attempts: number
+
+    beforeEach(async () => {
+      const config = createConfigComponent({})
+      const logs = await createLogComponent({ config })
+      logger = logs.getLogger('logger')
+      attempts = 0
+
+      const component = createExponentialFallofRetry(logger, {
+        async action() {
+          attempts++
+          await sleep(50)
+        },
+        retryTime: 10_000,
+        exitOnSuccess: true
+      })
+
+      const firstStart = component.start()
+      // A second start() must not begin a parallel loop.
+      const secondStart = component.start()
+      await Promise.all([firstStart, secondStart])
+    })
+
+    it('should not start a second loop', () => {
+      expect(attempts).toBe(1)
+    })
+  })
+
   describe('when the action succeeds and exitOnSuccess is enabled', () => {
     let logger: any
 
