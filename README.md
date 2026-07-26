@@ -77,6 +77,27 @@ deleted rather than stored, and a stored entity file that fails verification is 
 re-download it. Downloads are bounded in size, follow a limited number of redirects, and abort on
 socket inactivity.
 
+Remote servers are treated as untrusted, which constrains where requests may go:
+
+- Redirects are followed only to **publicly routable** addresses. A redirect resolving to a private,
+  loopback, link-local (including `169.254.169.254`) or unique-local address is refused, and a host
+  whose resolved address changes public↔non-public mid-download is refused as DNS rebinding. The host
+  you originally asked for is exempt, so a private catalyst — or loopback in local development — keeps
+  working.
+- JSON endpoints (`/snapshots`, `/pointer-changes`) follow redirects only **within the same origin**,
+  and paginate only within the same origin.
+
+## Shutdown
+
+`synchronizer.stop()` waits for in-flight work to finish rather than only signalling it, so once it
+resolves nothing is still deploying or mutating state. Retry ladders and poll intervals are abandoned
+when stopping, which bounds that wait at roughly one in-flight request — but it is not instant, so give
+it room in your termination grace period.
+
+Anything you schedule through `createJobQueue({ timeout })` must be **idempotent**: a timed-out attempt
+is retried, and because a promise cannot be cancelled the original keeps running alongside it.
+`onIdle()` and `stop()` do wait for those abandoned executions, so quiescence remains accurate.
+
 ## Development
 
 ```bash
