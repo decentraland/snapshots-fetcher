@@ -267,12 +267,19 @@ export type SnapshotMetadata = {
   timeRange: TimeRange
   replacedSnapshotHashes?: string[]
   /**
-   * Informational only: nothing in this package reads these, and content servers do not always
-   * include them. They are optional so the type matches what isValidSnapshotMetadata actually
-   * guarantees — declaring them as required made every validated snapshot a type lie.
+   * Informational only — nothing in this package reads either field.
+   *
+   * Kept required. They were briefly made optional so the type would match exactly what
+   * isValidSnapshotMetadata verifies, but that validation was then removed (rejecting a snapshot over a
+   * field we never read would silently stop us syncing from that server), so the optionality bought
+   * nothing while breaking every downstream consumer that reads these as numbers.
+   *
+   * The residual inaccuracy is that a server omitting them yields `undefined` at runtime. Addressing
+   * that properly means a separate validated-remote-response type rather than weakening this public
+   * one; it is not worth a source-compatibility break for two fields this package ignores.
    */
-  numberOfEntities?: number
-  generationTimestamp?: number
+  numberOfEntities: number
+  generationTimestamp: number
 }
 
 /**

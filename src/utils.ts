@@ -19,14 +19,12 @@ const streamPipeline = promisify(pipeline)
 // Bounds buffered JSON responses so a malicious server can't OOM the process via response.json().
 const MAX_JSON_RESPONSE_SIZE_IN_BYTES = 50 * 1024 * 1024 // 50 MiB
 
+// Applied to the body read when the caller did not ask for a specific timeout.
+const DEFAULT_BODY_READ_TIMEOUT_IN_MS = 30_000
+
 // Reads a response body while enforcing a maximum size. The native fetcher (unlike node-fetch) has
 // no `size` option, so we cap manually: read the stream with a running byte count and abort —
 // cancelling the stream to free its socket — if it exceeds the limit.
-// Applied to the body read when the caller did not ask for a specific timeout.
-const DEFAULT_BODY_READ_TIMEOUT_IN_MS = 30_000
-// How many same-origin redirects fetchJson will follow itself.
-const MAX_JSON_REDIRECTS = 5
-
 async function readBodyWithSizeLimit(response: Response, maxBytes: number, timeoutMs: number): Promise<string> {
   const reader = response.body?.getReader()
   if (!reader) {
@@ -88,53 +86,45 @@ async function readBodyWithSizeLimit(response: Response, maxBytes: number, timeo
 export async function fetchJson(url: string, fetcher: IFetchComponent, init?: RequestOptions): Promise<any> {
   const bodyReadTimeout = init?.timeout ?? DEFAULT_BODY_READ_TIMEOUT_IN_MS
 
-  // redirect: 'manual' so redirects are followed here, under a same-origin rule, instead of by the
-  // fetch implementation — whose default ('follow') chases any host the server names. That turned
-  // every JSON endpoint into an SSRF primitive and let a redirect sidestep the same-origin check
-  // fetchJsonPaginated applies to `pagination.next`.
-  let currentUrl = url
-  for (let redirects = 0; ; redirects++) {
-    const response = await fetcher.fetch(currentUrl, { ...init, redirect: 'manual' })
+  // JSON endpoints do not follow redirects at all.
+  //
+  // The fetch implementation's default ('follow') chases any host the server names, which made every
+  // JSON endpoint an SSRF primitive. Following same-origin redirects here instead was not enough: a URL
+  // origin is a hostname, not an address, so a hostile host can serve the first response from a public
+  // IP, return `Location: /next`, and rebind that same hostname to loopback or 169.254.169.254 before
+  // the next request — the origin still matches and the check passes.
+  //
+  // The download path defends against that with a DNS `lookup` that classifies and pins resolved
+  // addresses, but `IFetchComponent` exposes no way to inject one: the consumer supplies the fetcher,
+  // and native fetch resolves DNS itself. Any check performed here would be a separate resolution from
+  // the one the request actually uses, i.e. defeated by the same race it claims to close. Refusing
+  // redirects is the only complete answer available on this path.
+  //
+  // No known catalyst JSON endpoint redirects. If one legitimately must, the fix is a redirect-aware
+  // fetch component, not a check here that cannot bind to the request's own resolution.
+  const response = await fetcher.fetch(url, { ...init, redirect: 'manual' })
 
-    if (response.status >= 300 && response.status < 400) {
-      await response.body?.cancel().catch(() => undefined)
-      const location = response.headers.get('location')
-      if (!location) {
-        throw new Error(`Error fetching ${currentUrl}. Redirect status ${response.status} without a location.`)
-      }
-      if (redirects >= MAX_JSON_REDIRECTS) {
-        throw new Error(`Error fetching ${url}. Too many redirects.`)
-      }
-      let redirectTarget: URL
-      try {
-        redirectTarget = new URL(location, currentUrl)
-      } catch {
-        throw new Error(`Error fetching ${currentUrl}. Invalid redirect location ${JSON.stringify(location)}.`)
-      }
-      if (redirectTarget.origin !== new URL(currentUrl).origin) {
-        throw new Error(
-          `Refusing to follow a cross-origin redirect while fetching ${url}: ${redirectTarget.origin} does not match ${
-            new URL(currentUrl).origin
-          }`
-        )
-      }
-      currentUrl = redirectTarget.toString()
-      continue
-    }
-
-    if (!response.ok) {
-      // Drain the body so undici releases the socket back to the pool before throwing.
-      await response.body?.cancel().catch(() => undefined)
-      throw new Error('Error fetching ' + currentUrl + '. Status code was: ' + response.status)
-    }
-
-    const body = await readBodyWithSizeLimit(response, MAX_JSON_RESPONSE_SIZE_IN_BYTES, bodyReadTimeout)
-    if (body === '') {
-      throw new Error('Error fetching ' + currentUrl + '. The response body was empty.')
-    }
-
-    return JSON.parse(body)
+  if (response.status >= 300 && response.status < 400) {
+    await response.body?.cancel().catch(() => undefined)
+    throw new Error(
+      `Refusing to follow a redirect while fetching ${url}: got status ${response.status} to ${JSON.stringify(
+        response.headers.get('location')
+      )}`
+    )
   }
+
+  if (!response.ok) {
+    // Drain the body so undici releases the socket back to the pool before throwing.
+    await response.body?.cancel().catch(() => undefined)
+    throw new Error('Error fetching ' + url + '. Status code was: ' + response.status)
+  }
+
+  const body = await readBodyWithSizeLimit(response, MAX_JSON_RESPONSE_SIZE_IN_BYTES, bodyReadTimeout)
+  if (body === '') {
+    throw new Error('Error fetching ' + url + '. The response body was empty.')
+  }
+
+  return JSON.parse(body)
 }
 
 export async function checkFileExists(file: string): Promise<boolean> {

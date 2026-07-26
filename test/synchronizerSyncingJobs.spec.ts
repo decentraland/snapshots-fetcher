@@ -97,6 +97,84 @@ test('synchronizer when a syncing server is dropped from the desired set', ({ co
   })
 })
 
+test('synchronizer when a server is removed while its pointer-changes bootstrap is in flight', ({ components }) => {
+  const contentFolder = resolve('downloads')
+  let synchronizer: SynchronizerComponent
+  let pointerChangesRequests: number
+  let releaseBootstrapPoll: ReturnType<typeof future<void>>
+
+  it('prepares the endpoints', () => {
+    pointerChangesRequests = 0
+    releaseBootstrapPoll = future<void>()
+
+    components.router.get('/snapshots', async () => ({
+      body: [{ hash: snapshotHash, timeRange: { initTimestamp: 0, endTimestamp: snapshotEndTimestamp } }]
+    }))
+    components.router.get('/pointer-changes', async () => {
+      pointerChangesRequests++
+      // Hold the bootstrap poll open so the server can be dropped while it is still running.
+      if (pointerChangesRequests === 1) {
+        await releaseBootstrapPoll
+      }
+      return { body: { deltas: [], pagination: {} } }
+    })
+  })
+
+  it('drops the server midway through its bootstrap', async () => {
+    const { fetcher, downloadQueue, logs, storage, metrics, processedSnapshotStorage, snapshotStorage } = components
+    synchronizer = await createSynchronizer(
+      {
+        fetcher,
+        downloadQueue,
+        logs,
+        storage,
+        processedSnapshotStorage,
+        snapshotStorage,
+        metrics,
+        deployer: {
+          async scheduleEntityDeployment(entity: DeployableEntity) {
+            if (entity.markAsDeployed) await entity.markAsDeployed()
+          },
+          onIdle: jest.fn(),
+          prepareForDeploymentsIn: jest.fn()
+        }
+      },
+      {
+        bootstrapReconnection: { reconnectTime: 60_000 },
+        syncingReconnection: { reconnectTime: 60_000 },
+        tmpDownloadFolder: contentFolder,
+        requestMaxRetries: 3,
+        requestRetryWaitTime: 0,
+        pointerChangesWaitTime: 20
+      }
+    )
+
+    const serverUrl = await components.getBaseUrl()
+    const syncJob = await synchronizer.syncWithServers(new Set([serverUrl]))
+    const bootstrapFinished = future<void>()
+    void syncJob.onInitialBootstrapFinished(async () => bootstrapFinished.resolve())
+
+    // Wait until the bootstrap poll is actually in flight, then remove the server.
+    await sleep(120)
+    await synchronizer.syncWithServers(new Set())
+
+    releaseBootstrapPoll.resolve()
+    await Promise.race([bootstrapFinished, sleep(500)])
+    await sleep(250)
+  })
+
+  it('should not resurrect the removed server into a long-lived syncing job', () => {
+    // The in-flight bootstrap used to add the server to syncingServers unconditionally when it
+    // finished, and the following setDesiredJobs then started a permanent pointer-changes job for a
+    // server the caller had explicitly removed. Only the held bootstrap poll should ever have run.
+    expect(pointerChangesRequests).toBe(1)
+  })
+
+  afterAll(async () => {
+    await synchronizer.stop!()
+  })
+})
+
 test('synchronizer when a syncing stream fails and reconnects', ({ components }) => {
   const contentFolder = resolve('downloads')
   let synchronizer: SynchronizerComponent

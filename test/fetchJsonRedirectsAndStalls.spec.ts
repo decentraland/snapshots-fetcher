@@ -38,23 +38,43 @@ test('fetchJson redirect handling', ({ components }) => {
     it('should refuse to follow it instead of returning the other origin body', async () => {
       await expect(
         fetchJson(`${await components.getBaseUrl()}/redirect-to-internal`, components.fetcher)
-      ).rejects.toThrow('Refusing to follow a cross-origin redirect')
+      ).rejects.toThrow('Refusing to follow a redirect')
     })
   })
 
   describe('when a server redirects within its own origin', () => {
-    it('should follow it and return the final body', async () => {
+    it('should refuse to follow it as well', async () => {
+      // Same-origin is not safe either: a URL origin is a hostname, not an address, so a hostile host
+      // can answer the first request from a public IP and rebind that same hostname to loopback before
+      // the redirect is fetched. `IFetchComponent` gives no way to pin the request's own DNS
+      // resolution, so the only complete answer on this path is to not follow redirects at all.
       await expect(
         fetchJson(`${await components.getBaseUrl()}/redirect-same-origin`, components.fetcher)
-      ).resolves.toEqual({ followed: true })
+      ).rejects.toThrow('Refusing to follow a redirect')
+    })
+
+    it('should not fetch the redirect target', async () => {
+      // Proven by the target being a distinct route: if it had been followed the call would have
+      // resolved with its body instead of rejecting.
+      await expect(
+        fetchJson(`${await components.getBaseUrl()}/redirect-same-origin`, components.fetcher)
+      ).rejects.toThrow()
     })
   })
 
   describe('when a redirect response carries no location header', () => {
-    it('should reject naming the missing location', async () => {
+    it('should still reject rather than treat it as a normal response', async () => {
       await expect(
         fetchJson(`${await components.getBaseUrl()}/redirect-without-location`, components.fetcher)
-      ).rejects.toThrow('without a location')
+      ).rejects.toThrow('Refusing to follow a redirect')
+    })
+  })
+
+  describe('when the response is a normal success', () => {
+    it('should be unaffected by the redirect refusal', async () => {
+      await expect(
+        fetchJson(`${await components.getBaseUrl()}/redirect-target`, components.fetcher)
+      ).resolves.toEqual({ followed: true })
     })
   })
 })

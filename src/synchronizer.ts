@@ -68,6 +68,10 @@ export async function createSynchronizer(
   const bootstrappingServersFromSnapshots: Set<string> = new Set()
   const bootstrappingServersFromPointerChanges: Set<string> = new Set()
   const syncingServers: Set<string> = new Set()
+  // The servers the caller last asked for, i.e. the authority every state transition is checked
+  // against. The three sets above are *where* a server currently is; this is whether it should be
+  // anywhere at all.
+  const desiredServers: Set<string> = new Set()
   const lastEntityTimestampFromSnapshotsByServer: Map<string, number> = new Map()
   // Sync jobs are serialized: only one runs at a time, the rest queue (FIFO).
   const syncJobsRunner = createSerialJobRunner(logger)
@@ -282,13 +286,32 @@ export async function createSynchronizer(
     )
   }
 
+  /**
+   * Whether a server may still be advanced to the next sync state.
+   *
+   * Bootstrap phases are long-running, so `syncWithServers` can drop a server while a phase that
+   * already captured it is still in flight. Promoting unconditionally when that phase finishes
+   * resurrects the server: it lands in `syncingServers` and the next `setDesiredJobs` starts a
+   * long-lived pointer-changes job for a server the caller explicitly removed. `desiredServers` is the
+   * authority on what the caller last asked for, so every state transition is validated against it.
+   */
+  function canAdvanceServer(server: string): boolean {
+    return !isStopped && desiredServers.has(server)
+  }
+
   async function bootstrapFromSnapshots() {
     logger.debug(`Bootstrapping servers (snapshots): ${Array.from(bootstrappingServersFromSnapshots)}`)
     const syncedServersFromSnapshot = await syncFromSnapshots(bootstrappingServersFromSnapshots)
 
     for (const bootstrappedServer of syncedServersFromSnapshot) {
-      bootstrappingServersFromPointerChanges.add(bootstrappedServer)
       bootstrappingServersFromSnapshots.delete(bootstrappedServer)
+      if (!canAdvanceServer(bootstrappedServer)) {
+        logger.info('Not advancing a server to the pointer-changes bootstrap: it is no longer desired.', {
+          server: bootstrappedServer
+        })
+        continue
+      }
+      bootstrappingServersFromPointerChanges.add(bootstrappedServer)
     }
     reportServerStateMetric()
   }
@@ -310,8 +333,14 @@ export async function createSynchronizer(
             () => isStopped,
             increaseLastTimestamp
           )
-          syncingServers.add(bootstrappingServersFromPointerChange)
           bootstrappingServersFromPointerChanges.delete(bootstrappingServersFromPointerChange)
+          if (!canAdvanceServer(bootstrappingServersFromPointerChange)) {
+            logger.info('Not moving a server to the syncing state: it is no longer desired.', {
+              server: bootstrappingServersFromPointerChange
+            })
+            return
+          }
+          syncingServers.add(bootstrappingServersFromPointerChange)
         } catch (error) {
           // If there's an error, the server doesn't pass to syncing state
           logger.info(`Error bootstrapping from pointer changes for server: ${bootstrappingServersFromPointerChange}`)
@@ -509,6 +538,13 @@ export async function createSynchronizer(
       if (isStopped) {
         throw new Error('synchronizer is stopped.')
       }
+      // 0. Record what the caller wants, so an in-flight bootstrap phase that already captured a
+      //    now-removed server cannot promote it back into the sync states when it finishes.
+      desiredServers.clear()
+      for (const serverToSync of serversToSync) {
+        desiredServers.add(serverToSync)
+      }
+
       // 1. Add the new servers (not currently syncing) to the bootstrapping state from snapshots
       for (const serverToSync of serversToSync) {
         if (!syncingServers.has(serverToSync) && !bootstrappingServersFromPointerChanges.has(serverToSync)) {
