@@ -53,6 +53,61 @@ test('downloadFileWithRetries when the same hash is requested concurrently', ({ 
     })
   })
 
+  describe('and each caller holds a different storage component', () => {
+    let firstStorage: IContentStorageComponent
+    let secondStorage: IContentStorageComponent
+    let baseUrl: string
+
+    beforeEach(async () => {
+      requestCount = 0
+      firstStorage = createInMemoryStorage()
+      secondStorage = createInMemoryStorage()
+      baseUrl = await components.getBaseUrl()
+    })
+
+    it('should not share one job between them, since a job only stores into its own storage', async () => {
+      await Promise.all([
+        downloadFileWithRetries({ storage: firstStorage }, contentHash, resolve('downloads'), [baseUrl], new Map(), 3, 0),
+        downloadFileWithRetries({ storage: secondStorage }, contentHash, resolve('downloads'), [baseUrl], new Map(), 3, 0)
+      ])
+
+      // Sharing would leave the joiner believing the download succeeded while its storage stayed empty.
+      expect([await firstStorage.exist(contentHash), await secondStorage.exist(contentHash)]).toEqual([true, true])
+    })
+
+    it('should transfer the file once per storage', async () => {
+      await Promise.all([
+        downloadFileWithRetries({ storage: firstStorage }, contentHash, resolve('downloads'), [baseUrl], new Map(), 3, 0),
+        downloadFileWithRetries({ storage: secondStorage }, contentHash, resolve('downloads'), [baseUrl], new Map(), 3, 0)
+      ])
+
+      expect(requestCount).toBe(2)
+    })
+  })
+
+  describe('and the job they share fails against its own candidate servers', () => {
+    let storage: IContentStorageComponent
+    let workingServer: string
+    let brokenServer: string
+
+    beforeEach(async () => {
+      requestCount = 0
+      storage = createInMemoryStorage()
+      workingServer = await components.getBaseUrl()
+      // Nothing listens here, so every attempt against it fails.
+      brokenServer = 'http://127.0.0.1:1'
+    })
+
+    it('should let the joining caller retry with its own servers rather than inherit the failure', async () => {
+      const [failing, joining] = await Promise.allSettled([
+        downloadFileWithRetries({ storage }, contentHash, resolve('downloads'), [brokenServer], new Map(), 1, 0),
+        downloadFileWithRetries({ storage }, contentHash, resolve('downloads'), [workingServer], new Map(), 2, 0)
+      ])
+
+      expect([failing.status, joining.status]).toEqual(['rejected', 'fulfilled'])
+    })
+  })
+
   describe('and the target temp folder does not exist yet', () => {
     let storage: IContentStorageComponent
     let baseUrl: string

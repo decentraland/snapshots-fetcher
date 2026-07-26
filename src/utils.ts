@@ -1,9 +1,12 @@
 import { hashV0, hashV1 } from '@dcl/hashing'
 import { IFetchComponent, RequestOptions } from '@dcl/core-commons'
 import * as crypto from 'crypto'
+import { lookup as dnsLookup } from 'dns'
 import * as fs from 'fs'
 import * as http from 'http'
 import * as https from 'https'
+import * as net from 'net'
+import { LookupFunction } from 'net'
 import * as path from 'path'
 import { pipeline, Readable, Transform } from 'stream'
 import { promisify } from 'util'
@@ -190,6 +193,67 @@ const DOWNLOAD_INACTIVITY_TIMEOUT_MS = 30_000
 // bombs and otherwise unbounded responses that could exhaust the disk.
 const MAX_DOWNLOADED_FILE_SIZE_IN_BYTES = 1024 * 1024 * 1024 // 1 GiB
 
+/**
+ * True for addresses that are only reachable from inside our own network: RFC1918 private ranges,
+ * loopback, link-local (which covers the cloud metadata endpoints at 169.254.169.254), carrier-grade
+ * NAT, "this network", multicast/reserved space, and their IPv6 equivalents.
+ */
+export function isNonPublicAddress(address: string): boolean {
+  // ::ffff:10.0.0.1 and friends are IPv4 wearing an IPv6 hat.
+  const withoutV6Prefix = address.toLowerCase().startsWith('::ffff:') ? address.slice('::ffff:'.length) : address
+
+  if (net.isIPv4(withoutV6Prefix)) {
+    const [first, second] = withoutV6Prefix.split('.').map(Number)
+    if (first === 0) return true // 0.0.0.0/8 "this network"
+    if (first === 10) return true // 10.0.0.0/8 private
+    if (first === 127) return true // loopback
+    if (first === 169 && second === 254) return true // link-local, incl. cloud metadata
+    if (first === 172 && second >= 16 && second <= 31) return true // 172.16.0.0/12 private
+    if (first === 192 && second === 168) return true // 192.168.0.0/16 private
+    if (first === 100 && second >= 64 && second <= 127) return true // 100.64.0.0/10 CGNAT
+    if (first >= 224) return true // multicast and reserved
+    return false
+  }
+
+  const lowercased = withoutV6Prefix.toLowerCase()
+  if (lowercased === '::1' || lowercased === '::') return true // loopback / unspecified
+  if (lowercased.startsWith('fe8') || lowercased.startsWith('fe9')) return true // fe80::/10 link-local
+  if (lowercased.startsWith('fea') || lowercased.startsWith('feb')) return true // fe80::/10 link-local
+  if (lowercased.startsWith('fc') || lowercased.startsWith('fd')) return true // fc00::/7 unique local
+  return false
+}
+
+/**
+ * A DNS lookup that refuses to resolve to a non-public address, so a redirect cannot steer a download
+ * at an internal service by pointing at a hostname whose A record is private. `allowedHostname` — the
+ * host the caller originally asked for, which comes from the trusted server list — is always allowed,
+ * which is what keeps loopback-based local development and tests working.
+ */
+function createRedirectSafeLookup(allowedHostname: string): LookupFunction {
+  const allowed = allowedHostname.toLowerCase()
+
+  return ((hostname: string, options: any, callback: any) => {
+    if (hostname.toLowerCase() === allowed) {
+      dnsLookup(hostname, options, callback)
+      return
+    }
+
+    dnsLookup(hostname, options, (err: any, address: any, family: any) => {
+      if (err) {
+        callback(err, address, family)
+        return
+      }
+      const resolved: { address: string }[] = Array.isArray(address) ? address : [{ address }]
+      const blocked = resolved.find((entry) => isNonPublicAddress(entry.address))
+      if (blocked) {
+        callback(new Error(`Refusing to follow a redirect to ${hostname} (${blocked.address}): not a public address`))
+        return
+      }
+      callback(null, address, family)
+    })
+  }) as LookupFunction
+}
+
 // Fails the pipeline once more than maxBytes have flowed through it. Placed *after* gunzip so it
 // bounds the decompressed size.
 function createSizeLimiter(maxBytes: number): Transform {
@@ -242,6 +306,8 @@ function downloadFile(
       reject(err)
     }
 
+    const originalHostname = new URL(originalUrlString).hostname
+
     function requestWithRedirects(redirectedUrl: string, baseUrl: string, redirects: number) {
       // Relative redirects must be resolved against the URL that issued them, not the original URL.
       const url = new URL(redirectedUrl, baseUrl)
@@ -256,9 +322,27 @@ function downloadFile(
         return
       }
 
+      // A literal IP never reaches the lookup below (there is nothing to resolve), so it is checked
+      // here. Redirect targets are chosen by the remote server; without this it could point the
+      // download at an internal address and use this process to reach it.
+      const hostnameWithoutBrackets = url.hostname.replace(/^\[|\]$/g, '')
+      if (
+        url.hostname.toLowerCase() !== originalHostname.toLowerCase() &&
+        net.isIP(hostnameWithoutBrackets) &&
+        isNonPublicAddress(hostnameWithoutBrackets)
+      ) {
+        settleWithError(new Error(`Refusing to follow a redirect to ${url.hostname}: not a public address`))
+        return
+      }
+
       Object.assign(metricsLabels, contentServerMetricLabels(url.toString()))
 
-      const request = httpModule.get(url.toString(), { headers: { 'accept-encoding': 'gzip' } }, (response) => {
+      const requestOptions = {
+        headers: { 'accept-encoding': 'gzip' },
+        lookup: createRedirectSafeLookup(originalHostname)
+      }
+
+      const request = httpModule.get(url.toString(), requestOptions, (response) => {
         if ((response.statusCode === 302 || response.statusCode === 301) && response.headers.location) {
           // drain the redirect response so its socket is freed (and its inactivity timer cleared)
           response.resume()

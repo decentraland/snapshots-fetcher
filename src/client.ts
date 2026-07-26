@@ -135,7 +135,19 @@ export async function* fetchJsonPaginated<T>(
     if (partialHistory.pagination) {
       const nextRelative: unknown = partialHistory.pagination.next
       if (!nextRelative || typeof nextRelative !== 'string') break
-      currentUrl = new URL(nextRelative, currentUrl).toString()
+      const nextUrl = new URL(nextRelative, currentUrl)
+      // `next` is chosen by the remote server, so an absolute URL here would let it steer our
+      // requests at any host it likes — internal addresses and cloud metadata endpoints included —
+      // using this process as the client. Pagination never legitimately leaves the server that
+      // issued it, so anything cross-origin is rejected rather than followed.
+      if (nextUrl.origin !== new URL(currentUrl).origin) {
+        throw new Error(
+          `Refusing to follow a cross-origin pagination link while fetching ${url}: ${nextUrl.origin} does not match ${
+            new URL(currentUrl).origin
+          }`
+        )
+      }
+      currentUrl = nextUrl.toString()
     } else {
       break
     }

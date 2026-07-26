@@ -114,6 +114,34 @@ test('fetchJsonPaginated when the server returns a malformed or endless feed', (
     })
   })
 
+  describe('and the pagination link points at another origin', () => {
+    let baseUrl: string
+
+    beforeEach(async () => {
+      baseUrl = await components.getBaseUrl()
+      // A remote server steering us at an internal address, using this process as the client.
+      components.router.get('/cross-origin', async (): Promise<any> => ({
+        body: {
+          deltas: [],
+          pagination: { next: 'http://169.254.169.254/latest/meta-data/' }
+        }
+      }))
+    })
+
+    it('should refuse to follow it rather than issue a request to that host', async () => {
+      await expect(
+        drain(
+          fetchJsonPaginated(
+            components,
+            `${baseUrl}/cross-origin`,
+            ($) => $.deltas,
+            'dcl_catalysts_pointer_changes_response_time_seconds'
+          )
+        )
+      ).rejects.toThrow('Refusing to follow a cross-origin pagination link')
+    })
+  })
+
   describe('and the response carries no pagination key at all', () => {
     let baseUrl: string
 

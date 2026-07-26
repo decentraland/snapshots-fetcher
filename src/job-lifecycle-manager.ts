@@ -99,6 +99,10 @@ export function createJobLifecycleManagerComponent(
       return new Set(createdJobs.keys())
     },
     async stop() {
+      // Captured before signalling: entries disappear as runs finish, and we want to wait for all of
+      // them.
+      const inFlightRuns = Array.from(runningJobs.values())
+
       for (const [name, job] of createdJobs) {
         logs.info('Stopping job', { name })
         try {
@@ -108,6 +112,12 @@ export function createJobLifecycleManagerComponent(
         }
         createdJobs.delete(name)
       }
+
+      // Signalling is not enough. Per IJobWithLifecycle a job ends when start() returns, so a job
+      // signalled above can still be inside its action — deploying entities, advancing timestamps —
+      // after this resolved. Callers treat a resolved stop() as "quiescent", so wait for the runs
+      // themselves. Each entry already absorbs its own rejection, so this never throws.
+      await Promise.all(inFlightRuns)
     }
   }
 }

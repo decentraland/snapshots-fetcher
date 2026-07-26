@@ -3,10 +3,27 @@ import { saveContentFileToDisk } from './client'
 import { SnapshotsFetcherComponents } from './types'
 import { isValidContentHash, pickRandomServer, sleep } from './utils'
 
-// Keyed by content hash, not by the resolved temp path: storage is content-addressed, so two callers
-// asking for the same hash into different targetTempFolders are the same download and must share one
-// job. Keying by path let them run concurrently, duplicating the transfer.
-const downloadFileJobsMap = new Map<string, ReturnType<typeof downloadFileWithRetries>>()
+// In-flight downloads, per storage component and then per content hash.
+//
+// Keyed by hash rather than by the resolved temp path because storage is content-addressed: two
+// callers asking for the same hash into different targetTempFolders are the same download and should
+// share one job (keying by path let them run concurrently and duplicate the transfer).
+//
+// Scoped *per storage component* because sharing is only sound when both callers end up with the
+// file. A job stores into the storage of whoever started it, so two callers holding different storage
+// instances must not share: the joiner would be told the download succeeded while its own storage
+// stayed empty. A WeakMap so a discarded storage component takes its entry with it.
+const inflightDownloadsByStorage = new WeakMap<object, Map<string, ReturnType<typeof downloadFileWithRetries>>>()
+
+function inflightJobsFor(storage: object): Map<string, ReturnType<typeof downloadFileWithRetries>> {
+  const existing = inflightDownloadsByStorage.get(storage)
+  if (existing) {
+    return existing
+  }
+  const created = new Map<string, ReturnType<typeof downloadFileWithRetries>>()
+  inflightDownloadsByStorage.set(storage, created)
+  return created
+}
 
 async function downloadJob(
   components: Pick<SnapshotsFetcherComponents, 'storage'> & { metrics?: SnapshotsFetcherComponents['metrics'] },
@@ -77,10 +94,17 @@ export async function downloadFileWithRetries(
   }
 
   const finalFileName = path.resolve(targetTempFolder, hashToDownload)
+  const inflightForStorage = inflightJobsFor(components.storage)
 
-  const inflightJob = downloadFileJobsMap.get(hashToDownload)
+  const inflightJob = inflightForStorage.get(hashToDownload)
   if (inflightJob) {
-    return inflightJob
+    try {
+      return await inflightJob
+    } catch {
+      // The shared job failed against *its* candidate servers. This caller may have been given a
+      // different set, so fall through and make its own attempt instead of inheriting a failure it
+      // might not have suffered.
+    }
   }
 
   try {
@@ -92,11 +116,13 @@ export async function downloadFileWithRetries(
       maxRetries,
       waitTimeBetweenRetries
     )
-    downloadFileJobsMap.set(hashToDownload, downloadWithRetriesJob)
+    inflightForStorage.set(hashToDownload, downloadWithRetriesJob)
 
     await downloadWithRetriesJob
     return
   } finally {
-    downloadFileJobsMap.delete(hashToDownload)
+    if (inflightForStorage.get(hashToDownload) !== undefined) {
+      inflightForStorage.delete(hashToDownload)
+    }
   }
 }
