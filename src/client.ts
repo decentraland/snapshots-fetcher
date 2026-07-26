@@ -41,11 +41,12 @@ function isValidSnapshotMetadata(snapshot: any): snapshot is SnapshotMetadata {
     typeof snapshot.timeRange.endTimestamp === 'number' &&
     (snapshot.replacedSnapshotHashes === undefined ||
       (Array.isArray(snapshot.replacedSnapshotHashes) &&
-        snapshot.replacedSnapshotHashes.every((hash: any) => isValidContentHash(hash)))) &&
-    // Optional and unused by this package, but a present value must still have the declared type.
-    (snapshot.numberOfEntities === undefined || typeof snapshot.numberOfEntities === 'number') &&
-    (snapshot.generationTimestamp === undefined || typeof snapshot.generationTimestamp === 'number')
+        snapshot.replacedSnapshotHashes.every((hash: any) => isValidContentHash(hash))))
   )
+  // Deliberately NOT validating numberOfEntities / generationTimestamp. Nothing in this package reads
+  // them, so a wrong type cannot hurt us — but rejecting the entry over one would drop the whole
+  // snapshot, and a server that reports `numberOfEntities: "5"` would silently stop being synced from.
+  // Validating a field we never use can only cause harm here.
 }
 
 export async function getSnapshots(

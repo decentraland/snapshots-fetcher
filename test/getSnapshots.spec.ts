@@ -43,6 +43,29 @@ test('getSnapshots when the response mixes valid and invalid snapshot metadata',
   })
 })
 
+test('getSnapshots when a snapshot reports the unused informational fields with an unexpected type', ({
+  components
+}) => {
+  const snapshotWithStringCount = {
+    hash: 'bafkreig6sfhegnp4okzecgx3v6gj6pohh5qzw6zjtrdqtggx64743rkmz4',
+    timeRange: { initTimestamp: 0, endTimestamp: 300 },
+    numberOfEntities: '5',
+    generationTimestamp: 'yesterday'
+  }
+
+  it('prepares the endpoints', () => {
+    components.router.get('/snapshots', async () => ({ body: [snapshotWithStringCount] }))
+  })
+
+  it('should still return the snapshot, since nothing reads those fields', async () => {
+    // Rejecting the entry would silently stop this server from ever being synced from, over a value
+    // the package never looks at.
+    const snapshots = await getSnapshots(components, await components.getBaseUrl(), 10)
+
+    expect(snapshots).toEqual([snapshotWithStringCount])
+  })
+})
+
 test('getSnapshots when the response is not an array', ({ components }) => {
   it('prepares the endpoints', () => {
     components.router.get('/snapshots', async () => ({ body: { not: 'an array' } }))
