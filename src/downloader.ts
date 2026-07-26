@@ -31,8 +31,13 @@ async function downloadJob(
   finalFileName: string,
   presentInServers: string[],
   maxRetries: number,
-  waitTimeBetweenRetries: number
+  waitTimeBetweenRetries: number,
+  shouldStop?: () => boolean
 ): Promise<void> {
+  if (shouldStop?.()) {
+    throw new Error(`Not downloading ${hashToDownload}: the caller asked to stop`)
+  }
+
   // cancel early if the file is already downloaded
   if (await components.storage.exist(hashToDownload)) return
 
@@ -60,6 +65,12 @@ async function downloadJob(
 
       return
     } catch (e: any) {
+      // Give up the remaining attempts once the caller is shutting down. Without this the ladder runs
+      // to completion — maxRetries multiplied by the per-download inactivity timeout — while whoever
+      // called stop() waits for this job to return.
+      if (shouldStop?.()) {
+        throw e
+      }
       if (retries < maxRetries) {
         serversToPickFrom =
           serversToPickFrom.length > 1
@@ -85,7 +96,10 @@ export async function downloadFileWithRetries(
   presentInServers: string[],
   _serverMapLRU: Map<string, number>,
   maxRetries: number,
-  waitTimeBetweenRetries: number
+  waitTimeBetweenRetries: number,
+  /** Consulted before the first attempt and between retries, so a shutdown does not have to wait out
+   * the whole retry ladder. */
+  shouldStop?: () => boolean
 ): Promise<void> {
   // Reject untrusted hashes that are not plain content addresses before using them to build a
   // filesystem path. Without this, a value like "../../etc/x" would escape targetTempFolder.
@@ -107,21 +121,25 @@ export async function downloadFileWithRetries(
     }
   }
 
-  try {
-    const downloadWithRetriesJob = downloadJob(
-      components,
-      hashToDownload,
-      finalFileName,
-      presentInServers,
-      maxRetries,
-      waitTimeBetweenRetries
-    )
-    inflightForStorage.set(hashToDownload, downloadWithRetriesJob)
+  const downloadWithRetriesJob = downloadJob(
+    components,
+    hashToDownload,
+    finalFileName,
+    presentInServers,
+    maxRetries,
+    waitTimeBetweenRetries,
+    shouldStop
+  )
+  inflightForStorage.set(hashToDownload, downloadWithRetriesJob)
 
+  try {
     await downloadWithRetriesJob
     return
   } finally {
-    if (inflightForStorage.get(hashToDownload) !== undefined) {
+    // Only clear our own entry. Since a caller whose shared job rejected falls through and registers
+    // a replacement, the slot may already hold someone else's in-flight job — evicting that would
+    // un-deduplicate it and let the next caller start a second transfer of the same file.
+    if (inflightForStorage.get(hashToDownload) === downloadWithRetriesJob) {
       inflightForStorage.delete(hashToDownload)
     }
   }

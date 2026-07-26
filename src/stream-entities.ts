@@ -23,7 +23,8 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
   },
   options: SnapshotDeployedEntityStreamOptions,
   snapshotHash: string,
-  servers: Set<string>
+  servers: Set<string>,
+  shouldStop: () => boolean = () => false
 ) {
   const genesisTimestamp = options.fromTimestamp || 0
   const logs = components.logs.getLogger('getDeployedEntitiesStreamFromSnapshot')
@@ -40,7 +41,8 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
       serversList,
       new Map(),
       options.requestMaxRetries,
-      options.requestRetryWaitTime
+      options.requestRetryWaitTime,
+      shouldStop
     )
 
     // 2. open the snapshot file and process line by line

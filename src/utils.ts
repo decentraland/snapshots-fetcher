@@ -22,7 +22,12 @@ const MAX_JSON_RESPONSE_SIZE_IN_BYTES = 50 * 1024 * 1024 // 50 MiB
 // Reads a response body while enforcing a maximum size. The native fetcher (unlike node-fetch) has
 // no `size` option, so we cap manually: read the stream with a running byte count and abort —
 // cancelling the stream to free its socket — if it exceeds the limit.
-async function readBodyWithSizeLimit(response: Response, maxBytes: number): Promise<string> {
+// Applied to the body read when the caller did not ask for a specific timeout.
+const DEFAULT_BODY_READ_TIMEOUT_IN_MS = 30_000
+// How many same-origin redirects fetchJson will follow itself.
+const MAX_JSON_REDIRECTS = 5
+
+async function readBodyWithSizeLimit(response: Response, maxBytes: number, timeoutMs: number): Promise<string> {
   const reader = response.body?.getReader()
   if (!reader) {
     return ''
@@ -30,6 +35,15 @@ async function readBodyWithSizeLimit(response: Response, maxBytes: number): Prom
 
   const chunks: Uint8Array[] = []
   let total = 0
+  // The fetch component's timeout only covers time-to-headers: it clears its abort timer as soon as
+  // the response object exists. Without a deadline here a server can send headers, write half a
+  // document and then go silent forever — exactly the stall the request timeout was meant to prevent,
+  // and a pending promise never reaches the reconnection logic.
+  let timedOut = false
+  const timeout = setTimeout(() => {
+    timedOut = true
+    void reader.cancel().catch(() => undefined)
+  }, timeoutMs)
 
   try {
     for (;;) {
@@ -43,29 +57,71 @@ async function readBodyWithSizeLimit(response: Response, maxBytes: number): Prom
         chunks.push(value)
       }
     }
+  } catch (e) {
+    throw timedOut ? new Error(`Timed out after ${timeoutMs}ms while reading the response body`) : e
   } finally {
+    clearTimeout(timeout)
     // Frees the socket on the size-exceeded path; a no-op once the stream has been fully read.
     await reader.cancel().catch(() => undefined)
+  }
+
+  if (timedOut) {
+    throw new Error(`Timed out after ${timeoutMs}ms while reading the response body`)
   }
 
   return Buffer.concat(chunks).toString('utf8')
 }
 
 export async function fetchJson(url: string, fetcher: IFetchComponent, init?: RequestOptions): Promise<any> {
-  const response = await fetcher.fetch(url, init)
+  const bodyReadTimeout = init?.timeout ?? DEFAULT_BODY_READ_TIMEOUT_IN_MS
 
-  if (!response.ok) {
-    // Drain the body so undici releases the socket back to the pool before throwing.
-    await response.body?.cancel().catch(() => undefined)
-    throw new Error('Error fetching ' + url + '. Status code was: ' + response.status)
+  // redirect: 'manual' so redirects are followed here, under a same-origin rule, instead of by the
+  // fetch implementation — whose default ('follow') chases any host the server names. That turned
+  // every JSON endpoint into an SSRF primitive and let a redirect sidestep the same-origin check
+  // fetchJsonPaginated applies to `pagination.next`.
+  let currentUrl = url
+  for (let redirects = 0; ; redirects++) {
+    const response = await fetcher.fetch(currentUrl, { ...init, redirect: 'manual' })
+
+    if (response.status >= 300 && response.status < 400) {
+      await response.body?.cancel().catch(() => undefined)
+      const location = response.headers.get('location')
+      if (!location) {
+        throw new Error(`Error fetching ${currentUrl}. Redirect status ${response.status} without a location.`)
+      }
+      if (redirects >= MAX_JSON_REDIRECTS) {
+        throw new Error(`Error fetching ${url}. Too many redirects.`)
+      }
+      let redirectTarget: URL
+      try {
+        redirectTarget = new URL(location, currentUrl)
+      } catch {
+        throw new Error(`Error fetching ${currentUrl}. Invalid redirect location ${JSON.stringify(location)}.`)
+      }
+      if (redirectTarget.origin !== new URL(currentUrl).origin) {
+        throw new Error(
+          `Refusing to follow a cross-origin redirect while fetching ${url}: ${redirectTarget.origin} does not match ${
+            new URL(currentUrl).origin
+          }`
+        )
+      }
+      currentUrl = redirectTarget.toString()
+      continue
+    }
+
+    if (!response.ok) {
+      // Drain the body so undici releases the socket back to the pool before throwing.
+      await response.body?.cancel().catch(() => undefined)
+      throw new Error('Error fetching ' + currentUrl + '. Status code was: ' + response.status)
+    }
+
+    const body = await readBodyWithSizeLimit(response, MAX_JSON_RESPONSE_SIZE_IN_BYTES, bodyReadTimeout)
+    if (body === '') {
+      throw new Error('Error fetching ' + currentUrl + '. The response body was empty.')
+    }
+
+    return JSON.parse(body)
   }
-
-  const body = await readBodyWithSizeLimit(response, MAX_JSON_RESPONSE_SIZE_IN_BYTES)
-  if (body === '') {
-    throw new Error('Error fetching ' + url + '. The response body was empty.')
-  }
-
-  return JSON.parse(body)
 }
 
 export async function checkFileExists(file: string): Promise<boolean> {
@@ -193,34 +249,98 @@ const DOWNLOAD_INACTIVITY_TIMEOUT_MS = 30_000
 // bombs and otherwise unbounded responses that could exhaust the disk.
 const MAX_DOWNLOADED_FILE_SIZE_IN_BYTES = 1024 * 1024 * 1024 // 1 GiB
 
+function isNonPublicIPv4(address: string): boolean {
+  const [first, second] = address.split('.').map(Number)
+  if (first === 0) return true // 0.0.0.0/8 "this network"
+  if (first === 10) return true // 10.0.0.0/8 private
+  if (first === 127) return true // loopback
+  if (first === 169 && second === 254) return true // link-local, incl. cloud metadata
+  if (first === 172 && second >= 16 && second <= 31) return true // 172.16.0.0/12 private
+  if (first === 192 && second === 168) return true // 192.168.0.0/16 private
+  if (first === 100 && second >= 64 && second <= 127) return true // 100.64.0.0/10 CGNAT
+  if (first >= 224) return true // multicast and reserved
+  return false
+}
+
+/**
+ * Expands an IPv6 literal to its 16 bytes, resolving `::` and any trailing dotted-quad.
+ *
+ * Textual matching is not good enough here: WHATWG URL rewrites every IPv4-mapped literal into
+ * compressed hex (`::ffff:127.0.0.1` becomes `::ffff:7f00:1`), so a guard that only recognises the
+ * dotted form never sees the shape that actually arrives. Comparing bytes removes that whole class of
+ * near-miss.
+ */
+function parseIPv6ToBytes(address: string): Uint8Array | undefined {
+  // A zone id is meaningless to us and cannot reach here through URL parsing; drop it defensively.
+  let text = address.toLowerCase().split('%')[0]
+
+  const trailingIPv4 = text.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/)
+  if (trailingIPv4) {
+    const octets = trailingIPv4[1].split('.').map(Number)
+    if (octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) return undefined
+    const high = ((octets[0] << 8) | octets[1]).toString(16)
+    const low = ((octets[2] << 8) | octets[3]).toString(16)
+    text = text.slice(0, trailingIPv4.index) + high + ':' + low
+  }
+
+  const halves = text.split('::')
+  if (halves.length > 2) return undefined
+  const toHextets = (part: string) => (part ? part.split(':') : [])
+  const head = toHextets(halves[0])
+  const tail = halves.length === 2 ? toHextets(halves[1]) : []
+
+  let hextets: string[]
+  if (halves.length === 1) {
+    if (head.length !== 8) return undefined
+    hextets = head
+  } else {
+    const missing = 8 - head.length - tail.length
+    if (missing < 0) return undefined
+    hextets = [...head, ...new Array(missing).fill('0'), ...tail]
+  }
+
+  const bytes = new Uint8Array(16)
+  for (let index = 0; index < 8; index++) {
+    if (!/^[0-9a-f]{1,4}$/.test(hextets[index])) return undefined
+    const value = parseInt(hextets[index], 16)
+    bytes[index * 2] = value >> 8
+    bytes[index * 2 + 1] = value & 0xff
+  }
+  return bytes
+}
+
 /**
  * True for addresses that are only reachable from inside our own network: RFC1918 private ranges,
  * loopback, link-local (which covers the cloud metadata endpoints at 169.254.169.254), carrier-grade
  * NAT, "this network", multicast/reserved space, and their IPv6 equivalents.
+ *
+ * Anything that is not a recognisable IP literal is reported as non-public: callers only ever pass
+ * resolved addresses, so an unparseable value means something unexpected happened and refusing is the
+ * safe direction.
  */
 export function isNonPublicAddress(address: string): boolean {
-  // ::ffff:10.0.0.1 and friends are IPv4 wearing an IPv6 hat.
-  const withoutV6Prefix = address.toLowerCase().startsWith('::ffff:') ? address.slice('::ffff:'.length) : address
+  if (net.isIPv4(address)) {
+    return isNonPublicIPv4(address)
+  }
 
-  if (net.isIPv4(withoutV6Prefix)) {
-    const [first, second] = withoutV6Prefix.split('.').map(Number)
-    if (first === 0) return true // 0.0.0.0/8 "this network"
-    if (first === 10) return true // 10.0.0.0/8 private
-    if (first === 127) return true // loopback
-    if (first === 169 && second === 254) return true // link-local, incl. cloud metadata
-    if (first === 172 && second >= 16 && second <= 31) return true // 172.16.0.0/12 private
-    if (first === 192 && second === 168) return true // 192.168.0.0/16 private
-    if (first === 100 && second >= 64 && second <= 127) return true // 100.64.0.0/10 CGNAT
-    if (first >= 224) return true // multicast and reserved
+  if (net.isIPv6(address)) {
+    const bytes = parseIPv6ToBytes(address)
+    if (!bytes) return true
+
+    const first10AreZero = bytes.subarray(0, 10).every((byte) => byte === 0)
+    // ::ffff:0:0/96 — IPv4-mapped. Judge the IPv4 address it carries.
+    if (first10AreZero && bytes[10] === 0xff && bytes[11] === 0xff) {
+      return isNonPublicIPv4(`${bytes[12]}.${bytes[13]}.${bytes[14]}.${bytes[15]}`)
+    }
+    // ::/96 — covers :: (unspecified), ::1 (loopback) and the deprecated IPv4-compatible form.
+    if (bytes.subarray(0, 12).every((byte) => byte === 0)) return true
+    if (bytes[0] === 0xfe && (bytes[1] & 0xc0) === 0x80) return true // fe80::/10 link-local
+    if ((bytes[0] & 0xfe) === 0xfc) return true // fc00::/7 unique local
+    if (bytes[0] === 0xff) return true // ff00::/8 multicast
     return false
   }
 
-  const lowercased = withoutV6Prefix.toLowerCase()
-  if (lowercased === '::1' || lowercased === '::') return true // loopback / unspecified
-  if (lowercased.startsWith('fe8') || lowercased.startsWith('fe9')) return true // fe80::/10 link-local
-  if (lowercased.startsWith('fea') || lowercased.startsWith('feb')) return true // fe80::/10 link-local
-  if (lowercased.startsWith('fc') || lowercased.startsWith('fd')) return true // fc00::/7 unique local
-  return false
+  return true
 }
 
 /**
@@ -310,7 +430,18 @@ function downloadFile(
 
     function requestWithRedirects(redirectedUrl: string, baseUrl: string, redirects: number) {
       // Relative redirects must be resolved against the URL that issued them, not the original URL.
-      const url = new URL(redirectedUrl, baseUrl)
+      //
+      // Guarded because this function is re-entered from inside the response listener: a `Location`
+      // the URL parser rejects (`http://[`, `http://:80`, …) would throw there, escape this Promise's
+      // executor and surface as an uncaughtException — a remote crash of the whole process, triggerable
+      // by any server in the list on any content file.
+      let url: URL
+      try {
+        url = new URL(redirectedUrl, baseUrl)
+      } catch {
+        settleWithError(new Error(`Invalid redirect location ${JSON.stringify(redirectedUrl)} from ${baseUrl}`))
+        return
+      }
       // Only http(s) is supported; reject other schemes (e.g. file:) a redirect could point to.
       if (url.protocol !== 'http:' && url.protocol !== 'https:') {
         settleWithError(new Error('Unsupported protocol in URL ' + url.toString()))

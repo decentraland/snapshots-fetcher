@@ -105,12 +105,16 @@ export function createJobLifecycleManagerComponent(
 
       for (const [name, job] of createdJobs) {
         logs.info('Stopping job', { name })
+        // Removed *before* awaiting. `await job.stop()` yields, and a replacement start that is queued
+        // behind another run can fire in that gap; while this entry is still present that deferred
+        // startJob sees itself as current and starts a job we have just stopped, whose run then never
+        // settles — so the Promise.all below would wait forever.
+        createdJobs.delete(name)
         try {
           await job.stop()
         } catch (e: any) {
           logs.error(e)
         }
-        createdJobs.delete(name)
       }
 
       // Signalling is not enough. Per IJobWithLifecycle a job ends when start() returns, so a job

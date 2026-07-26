@@ -50,6 +50,8 @@ export function createExponentialFallofRetry(
   options: ExponentialFallofRetryOptions
 ): ExponentialFallofRetryComponent {
   let started: boolean = false
+  // Terminal once stop() is called, so the component can never be restarted into an unstoppable loop.
+  let stopped: boolean = false
 
   if (options.maxInterval && options.maxInterval < 0) throw new Error('options.maxInterval must be >= 0')
   // A negative retryTime passes the `!options.retryTime` guard below and then makes every retry sleep
@@ -140,6 +142,13 @@ export function createExponentialFallofRetry(
 
       logs.info('Retrying in ' + reconnectionTime.toFixed(1) + 'ms')
       await interruptibleSleep(reconnectionTime)
+
+      // stop() interrupts the sleep, so re-check before running the action again. Without this the
+      // action always runs one extra time after a stop.
+      if (!started) {
+        logs.info('Breaking iteration after the retry sleep, started == false')
+        return
+      }
     }
   }
 
@@ -151,6 +160,11 @@ export function createExponentialFallofRetry(
       return !started
     },
     async start() {
+      // stop() is terminal. `started` alone cannot express that: it is false both before a first start
+      // and after a stop, so without this flag a start() that races or follows a stop() would spin up
+      // a loop whose `if (!started) return` exit can never be reached — an unstoppable job, and a
+      // second concurrent loop clobbering the shared cancelCurrentSleep.
+      if (stopped) return
       if (started === true) return
       started = true
       try {
@@ -162,6 +176,7 @@ export function createExponentialFallofRetry(
       }
     },
     async stop() {
+      stopped = true
       started = false
       if (cancelCurrentSleep) {
         cancelCurrentSleep()

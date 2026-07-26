@@ -108,6 +108,36 @@ test('downloadFileWithRetries when the same hash is requested concurrently', ({ 
     })
   })
 
+  describe('and a caller that fell back settles after a replacement job was registered', () => {
+    let storage: IContentStorageComponent
+    let workingServer: string
+    let brokenServer: string
+
+    beforeEach(async () => {
+      requestCount = 0
+      storage = createInMemoryStorage()
+      workingServer = await components.getBaseUrl()
+      brokenServer = 'http://127.0.0.1:1'
+    })
+
+    it('should not evict the replacement from the in-flight map', async () => {
+      // The failing caller registers first; the joiner falls through and registers its own job. When
+      // the first one finally settles it must clear only its own slot, or a later caller would miss
+      // the replacement and start a duplicate transfer of the same file.
+      await Promise.allSettled([
+        downloadFileWithRetries({ storage }, contentHash, resolve('downloads'), [brokenServer], new Map(), 1, 0),
+        downloadFileWithRetries({ storage }, contentHash, resolve('downloads'), [workingServer], new Map(), 2, 0)
+      ])
+
+      const requestsAfterFirstRound = requestCount
+
+      // Already stored by the successful job, so this must short-circuit rather than transfer again.
+      await downloadFileWithRetries({ storage }, contentHash, resolve('downloads'), [workingServer], new Map(), 2, 0)
+
+      expect(requestCount).toBe(requestsAfterFirstRound)
+    })
+  })
+
   describe('and the target temp folder does not exist yet', () => {
     let storage: IContentStorageComponent
     let baseUrl: string

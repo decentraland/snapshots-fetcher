@@ -52,6 +52,45 @@ test('downloadEntityAndContentFiles when the profile metadata has a malformed sh
     })
   })
 
+  describe('and the avatar snapshots value is a long string instead of an object', () => {
+    let entityId: string
+    let requestedFiles: number
+
+    beforeEach(async () => {
+      requestedFiles = 0
+      components.router.get('/contents/:file', async () => {
+        requestedFiles++
+        return { body: 'unused' }
+      })
+      entityId = await storeEntity(components.storage, {
+        type: 'profile',
+        // Object.values on a string yields one entry per character, and each single character passes
+        // content-hash validation — so this used to become one queued download per character.
+        metadata: { avatars: [{ avatar: { snapshots: 'a'.repeat(5000) } }] }
+      })
+    })
+
+    it('should return the parsed entity without expanding the string into downloads', async () => {
+      await expect(
+        downloadEntityAndContentFiles(components, entityId, [await components.getBaseUrl()], new Map(), targetFolder, 1, 0)
+      ).resolves.toMatchObject({ type: 'profile' })
+    })
+
+    it('should not request a single content file for it', async () => {
+      await downloadEntityAndContentFiles(
+        components,
+        entityId,
+        [await components.getBaseUrl()],
+        new Map(),
+        targetFolder,
+        1,
+        0
+      )
+
+      expect(requestedFiles).toBe(0)
+    })
+  })
+
   describe('and the avatars property is not an array', () => {
     let entityId: string
 

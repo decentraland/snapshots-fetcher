@@ -53,6 +53,10 @@ export {
 // sockets / file descriptors. Overridable via downloadEntityAndContentFiles's last argument.
 const DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY = 10
 
+// Ceiling on the avatar snapshots a single profile can ask us to fetch. Far above any real profile
+// (a handful per avatar), so it only bounds hostile or corrupt metadata.
+const MAX_AVATAR_SNAPSHOTS_PER_ENTITY = 1000
+
 /**
  * Verifies stored bytes against the content-addressed id that claims them. 'mismatch' proves the
  * local copy is not the content the id addresses (a truncated/partial or mis-keyed write); 'match'
@@ -156,14 +160,29 @@ function avatarSnapshotHashesFrom(entityMetadata: {
     (Array.isArray(entityMetadata.content) ? entityMetadata.content : []).map((content) => content?.hash)
   )
 
-  return allAvatars
-    .flatMap((avatar) => Object.values(avatar?.avatar?.snapshots ?? {}))
-    .filter((snapshot): snapshot is string => typeof snapshot === 'string' && snapshot.length > 0)
-    .map((snapshot) => {
-      const matches = snapshot.match(/^http.*\/content\/contents\/(.*)/)
-      return matches ? matches[1] : snapshot
-    })
-    .filter((snapshot) => !declaredContentHashes.has(snapshot))
+  return (
+    allAvatars
+      .flatMap((avatar) => {
+        const snapshots: unknown = avatar?.avatar?.snapshots
+        // Must be an object of named snapshots. Object.values on a *string* yields one entry per
+        // character, so a long string would expand into a download job per character — a ~50 MB
+        // metadata value is millions of queued jobs and gigabytes of heap, from a profile whose hash the
+        // attacker controls and which therefore passes verification.
+        if (!snapshots || typeof snapshots !== 'object') {
+          return []
+        }
+        return Object.values(snapshots)
+      })
+      .filter((snapshot): snapshot is string => typeof snapshot === 'string' && snapshot.length > 0)
+      .map((snapshot) => {
+        const matches = snapshot.match(/^http.*\/content\/contents\/(.*)/)
+        return matches ? matches[1] : snapshot
+      })
+      .filter((snapshot) => !declaredContentHashes.has(snapshot))
+      // Even well-shaped metadata is remote and unbounded (avatars[] has no declared limit), so cap the
+      // extra work one entity can create.
+      .slice(0, MAX_AVATAR_SNAPSHOTS_PER_ENTITY)
+  )
 }
 
 async function downloadProfileAvatars(

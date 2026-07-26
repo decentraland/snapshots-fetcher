@@ -17,9 +17,22 @@ describe('isNonPublicAddress', () => {
       ['100.64.0.1', 'carrier-grade NAT'],
       ['224.0.0.1', 'multicast'],
       ['::1', 'IPv6 loopback'],
+      ['::', 'IPv6 unspecified'],
       ['fe80::1', 'IPv6 link-local'],
+      ['febf::1', 'IPv6 link-local upper bound'],
+      ['fc00::1', 'IPv6 unique local'],
       ['fd00::1', 'IPv6 unique local'],
-      ['::ffff:10.0.0.1', 'IPv4-mapped private address']
+      ['ff02::1', 'IPv6 multicast'],
+      ['::ffff:10.0.0.1', 'IPv4-mapped private address, dotted form'],
+      // WHATWG URL rewrites every IPv4-mapped literal into compressed hex, so these are the forms
+      // that actually reach the guard. Asserting only the dotted form above is what let a bypass
+      // through CI previously.
+      ['::ffff:7f00:1', 'IPv4-mapped 127.0.0.1 as URL emits it'],
+      ['::ffff:a9fe:a9fe', 'IPv4-mapped 169.254.169.254 (cloud metadata) as URL emits it'],
+      ['::ffff:a00:1', 'IPv4-mapped 10.0.0.1 as URL emits it'],
+      ['::7f00:1', 'deprecated IPv4-compatible loopback'],
+      ['0:0:0:0:0:ffff:7f00:1', 'fully expanded IPv4-mapped loopback'],
+      ['not-an-ip', 'unparseable input is refused rather than trusted']
     ])('should return true for %s (%s)', (address) => {
       expect(isNonPublicAddress(address)).toBe(true)
     })
@@ -52,6 +65,13 @@ test('downloadFile when a remote server redirects the download elsewhere', ({ co
       status: 302,
       headers: { location: `http://localhost:${new URL(await components.getBaseUrl()).port}/whatever` }
     }))
+    // The bracketed IPv4-mapped form of 127.0.0.1. URL normalises it to [::ffff:7f00:1].
+    components.router.get('/to-mapped-loopback', async () => ({
+      status: 302,
+      headers: { location: `http://[::ffff:127.0.0.1]:${new URL(await components.getBaseUrl()).port}/whatever` }
+    }))
+    // Location values the URL parser rejects outright.
+    components.router.get('/to-unparseable', async () => ({ status: 302, headers: { location: 'http://[' } }))
   })
 
   describe('and the redirect points at a link-local address', () => {
@@ -79,6 +99,36 @@ test('downloadFile when a remote server redirects the download elsewhere', ({ co
           false
         )
       ).rejects.toThrow('not a public address')
+    })
+  })
+
+  describe('and the redirect uses the IPv4-mapped IPv6 form of a private address', () => {
+    it('should refuse to follow it, not just the dotted-quad spelling', async () => {
+      await expect(
+        saveContentFileToDisk(
+          { metrics, storage: components.storage },
+          (await components.getBaseUrl()) + '/to-mapped-loopback',
+          resolve(contentFolder, 'ssrf-mapped'),
+          'ssrf-mapped',
+          false
+        )
+      ).rejects.toThrow('not a public address')
+    })
+  })
+
+  describe('and the redirect location cannot be parsed as a URL', () => {
+    it('should reject rather than crash the process with an uncaught TypeError', async () => {
+      // The redirect is handled inside the HTTP response listener, so a throw there escapes the
+      // enclosing Promise and becomes an uncaughtException.
+      await expect(
+        saveContentFileToDisk(
+          { metrics, storage: components.storage },
+          (await components.getBaseUrl()) + '/to-unparseable',
+          resolve(contentFolder, 'ssrf-unparseable'),
+          'ssrf-unparseable',
+          false
+        )
+      ).rejects.toThrow('Invalid redirect location')
     })
   })
 })

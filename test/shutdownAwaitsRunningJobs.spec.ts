@@ -85,6 +85,60 @@ test('createJobLifecycleManagerComponent', ({ components }) => {
     })
   })
 
+  describe('and a replacement job is waiting behind a predecessor when stop() is called', () => {
+    let manager: ReturnType<typeof createJobLifecycleManagerComponent>
+    let startedInstances: string[]
+    let releaseFirst: ReturnType<typeof future<void>>
+
+    beforeEach(async () => {
+      startedInstances = []
+      releaseFirst = future<void>()
+      let instances = 0
+
+      manager = createJobLifecycleManagerComponent(
+        { logs: components.logs },
+        {
+          jobManagerName: 'stop-during-deferred-start',
+          createJob(name: string) {
+            const instance = `${name}-${++instances}`
+            let jobStopped = false
+            return {
+              async start() {
+                startedInstances.push(instance)
+                if (instance === 'a-1') {
+                  await releaseFirst
+                }
+                // Mirrors the real jobs: the action returns promptly once stopped.
+                while (!jobStopped) {
+                  await sleep(5)
+                }
+              },
+              async stop() {
+                jobStopped = true
+              }
+            }
+          }
+        }
+      )
+
+      manager.setDesiredJobs(new Set(['a'])) // a-1 starts and blocks
+      manager.setDesiredJobs(new Set()) // a-1 signalled, its run still pending
+      manager.setDesiredJobs(new Set(['a'])) // a-2 created, deferred behind a-1's run
+      releaseFirst.resolve()
+      await manager.stop!()
+    })
+
+    it('should not leave a job running, and must not hang', () => {
+      expect(Array.from(manager.getRunningJobs())).toEqual([])
+    })
+
+    it('should never start a replacement it has already stopped', () => {
+      // If the name is still in createdJobs while `await job.stop()` yields, the deferred start fires
+      // and launches a job that was just stopped — whose run then never settles, hanging stop().
+      expect(startedInstances).toEqual(['a-1'])
+    })
+  })
+
   describe('and a job was dropped from the desired set before the component was stopped', () => {
     let manager: ReturnType<typeof createJobLifecycleManagerComponent>
     let finishedActions: string[]

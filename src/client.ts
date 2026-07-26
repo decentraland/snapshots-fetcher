@@ -23,7 +23,11 @@ const REQUEST_TIMEOUT_IN_MS = 15_000
 // `next` link makes the loop run forever (measured: ~670 requests/second), which silently pins the
 // sync stream on one server. Set far above any legitimate page count so it only ever trips on a
 // server that is broken or hostile.
-const MAX_PAGES_PER_PAGINATED_CALL = 50_000
+// Still far above any legitimate page count (at ~1000 entries per page this is 10M deployments in one
+// poll) but low enough that the visited-URL set stays small even against deliberately long links.
+const MAX_PAGES_PER_PAGINATED_CALL = 10_000
+// Conventional URL length ceiling. Bounds what a server can make us retain per page.
+const MAX_PAGINATION_LINK_LENGTH = 2048
 
 // Snapshot metadata comes from untrusted servers; keep only entries with the shape we rely on
 // (valid content hash + numeric time range) so a malformed response can't break downstream logic.
@@ -135,7 +139,20 @@ export async function* fetchJsonPaginated<T>(
     if (partialHistory.pagination) {
       const nextRelative: unknown = partialHistory.pagination.next
       if (!nextRelative || typeof nextRelative !== 'string') break
-      const nextUrl = new URL(nextRelative, currentUrl)
+      // `next` is remote text: an unparseable value would otherwise surface as an opaque TypeError
+      // from the URL constructor, and an enormous one would be retained in visitedUrls for the rest of
+      // the call.
+      if (nextRelative.length > MAX_PAGINATION_LINK_LENGTH) {
+        throw new Error(
+          `Invalid pagination link while fetching ${url}: longer than ${MAX_PAGINATION_LINK_LENGTH} characters`
+        )
+      }
+      let nextUrl: URL
+      try {
+        nextUrl = new URL(nextRelative, currentUrl)
+      } catch {
+        throw new Error(`Invalid pagination link while fetching ${url}: ${JSON.stringify(nextRelative)}`)
+      }
       // `next` is chosen by the remote server, so an absolute URL here would let it steer our
       // requests at any host it likes — internal addresses and cloud metadata endpoints included —
       // using this process as the client. Pagination never legitimately leaves the server that

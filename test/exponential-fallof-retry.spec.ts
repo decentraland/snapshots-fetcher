@@ -39,8 +39,11 @@ describe('createExponentialFallofRetry', () => {
     expect(totalCount).toEqual(10)
     await component.stop()
     await startPromise
-    expect(component.getRetryCount()).toEqual(11)
-    expect(totalCount).toEqual(11)
+    // stop() lands while the loop is in its retry sleep. It used to wake up and run the action one
+    // more time before noticing, because `started` was only re-checked after the action; it is now
+    // re-checked straight after the sleep, so the count stays where it was.
+    expect(component.getRetryCount()).toEqual(10)
+    expect(totalCount).toEqual(10)
   })
 
   describe('when stop() is called while the component is sleeping between retries', () => {
@@ -203,6 +206,35 @@ describe('createExponentialFallofRetry', () => {
       it('should keep the base interval, so isolated failures after healthy runs do not compound', () => {
         expect(scheduledIntervals.slice(0, 2)).toEqual([20, 20])
       })
+    })
+  })
+
+  describe('when start() is called after stop()', () => {
+    let logger: any
+    let attempts: number
+
+    beforeEach(async () => {
+      const config = createConfigComponent({})
+      const logs = await createLogComponent({ config })
+      logger = logs.getLogger('logger')
+      attempts = 0
+    })
+
+    it('should refuse to start, rather than run a loop that can never be stopped again', async () => {
+      const component = createExponentialFallofRetry(logger, {
+        async action() {
+          attempts++
+        },
+        retryTime: 5
+      })
+
+      await component.stop()
+      // Without a terminal stopped flag this resolves never: `started` is false, so the guard lets the
+      // loop in, and its only exit is `if (!started) return` — which start() has just set back to true.
+      await component.start()
+      await sleep(50)
+
+      expect(attempts).toBe(0)
     })
   })
 

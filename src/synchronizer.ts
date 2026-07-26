@@ -95,6 +95,10 @@ export async function createSynchronizer(
   })
   let firstSyncJobStarted = false
   let snapshotsSyncTimeout: NodeJS.Timeout | undefined
+  // The periodic post-bootstrap sync's run, so stop() can wait for it rather than only signalling it.
+  let regularSyncRun: Promise<void> | undefined
+  // Memoised shutdown, so concurrent stop() callers share one and none of them returns early.
+  let shutdown: Promise<void> | undefined
 
   function pointerChangesStartingTimestamp(server: string): number {
     const lastTimestamp = lastEntityTimestampFromSnapshotsByServer.get(server)
@@ -244,6 +248,15 @@ export async function createSynchronizer(
         })
       )
     )
+
+    // stop() now waits for this action to return, so bail before the expensive phase rather than
+    // deploying every queued snapshot while the caller's shutdown blocks on us. The queue is never
+    // started, so nothing in it runs.
+    if (isStopped) {
+      logger.info('Stopped while syncing from snapshots; abandoning the queued snapshot deployments.')
+      deploymentsProcessorsQueue.clear()
+      return new Set()
+    }
 
     logger.info('Warming up deployer.')
     await components.deployer.prepareForDeploymentsIn(timeRangesOfEntitiesToDeploy)
@@ -453,6 +466,17 @@ export async function createSynchronizer(
     })
     return {
       ...syncRetry,
+      async start() {
+        try {
+          await syncRetry.start()
+        } finally {
+          // Catch-all: whatever reason the retry loop exits for, the future must be settled. Only the
+          // success path resolves it, and the loop has other exits — a zero `reconnectTime` makes it
+          // return after the first failure — each of which would otherwise leave a consumer awaiting
+          // onSyncFinished() forever. A no-op once resolved.
+          abortSyncFinished()
+        }
+      },
       async stop() {
         await syncRetry.stop()
         // Also covers jobs the serial runner drops from its queue without ever starting them.
@@ -507,33 +531,46 @@ export async function createSynchronizer(
       if (!firstSyncJobStarted) {
         firstSyncJobStarted = true
         await newSyncJob.onInitialBootstrapFinished(async () => {
-          snapshotsSyncTimeout = setTimeout(
-            async () => await regularSyncFromSnapshotsAfterBootstrapJob.start(),
-            3_600_000
-          )
+          snapshotsSyncTimeout = setTimeout(() => {
+            // Kept so stop() can wait for it. Dropping the promise here meant nothing could await the
+            // periodic sync, so stop() returned while it was still deploying entities.
+            regularSyncRun = regularSyncFromSnapshotsAfterBootstrapJob.start()
+          }, 3_600_000)
         })
       }
       syncJobsRunner.enqueue(newSyncJob)
+      // The await above is the only suspension point in this method, so stop() can land in the middle
+      // of the very first call. The runner silently drops jobs enqueued after it stopped, which would
+      // leave this job's onSyncFinished() pending forever, so settle it here instead.
+      if (isStopped) {
+        await newSyncJob.stop()
+      }
       return newSyncJob
     },
     async stop() {
-      // Component will not stop until the sync from snapshots is over.
-      if (!isStopped) {
-        isStopped = true
+      // Component will not stop until the sync from snapshots is over. Memoised so overlapping callers
+      // all wait for the same shutdown instead of a second one reporting success immediately.
+      if (!shutdown) {
+        shutdown = (async () => {
+          isStopped = true
 
-        await syncJobsRunner.stop()
-        syncingServers.clear()
-        if (deployPointerChangesAfterBootstrapJobManager.stop) {
-          await deployPointerChangesAfterBootstrapJobManager.stop()
-        }
-        // Cancel the pending start before stopping the job, so a timer that is about to fire cannot
-        // restart it after it was stopped.
-        if (snapshotsSyncTimeout) {
-          clearTimeout(snapshotsSyncTimeout)
-          snapshotsSyncTimeout = undefined
-        }
-        await regularSyncFromSnapshotsAfterBootstrapJob.stop()
+          await syncJobsRunner.stop()
+          syncingServers.clear()
+          if (deployPointerChangesAfterBootstrapJobManager.stop) {
+            await deployPointerChangesAfterBootstrapJobManager.stop()
+          }
+          // Cancel the pending start before stopping the job, so a timer that is about to fire cannot
+          // restart it after it was stopped.
+          if (snapshotsSyncTimeout) {
+            clearTimeout(snapshotsSyncTimeout)
+            snapshotsSyncTimeout = undefined
+          }
+          await regularSyncFromSnapshotsAfterBootstrapJob.stop()
+          // Signalling it is not enough: wait for the run itself, as we do for every other job.
+          await regularSyncRun?.catch(() => undefined)
+        })()
       }
+      return shutdown
     }
   }
 }
