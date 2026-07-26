@@ -246,7 +246,13 @@ export async function saveContentFileToDisk(
     }
 
     // move downloaded file to target folder
-    await components.storage.storeStream(hash, fs.createReadStream(tmpFileName))
+    const storedStream = fs.createReadStream(tmpFileName)
+    // storage is supplied by the consumer. A component that resolves storeStream without consuming the
+    // stream leaves it to open the temp file after the finally below has removed it, and an unhandled
+    // 'error' event takes the whole process down. Absorb it here: a real read failure still reaches the
+    // storage component through its own consumption of the stream.
+    storedStream.on('error', () => undefined)
+    await components.storage.storeStream(hash, storedStream)
   } catch (e) {
     // The folder may have been removed from under us; forget it so a retry recreates it.
     ensuredFolders.delete(tmpFolder)

@@ -1,18 +1,24 @@
 import { createTestMetricsComponent } from '@dcl/metrics'
 import { createServer, Server } from 'http'
 import { resolve } from 'path'
+import { Readable } from 'stream'
 import { metricsDefinitions } from '../src/metrics'
-import { saveContentFileToDisk, sleepUnlessStopped } from '../src/utils'
+import { saveContentFileToDisk, sleepUnlessStopped, streamToBuffer } from '../src/utils'
 
 const metrics = createTestMetricsComponent(metricsDefinitions)
 const contentFolder = resolve('downloads')
 
-// A stand-in storage that records what it was given.
+// A stand-in storage that records what it was given. It must *consume* the stream, as a real
+// IContentStorageComponent does: saveContentFileToDisk removes the temp file as soon as storeStream
+// resolves, so a stub that leaves the stream unread lets the file vanish before the lazily-opened
+// ReadStream can open it — an ENOENT that surfaces as an unhandled stream error in whichever test
+// happens to be running by then.
 function recordingStorage() {
   const stored: string[] = []
   return {
     stored,
-    async storeStream(id: string) {
+    async storeStream(id: string, stream: Readable) {
+      await streamToBuffer(stream)
       stored.push(id)
     }
   } as any

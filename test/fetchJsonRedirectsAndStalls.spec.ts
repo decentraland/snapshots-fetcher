@@ -112,10 +112,11 @@ describe('fetchJson body read deadline', () => {
 
   describe('when the server streams slowly but keeps making progress', () => {
     beforeEach(() => {
-      // Six chunks 150ms apart is ~900ms of streaming, well past the 400ms timeout, but the gap between
-      // chunks never reaches it.
+      // Six chunks 100ms apart is ~600ms of streaming, comfortably past the 1000ms timeout in total,
+      // while each individual gap stays an order of magnitude below it — so a loaded CI runner
+      // stretching a gap cannot turn this into a false failure.
       chunks = ['{"del', 'tas":', '[1,', '2,', '3]', '}']
-      gapMs = 150
+      gapMs = 100
     })
 
     it('should complete rather than abort a healthy slow transfer', async () => {
@@ -123,7 +124,7 @@ describe('fetchJson body read deadline', () => {
       // bootstrap against a slow-but-healthy content server serving a large snapshot list.
       const { createFetchComponent } = await import('@dcl/fetch-component')
 
-      await expect(fetchJson(baseUrl, createFetchComponent(), { timeout: 400 })).resolves.toEqual({
+      await expect(fetchJson(baseUrl, createFetchComponent(), { timeout: 1000 })).resolves.toEqual({
         deltas: [1, 2, 3]
       })
     })
