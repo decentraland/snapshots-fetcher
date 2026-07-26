@@ -59,32 +59,73 @@ test('fetchJson redirect handling', ({ components }) => {
   })
 })
 
-describe('fetchJson when a server sends headers and then stops sending the body', () => {
-  let stalledServer: Server
-  let stalledUrl: string
+describe('fetchJson body read deadline', () => {
+  let server: Server
+  let baseUrl: string
+  // Streams `chunks` slices of a valid JSON document, `gapMs` apart, then closes.
+  let chunks: string[]
+  let gapMs: number
+  // When true the server sends one chunk and then goes silent without closing the socket.
+  let stallForever: boolean
 
   beforeEach(async () => {
-    stalledServer = createServer((_request, response) => {
+    chunks = []
+    gapMs = 0
+    stallForever = false
+
+    server = createServer(async (_request, response) => {
       response.writeHead(200, { 'content-type': 'application/json' })
-      // A partial document, then silence — the socket is never closed.
-      response.write('{"deltas":[')
+      if (stallForever) {
+        response.write('{"deltas":[')
+        return
+      }
+      for (const chunk of chunks) {
+        response.write(chunk)
+        await new Promise((ok) => setTimeout(ok, gapMs))
+      }
+      response.end()
     })
-    await new Promise<void>((ok) => stalledServer.listen(0, '127.0.0.1', () => ok()))
-    stalledUrl = `http://127.0.0.1:${(stalledServer.address() as any).port}/stalled`
+    await new Promise<void>((ok) => server.listen(0, '127.0.0.1', () => ok()))
+    baseUrl = `http://127.0.0.1:${(server.address() as any).port}/body`
   })
 
   afterEach(async () => {
-    stalledServer.closeAllConnections?.()
-    await new Promise<void>((ok) => stalledServer.close(() => ok()))
+    server.closeAllConnections?.()
+    await new Promise<void>((ok) => server.close(() => ok()))
   })
 
-  it('should time out reading the body rather than hanging forever', async () => {
-    // The fetch component's own timeout only bounds time-to-headers, so without a deadline on the body
-    // read this promise never settles — and a pending promise never reaches the reconnection logic.
-    const { createFetchComponent } = await import('@dcl/fetch-component')
+  describe('when the server sends headers and then stops sending the body', () => {
+    beforeEach(() => {
+      stallForever = true
+    })
 
-    await expect(fetchJson(stalledUrl, createFetchComponent(), { timeout: 500 })).rejects.toThrow(
-      'while reading the response body'
-    )
+    it('should reject once no data has arrived for the timeout', async () => {
+      // The fetch component's own timeout only bounds time-to-headers, so without a deadline here the
+      // promise never settles — and a pending promise never reaches the reconnection logic.
+      const { createFetchComponent } = await import('@dcl/fetch-component')
+
+      await expect(fetchJson(baseUrl, createFetchComponent(), { timeout: 400 })).rejects.toThrow(
+        'without receiving response body data'
+      )
+    })
+  })
+
+  describe('when the server streams slowly but keeps making progress', () => {
+    beforeEach(() => {
+      // Six chunks 150ms apart is ~900ms of streaming, well past the 400ms timeout, but the gap between
+      // chunks never reaches it.
+      chunks = ['{"del', 'tas":', '[1,', '2,', '3]', '}']
+      gapMs = 150
+    })
+
+    it('should complete rather than abort a healthy slow transfer', async () => {
+      // A total deadline instead of an inactivity one would reject this — which is what would break
+      // bootstrap against a slow-but-healthy content server serving a large snapshot list.
+      const { createFetchComponent } = await import('@dcl/fetch-component')
+
+      await expect(fetchJson(baseUrl, createFetchComponent(), { timeout: 400 })).resolves.toEqual({
+        deltas: [1, 2, 3]
+      })
+    })
   })
 })

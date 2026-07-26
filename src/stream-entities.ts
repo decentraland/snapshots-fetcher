@@ -6,7 +6,7 @@ import {
   SnapshotDeployedEntityStreamOptions,
   SnapshotsFetcherComponents
 } from './types'
-import { sleep } from './utils'
+import { sleepUnlessStopped } from './utils'
 
 export { metricsDefinitions } from './metrics'
 export { IDeployerComponent, SynchronizerComponent } from './types'
@@ -132,6 +132,8 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
       }
     }
 
-    await sleep(options.pointerChangesWaitTime)
+    // Interruptible: lifecycle stop now awaits the running stream, so a plain sleep here would make
+    // shutdown latency the full configured poll interval.
+    await sleepUnlessStopped(options.pointerChangesWaitTime, shouldStop)
   } while (options.pointerChangesWaitTime > 0 && !shouldStop())
 }

@@ -17,6 +17,11 @@ export type IJobQueue = {
   onSizeLessThan(limit: number): Promise<void>
   /**
    * Schedules a job with retries. If it fails (throws), then the job goes back to the end of the queue to be processed later.
+   *
+   * A configured `timeout` counts as a failure and is retried. Note that nothing can cancel a
+   * JavaScript promise, so a timed-out attempt keeps running while its retry starts: **the scheduled
+   * function must be idempotent and safe to run concurrently with itself.** `onIdle()` and `stop()` do
+   * wait for those abandoned attempts, so quiescence is still accurate.
    */
   scheduleJobWithRetries<T>(fn: () => Promise<T>, retries: number): Promise<T>
   /**
@@ -25,7 +30,11 @@ export type IJobQueue = {
    */
   scheduleJobWithPriority<T>(fn: () => Promise<T>, priority: number): Promise<T>
   /**
-   * All finished
+   * Resolves when nothing is queued and nothing is still executing.
+   *
+   * This waits for the scheduled functions themselves, not just for the queue's own bookkeeping: a job
+   * that hit the configured `timeout` is no longer counted by the queue but is still running, since a
+   * promise cannot be cancelled.
    */
   onIdle(): Promise<void>
 }
@@ -60,12 +69,42 @@ export function createJobQueue(options: createJobQueue.Options): IJobQueue & IBa
     }
   }
 
+  // Every scheduled function that has actually started and not yet settled.
+  //
+  // p-queue cannot cancel a function it has timed out: with `throwOnTimeout` the queue promise rejects
+  // and the queue stops counting the task, but the function keeps running — and may keep mutating
+  // whatever it was mutating. Tracking executions ourselves is what makes onIdle()/stop() mean
+  // "nothing is running" rather than "the queue has stopped waiting".
+  const inFlightExecutions = new Set<Promise<void>>()
+
+  function tracked<T>(fn: () => Promise<T>): () => Promise<T> {
+    return () => {
+      const running = fn()
+      const settled = Promise.resolve(running).then(
+        () => undefined,
+        () => undefined
+      )
+      inFlightExecutions.add(settled)
+      void settled.then(() => inFlightExecutions.delete(settled))
+      return running
+    }
+  }
+
+  async function waitUntilQuiescent(): Promise<void> {
+    // Looped because draining either side can feed the other: a retry can be queued while we await the
+    // executions, and an execution can outlive the queue's own idea of idle.
+    do {
+      await realQueue.onIdle()
+      await Promise.all(Array.from(inFlightExecutions))
+    } while (realQueue.size > 0 || realQueue.pending > 0 || inFlightExecutions.size > 0)
+  }
+
   return {
     onIdle() {
-      return realQueue.onIdle()
+      return waitUntilQuiescent()
     },
     scheduleJob<T>(fn: () => Promise<T>): Promise<T> {
-      return realQueue.add(fn)
+      return realQueue.add(tracked(fn))
     },
     async onSizeLessThan(limit: number): Promise<void> {
       // Instantly resolve if the queue is already below the limit.
@@ -82,7 +121,7 @@ export function createJobQueue(options: createJobQueue.Options): IJobQueue & IBa
       })
     },
     scheduleJobWithPriority<T>(fn: () => Promise<T>, priority: number): Promise<T> {
-      return realQueue.add(fn, {
+      return realQueue.add(tracked(fn), {
         priority
       })
     },
@@ -96,7 +135,7 @@ export function createJobQueue(options: createJobQueue.Options): IJobQueue & IBa
           // instead hid every queue-level rejection — a timeout in particular — from the retry logic,
           // because the function's own try/catch never sees it.
           realQueue
-            .add(fn)
+            .add(tracked(fn))
             .then(resolve)
             .catch((err: any) => {
               if (remainingRetries <= 0) {
@@ -112,7 +151,7 @@ export function createJobQueue(options: createJobQueue.Options): IJobQueue & IBa
     },
     async stop() {
       // wait until the jobs are finished at stop()
-      await realQueue.onIdle()
+      await waitUntilQuiescent()
     }
   }
 }

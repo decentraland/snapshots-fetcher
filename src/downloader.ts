@@ -1,7 +1,7 @@
 import * as path from 'path'
 import { saveContentFileToDisk } from './client'
 import { SnapshotsFetcherComponents } from './types'
-import { isValidContentHash, pickRandomServer, sleep } from './utils'
+import { isValidContentHash, pickRandomServer, sleepUnlessStopped } from './utils'
 
 // In-flight downloads, per storage component and then per content hash.
 //
@@ -76,7 +76,13 @@ async function downloadJob(
           serversToPickFrom.length > 1
             ? serversToPickFrom.filter((server) => server !== serverToUse)
             : serversToPickFrom
-        await sleep(waitTimeBetweenRetries)
+        // Interruptible, and re-checked afterwards: a stop that lands during the backoff would
+        // otherwise fall straight into another attempt, and the wait itself would be added to the
+        // caller's shutdown time.
+        await sleepUnlessStopped(waitTimeBetweenRetries, shouldStop)
+        if (shouldStop?.()) {
+          throw e
+        }
         continue
       } else {
         throw e

@@ -35,21 +35,34 @@ async function readBodyWithSizeLimit(response: Response, maxBytes: number, timeo
 
   const chunks: Uint8Array[] = []
   let total = 0
-  // The fetch component's timeout only covers time-to-headers: it clears its abort timer as soon as
-  // the response object exists. Without a deadline here a server can send headers, write half a
-  // document and then go silent forever — exactly the stall the request timeout was meant to prevent,
-  // and a pending promise never reaches the reconnection logic.
+  // The fetch component's timeout only covers time-to-headers: it clears its abort timer as soon as the
+  // response object exists. Without a deadline here a server can send headers, write half a document
+  // and then go silent forever — exactly the stall the request timeout was meant to prevent, and a
+  // pending promise never reaches the reconnection logic.
+  //
+  // An *inactivity* deadline, refreshed on every chunk, not a total one: a large response (the cap is
+  // 50 MiB) can legitimately take longer than one request timeout to stream, and a total deadline would
+  // abort a slow-but-healthy content server that is making steady progress. This mirrors
+  // DOWNLOAD_INACTIVITY_TIMEOUT_MS on the file-download path.
   let timedOut = false
-  const timeout = setTimeout(() => {
-    timedOut = true
-    void reader.cancel().catch(() => undefined)
-  }, timeoutMs)
+  let timeout: NodeJS.Timeout | undefined
+  const refreshInactivityTimeout = () => {
+    if (timeout) clearTimeout(timeout)
+    timeout = setTimeout(() => {
+      timedOut = true
+      void reader.cancel().catch(() => undefined)
+    }, timeoutMs)
+  }
+  const timedOutError = () => new Error(`Timed out after ${timeoutMs}ms without receiving response body data`)
+
+  refreshInactivityTimeout()
 
   try {
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
       if (value) {
+        refreshInactivityTimeout()
         total += value.byteLength
         if (total > maxBytes) {
           throw new Error(`Response body exceeds the maximum allowed size of ${maxBytes} bytes`)
@@ -58,15 +71,15 @@ async function readBodyWithSizeLimit(response: Response, maxBytes: number, timeo
       }
     }
   } catch (e) {
-    throw timedOut ? new Error(`Timed out after ${timeoutMs}ms while reading the response body`) : e
+    throw timedOut ? timedOutError() : e
   } finally {
-    clearTimeout(timeout)
+    if (timeout) clearTimeout(timeout)
     // Frees the socket on the size-exceeded path; a no-op once the stream has been fully read.
     await reader.cancel().catch(() => undefined)
   }
 
   if (timedOut) {
-    throw new Error(`Timed out after ${timeoutMs}ms while reading the response body`)
+    throw timedOutError()
   }
 
   return Buffer.concat(chunks).toString('utf8')
@@ -134,6 +147,28 @@ export async function checkFileExists(file: string): Promise<boolean> {
 export async function sleep(time: number): Promise<void> {
   if (time <= 0) return
   return new Promise<void>((resolve) => setTimeout(resolve, time))
+}
+
+// How often an interruptible sleep samples its stop predicate.
+const STOP_SIGNAL_SAMPLE_INTERVAL_IN_MS = 50
+
+/**
+ * sleep(), but returns early once `shouldStop()` becomes true.
+ *
+ * Every waiting period between attempts or polls is otherwise added to shutdown latency: callers now
+ * await the running work rather than merely signalling it, so a plain sleep of the poll interval or the
+ * retry backoff is time a caller's stop() spends blocked. The signal is a predicate rather than an
+ * event, so it is sampled; at these intervals that is far cheaper than the wait it replaces.
+ */
+export async function sleepUnlessStopped(time: number, shouldStop?: () => boolean): Promise<void> {
+  if (!shouldStop) return sleep(time)
+  if (time <= 0) return
+
+  const deadline = Date.now() + time
+  while (Date.now() < deadline) {
+    if (shouldStop()) return
+    await sleep(Math.min(STOP_SIGNAL_SAMPLE_INTERVAL_IN_MS, deadline - Date.now()))
+  }
 }
 
 // Content hashes are IPFS CIDs (base58/base32), hence alphanumeric. Validating against this charset
@@ -351,22 +386,46 @@ export function isNonPublicAddress(address: string): boolean {
  */
 function createRedirectSafeLookup(allowedHostname: string): LookupFunction {
   const allowed = allowedHostname.toLowerCase()
+  // Whether the caller's own host resolved to a non-public address the first time we looked it up.
+  // Recorded once and then held for the whole download, which is what closes DNS rebinding: a host that
+  // answers the initial request from a public address cannot later resolve to loopback on a same-host
+  // redirect, even though such a redirect passes every origin and hostname check.
+  //
+  // Deliberately the public/non-public *classification* rather than the exact address, so a legitimate
+  // round-robin CDN handing out a different public IP per query still works.
+  let allowedHostWasNonPublic: boolean | undefined
 
   return ((hostname: string, options: any, callback: any) => {
-    if (hostname.toLowerCase() === allowed) {
-      dnsLookup(hostname, options, callback)
-      return
-    }
-
     dnsLookup(hostname, options, (err: any, address: any, family: any) => {
       if (err) {
         callback(err, address, family)
         return
       }
       const resolved: { address: string }[] = Array.isArray(address) ? address : [{ address }]
-      const blocked = resolved.find((entry) => isNonPublicAddress(entry.address))
-      if (blocked) {
-        callback(new Error(`Refusing to follow a redirect to ${hostname} (${blocked.address}): not a public address`))
+      const nonPublic = resolved.find((entry) => isNonPublicAddress(entry.address))
+
+      if (hostname.toLowerCase() === allowed) {
+        // The caller's host comes from the trusted server list, so it is allowed to be private — that
+        // is what keeps loopback-based local development and the tests working. It just may not
+        // *change* classification mid-download.
+        if (allowedHostWasNonPublic === undefined) {
+          allowedHostWasNonPublic = !!nonPublic
+        } else if (!!nonPublic !== allowedHostWasNonPublic) {
+          callback(
+            new Error(
+              `Refusing to follow a redirect to ${hostname}: it now resolves to ${
+                nonPublic ? 'a non-public' : 'a public'
+              } address, unlike the original request`
+            )
+          )
+          return
+        }
+        callback(null, address, family)
+        return
+      }
+
+      if (nonPublic) {
+        callback(new Error(`Refusing to follow a redirect to ${hostname} (${nonPublic.address}): not a public address`))
         return
       }
       callback(null, address, family)
@@ -427,6 +486,9 @@ function downloadFile(
     }
 
     const originalHostname = new URL(originalUrlString).hostname
+    // Created once for the whole download, not per hop: it carries the resolved-address classification
+    // of the original host between hops, which is what lets it detect a rebind.
+    const redirectSafeLookup = createRedirectSafeLookup(originalHostname)
 
     function requestWithRedirects(redirectedUrl: string, baseUrl: string, redirects: number) {
       // Relative redirects must be resolved against the URL that issued them, not the original URL.
@@ -470,7 +532,7 @@ function downloadFile(
 
       const requestOptions = {
         headers: { 'accept-encoding': 'gzip' },
-        lookup: createRedirectSafeLookup(originalHostname)
+        lookup: redirectSafeLookup
       }
 
       const request = httpModule.get(url.toString(), requestOptions, (response) => {

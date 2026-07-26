@@ -204,6 +204,49 @@ describe('createJobQueue', () => {
       })
     })
 
+    describe('when a timed-out job keeps running after the queue gave up on it', () => {
+      let timedQueue: IJobQueue & { stop?: () => Promise<void> }
+      let stillRunning: boolean
+
+      beforeEach(() => {
+        stillRunning = false
+        timedQueue = createJobQueue({ autoStart: true, concurrency: 1, timeout: 40 }) as any
+      })
+
+      it('should not report idle until the abandoned execution has actually finished', async () => {
+        // Nothing can cancel a promise, so p-queue's timeout only stops it *counting* the task — the
+        // function carries on. onIdle() must still wait for it, or a consumer treats "idle" as
+        // "nothing is mutating state".
+        void timedQueue
+          .scheduleJob(async () => {
+            stillRunning = true
+            await sleep(300)
+            stillRunning = false
+          })
+          .catch(() => undefined)
+
+        await sleep(80) // past the 40ms timeout: the queue has already given up
+        await timedQueue.onIdle()
+
+        expect(stillRunning).toBe(false)
+      })
+
+      it('should not let stop() resolve while the abandoned execution is still running', async () => {
+        void timedQueue
+          .scheduleJob(async () => {
+            stillRunning = true
+            await sleep(300)
+            stillRunning = false
+          })
+          .catch(() => undefined)
+
+        await sleep(80)
+        await timedQueue.stop!()
+
+        expect(stillRunning).toBe(false)
+      })
+    })
+
     describe('when no retries are allowed', () => {
       it('should throw indicating that at least one retry is required', () => {
         expect(() => queue.scheduleJobWithRetries(async () => 'unused', 0)).toThrow(
