@@ -105,6 +105,37 @@ test('getSnapshots when a snapshot reports a time range that is not usable arith
   })
 })
 
+test('getSnapshots when a snapshot claims to replace an implausible number of others', ({ components }) => {
+  const withinTheCap = {
+    hash: 'bafkreico6luxnkk5vxuxvmpsg7hva4upamyz3br2b6ucc7rf3hdlcaehha',
+    timeRange: { initTimestamp: 100, endTimestamp: 200 },
+    replacedSnapshotHashes: Array.from({ length: 1000 }, (_unused, index) => `ba${String(index).padStart(57, '0')}`)
+  }
+
+  it('prepares the endpoints', () => {
+    components.router.get('/snapshots', async () => ({
+      body: [
+        withinTheCap,
+        {
+          hash: validSnapshot.hash,
+          timeRange: { initTimestamp: 0, endTimestamp: 100 },
+          // One over the cap. Every entry would land in the batched processed-snapshots lookup.
+          replacedSnapshotHashes: Array.from(
+            { length: 1001 },
+            (_unused, index) => `bb${String(index).padStart(57, '0')}`
+          )
+        }
+      ]
+    }))
+  })
+
+  it('should drop the entry above the cap and keep the one within it', async () => {
+    const snapshots = await getSnapshots(components, await components.getBaseUrl(), 10)
+
+    expect(snapshots).toEqual([withinTheCap])
+  })
+})
+
 test('getSnapshots when the response contains many invalid entries', ({ components }) => {
   const numberOfInvalidEntries = 150
 

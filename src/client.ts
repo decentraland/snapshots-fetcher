@@ -29,6 +29,16 @@ const MAX_PAGES_PER_PAGINATED_CALL = 10_000
 // Conventional URL length ceiling. Bounds what a server can make us retain per page.
 const MAX_PAGINATION_LINK_LENGTH = 2048
 
+// Ceiling on the snapshots one snapshot may claim to replace. Every entry ends up in the batched
+// processed-snapshots lookup — one large `IN` clause against the consumer's storage — so an entry with a
+// pathological list sizes that query. Real snapshots replace tens (a daily replaces its hours, a monthly
+// its days), so this only trips on a broken or hostile server.
+//
+// Note this bounds a single entry, not the aggregate: a server can still spread hashes across many
+// snapshots, and the real ceiling on the total is MAX_JSON_RESPONSE_SIZE_IN_BYTES. Chunking the lookup is
+// what would bound the query itself.
+const MAX_REPLACED_SNAPSHOT_HASHES = 1000
+
 /**
  * A remote timestamp we are willing to do arithmetic with.
  *
@@ -59,6 +69,7 @@ function isValidSnapshotMetadata(snapshot: any): snapshot is SnapshotMetadata {
     snapshot.timeRange.initTimestamp <= snapshot.timeRange.endTimestamp &&
     (snapshot.replacedSnapshotHashes === undefined ||
       (Array.isArray(snapshot.replacedSnapshotHashes) &&
+        snapshot.replacedSnapshotHashes.length <= MAX_REPLACED_SNAPSHOT_HASHES &&
         snapshot.replacedSnapshotHashes.every((hash: any) => isValidContentHash(hash))))
   )
   // Deliberately NOT validating numberOfEntities / generationTimestamp. Nothing in this package reads
