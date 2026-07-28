@@ -507,6 +507,20 @@ export async function createSynchronizer(
 
           try {
             components.metrics.increment('dcl_deployments_stream_reconnection_count', metricsLabels)
+            // The canonical callback, committing each mark as the entity reports deployed — NOT the
+            // hold-until-drained treatment bootstrapFromPointerChanges gives it. The same hazard exists
+            // here: because the mark is a max, an entity deployed at t=200 advances it past one that
+            // failed at t=100, and this stream resumes from the raw mark with no 20-minute shift, so that
+            // entity is not re-fetched from pointer-changes until the periodic snapshot re-sync.
+            //
+            // Left as-is deliberately, because there is no correct cheap fix here. Bootstrap has a natural
+            // checkpoint — it ends, and onIdle() gates the promotion — while this stream is designed to
+            // run forever, so there is nothing to hold the marks until. The two real options both change
+            // behaviour beyond a bug fix: drain the deployer once per poll, which serialises it against
+            // polling and caps throughput at the deployer's latency; or stop resuming from a max and track
+            // a contiguous watermark, which is the actual modelling error — a single scalar cannot express
+            // "everything through T except t=100". That is a design decision about the resume model, so it
+            // wants a deliberate choice rather than being smuggled in here.
             await deployEntitiesFromPointerChanges(
               components,
               { ...options, fromTimestamp },
