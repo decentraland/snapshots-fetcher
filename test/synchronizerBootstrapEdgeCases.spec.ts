@@ -52,7 +52,16 @@ test('synchronizer when a server serves snapshots but fails pointer-changes duri
   it('attempts the bootstrap repeatedly', async () => {
     synchronizer = await buildSynchronizer(
       components,
-      { scheduleEntityDeployment: jest.fn(), onIdle: jest.fn(), prepareForDeploymentsIn: jest.fn() },
+      {
+        // Reports each entity as deployed, which is what markAsDeployed is for. A deployer that never
+        // called it would leave the snapshot incomplete, and the server would stay in snapshot
+        // bootstrap instead of reaching the pointer-changes phase this test is about.
+        async scheduleEntityDeployment(entity) {
+          if (entity.markAsDeployed) await entity.markAsDeployed()
+        },
+        onIdle: jest.fn(),
+        prepareForDeploymentsIn: jest.fn()
+      },
       // Short enough that the failed bootstrap retries within the test.
       50
     )

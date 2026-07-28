@@ -108,7 +108,19 @@ For the same reason, `onIdle()` is awaited at the two bootstrap transitions as w
 last-entity timestamp is advanced after its snapshots, and before it is promoted from pointer-changes
 bootstrap to syncing. Both of those decide where the server resumes from, so they must reflect entities
 that were actually deployed rather than merely scheduled. A deployer whose `onIdle()` never resolves will
-therefore stall the bootstrap.
+therefore stall the bootstrap, and one that rejects it leaves the affected servers in bootstrap to be
+retried rather than dropping them.
+
+Two consequences worth stating plainly, because your deployer decides both:
+
+- **`markAsDeployed()` is load-bearing, not optional telemetry.** It is the only signal that an entity
+  actually deployed. `onIdle()` resolving proves the queue drained, not that every entity reported back,
+  so after it drains the snapshot's processed marker is re-read: a snapshot whose entities did not all
+  report is treated as incomplete, and the servers advertising it stay in snapshot bootstrap with their
+  timestamps held back. A deployer that never calls `markAsDeployed()` will therefore never finish
+  bootstrapping — previously it would have advanced anyway and skipped those entities.
+- **Deployments must be idempotent.** An incomplete snapshot is retried, so entities that did deploy are
+  scheduled again on the next pass.
 
 Anything you schedule through `createJobQueue({ timeout })` must be **idempotent**: a timed-out attempt
 is retried, and because a promise cannot be cancelled the original keeps running alongside it.

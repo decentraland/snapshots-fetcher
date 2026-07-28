@@ -272,8 +272,12 @@ export async function createSynchronizer(
       candidates = stillDeployable
     }
 
+    // Which servers advertised each snapshot we are about to deploy, so the marker re-check after the
+    // deployer drains can attribute an unfinished snapshot back to them.
+    const serversBySnapshotDeployed = new Map<string, Set<string>>()
     for (const [snapshotHash, snapshots] of snapshotsToDeploy) {
       const servers = new Set(snapshots.map((s) => s.server))
+      serversBySnapshotDeployed.set(snapshotHash, servers)
       timeRangesOfEntitiesToDeploy.push(...snapshots.map((s) => s.timeRange))
       deploymentsProcessorsQueue
         .add(async () => {
@@ -313,6 +317,28 @@ export async function createSynchronizer(
     // timestamp now would resume its pointer-changes past entities that had only been scheduled.
     await components.deployer.onIdle()
     logger.info('End deploying entities from snapshots.')
+
+    // Draining proves the deployer's queue is empty, NOT that every scheduled entity reported back
+    // through markAsDeployed. deployEntitiesFromSnapshot only marks a snapshot once they all have, and
+    // it returns normally either way, so the marker is the only evidence that a snapshot completed.
+    // Without re-reading it, a deployer that quietly dropped an entity would still let the servers
+    // advertising that snapshot advance past it.
+    if (serversBySnapshotDeployed.size > 0) {
+      const processedAfterDeploying = await components.processedSnapshotStorage.filterProcessedSnapshotsFrom(
+        Array.from(serversBySnapshotDeployed.keys())
+      )
+      for (const [snapshotHash, servers] of serversBySnapshotDeployed) {
+        if (processedAfterDeploying.has(snapshotHash)) {
+          continue
+        }
+        logger.warn('Snapshot was not marked as processed once the deployer drained; treating it as failed.', {
+          snapshotHash
+        })
+        for (const server of servers) {
+          serversWithFailedSnapshots.add(server)
+        }
+      }
+    }
 
     // Once the snapshots were correctly streamed, update the last entity timestamps
     for (const [server, lastTimestamp] of snapshotLastTimestampByServer) {
@@ -379,8 +405,10 @@ export async function createSynchronizer(
             () => isStopped,
             increaseLastTimestamp
           )
-          bootstrappingServersFromPointerChanges.delete(bootstrappingServersFromPointerChange)
-          // Promotion is deferred until the deployer has drained, below.
+          // Both leaving pointer-changes bootstrap and entering the syncing state are deferred until
+          // the deployer has drained, below. Removing it here would strand the server in neither state
+          // if the drain then fails: the retry would find nothing left to bootstrap, report the sync as
+          // successful, and stop syncing a server the caller still wants.
           bootstrappedFromPointerChanges.add(bootstrappingServersFromPointerChange)
         } catch (error) {
           // If there's an error, the server doesn't pass to syncing state
@@ -404,8 +432,11 @@ export async function createSynchronizer(
       // the server resume from its high-water timestamp, so wait for the deployer's own drain signal
       // first — otherwise an asynchronous deployer is still working through entities the server is
       // already considered to be past.
+      // If this rejects, nothing below runs and every server stays in pointer-changes bootstrap, so the
+      // retry picks them up again rather than losing them.
       await components.deployer.onIdle()
       for (const server of bootstrappedFromPointerChanges) {
+        bootstrappingServersFromPointerChanges.delete(server)
         if (!canAdvanceServer(server)) {
           logger.info('Not moving a server to the syncing state: it is no longer desired.', { server })
           continue
