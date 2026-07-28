@@ -603,11 +603,35 @@ export function contentServerMetricLabels(contentServer: string): ContentServerM
   }
 }
 
-export function streamToBuffer(stream: Readable): Promise<Buffer> {
+/**
+ * Reads a stream fully into memory.
+ *
+ * @param maxBytes - Optional ceiling. Reject and destroy the stream once more than this many bytes
+ *   have arrived, instead of buffering whatever the producer sends. Callers reading content-addressed
+ *   files should pass one: the download cap alone allows a single file of
+ *   {@link MAX_DOWNLOADED_FILE_SIZE_IN_BYTES}, and nothing stops several from being read at once.
+ */
+export function streamToBuffer(stream: Readable, maxBytes?: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const buffers: any[] = []
+    const buffers: Buffer[] = []
+    let total = 0
+
+    function fail(error: Error) {
+      // Without this the producer keeps reading into a buffer nobody will use, and the underlying
+      // handle is only reclaimed whenever GC gets to it.
+      stream.destroy()
+      reject(error)
+    }
+
     stream.on('error', reject)
-    stream.on('data', (data) => buffers.push(data))
+    stream.on('data', (data: Buffer) => {
+      total += data.length
+      if (maxBytes !== undefined && total > maxBytes) {
+        fail(new Error(`Stream exceeds the maximum allowed size of ${maxBytes} bytes`))
+        return
+      }
+      buffers.push(data)
+    })
     stream.on('end', () => resolve(Buffer.concat(buffers)))
   })
 }

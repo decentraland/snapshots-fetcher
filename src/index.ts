@@ -57,6 +57,12 @@ const DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY = 10
 // (a handful per avatar), so it only bounds hostile or corrupt metadata.
 const MAX_AVATAR_SNAPSHOTS_PER_ENTITY = 1000
 
+// Ceiling on an entity file read fully into memory. Entity documents are JSON manifests measured in
+// KB, but the download cap alone permits a single file of 1 GiB and entities are read concurrently —
+// the eviction path holds two copies of one at a time. Far above any real entity, so it only bounds
+// a hostile or corrupt file.
+const MAX_ENTITY_FILE_SIZE_IN_BYTES = 50 * 1024 * 1024 // 50 MiB
+
 /**
  * Verifies stored bytes against the content-addressed id that claims them. 'mismatch' proves the
  * local copy is not the content the id addresses (a truncated/partial or mis-keyed write); 'match'
@@ -123,7 +129,7 @@ async function evictCorruptEntityFile(
         // A concurrent eviction already removed it.
         return 'the corrupt local copy was already removed; a later retry will re-download it'
       }
-      const currentBuffer = await streamToBuffer(await current.asStream())
+      const currentBuffer = await streamToBuffer(await current.asStream(), MAX_ENTITY_FILE_SIZE_IN_BYTES)
       if ((await verifyBufferHash(currentBuffer, entityId)) !== 'mismatch') {
         return 'the local copy has since been replaced by a hash-valid one, which was kept'
       }
@@ -270,7 +276,7 @@ export async function downloadEntityAndContentFiles(
   // Read the bytes outside any destructive path. A failure here is a transient storage/read error,
   // not proof the stored bytes are corrupt, so it must not trigger an eviction.
   const stream = await content.asStream()
-  const buffer = await streamToBuffer(stream)
+  const buffer = await streamToBuffer(stream, MAX_ENTITY_FILE_SIZE_IN_BYTES)
 
   // Enforce the content-addressed invariant BEFORE trusting the bytes at all. `downloadJob` skips
   // the download when `storage.exist(entityId)` is true, so a truncated/partial or mis-keyed local
