@@ -81,12 +81,18 @@ test('getSnapshots when a snapshot reports a time range that is not usable arith
     // Served as raw text, because JSON.stringify would turn Infinity into null and hide the case. A JSON
     // body cannot carry NaN at all (`{"a":NaN}` is a syntax error), but the number grammar has no range
     // limit, so a large exponent parses straight to Infinity.
+    // Far past the allowed clock skew, but a perfectly ordinary finite number.
+    const farFuture = Date.now() + 400 * 24 * 60 * 60 * 1000
     components.router.get('/snapshots', async () => ({
       body: `[
         {"hash":"${validSnapshot.hash}","timeRange":{"initTimestamp":0,"endTimestamp":100},"replacedSnapshotHashes":[]},
         {"hash":"ba${'b'.repeat(57)}","timeRange":{"initTimestamp":0,"endTimestamp":1e999}},
         {"hash":"ba${'c'.repeat(57)}","timeRange":{"initTimestamp":-5,"endTimestamp":-1}},
-        {"hash":"ba${'d'.repeat(57)}","timeRange":{"initTimestamp":500,"endTimestamp":100}}
+        {"hash":"ba${'d'.repeat(57)}","timeRange":{"initTimestamp":500,"endTimestamp":100}},
+        {"hash":"ba${'e'.repeat(57)}","timeRange":{"initTimestamp":0,"endTimestamp":1e308}},
+        {"hash":"ba${'f'.repeat(57)}","timeRange":{"initTimestamp":0,"endTimestamp":9007199254740993}},
+        {"hash":"ba${'g'.repeat(57)}","timeRange":{"initTimestamp":0,"endTimestamp":100.5}},
+        {"hash":"ba${'h'.repeat(57)}","timeRange":{"initTimestamp":0,"endTimestamp":${farFuture}}}
       ]`,
       headers: { 'content-type': 'application/json' }
     }))
@@ -96,6 +102,14 @@ test('getSnapshots when a snapshot reports a time range that is not usable arith
     const snapshots = await getSnapshots(components, await components.getBaseUrl(), 10)
 
     expect(snapshots).toEqual([validSnapshot])
+  })
+
+  it('should reject every value that cannot be a plausible instant', async () => {
+    const snapshots = await getSnapshots(components, await components.getBaseUrl(), 10)
+
+    // Every rejected value above is finite and non-negative; that is exactly why finiteness was not a
+    // sufficient test on its own.
+    expect(snapshots.map((snapshot) => snapshot.hash)).toEqual([validSnapshot.hash])
   })
 
   it('should never yield a non-finite endTimestamp, which would poison the high-water mark', async () => {
