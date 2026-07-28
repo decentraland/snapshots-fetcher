@@ -4,7 +4,8 @@ import { getSnapshots } from './client'
 import {
   decideSnapshotDeploymentFromProcessedSet,
   deployEntitiesFromPointerChanges,
-  deployEntitiesFromSnapshot
+  deployEntitiesFromSnapshot,
+  PointerChangesDeploymentReport
 } from './deploy-entities'
 import { createExponentialFallofRetry } from './exponential-fallof-retry'
 import { createJobLifecycleManagerComponent } from './job-lifecycle-manager'
@@ -420,6 +421,12 @@ export async function createSynchronizer(
         current === undefined ? Math.max(...newTimestamps) : Math.max(current, ...newTimestamps)
       )
     }
+    // What each server's run handed to the deployer against what the deployer confirmed. Draining says
+    // the queue emptied, not that every entity in it reported back, and because the resume point is a
+    // maximum over acknowledged timestamps a deployer that drops t=100 and confirms t=200 still leaves a
+    // mark past the dropped one. This is the pointer-changes equivalent of re-reading the processed
+    // marker after a snapshot deployment.
+    const deploymentReports = new Map<string, PointerChangesDeploymentReport>()
     let minStartingPoint: undefined | number
     for (const bootstrappingServersFromPointerChange of bootstrappingServersFromPointerChanges) {
       const fromTimestamp = pointerChangesStartingTimestamp(bootstrappingServersFromPointerChange)
@@ -427,12 +434,15 @@ export async function createSynchronizer(
       pointerChangesBootstrappingJobs.push(async () => {
         try {
           const fromTimestamp = pointerChangesStartingTimestamp(bootstrappingServersFromPointerChange)
+          const report: PointerChangesDeploymentReport = { scheduled: 0, acknowledged: 0 }
+          deploymentReports.set(bootstrappingServersFromPointerChange, report)
           await deployEntitiesFromPointerChanges(
             components,
             { ...options, fromTimestamp, pointerChangesWaitTime: 0 },
             bootstrappingServersFromPointerChange,
             () => isStopped,
-            collectTentativeTimestamp
+            collectTentativeTimestamp,
+            report
           )
           // Both leaving pointer-changes bootstrap and entering the syncing state are deferred until
           // the deployer has drained, below. Removing it here would strand the server in neither state
@@ -465,6 +475,22 @@ export async function createSynchronizer(
       // retry picks them up again rather than losing them.
       await components.deployer.onIdle()
       for (const server of bootstrappedFromPointerChanges) {
+        // The drain succeeding is necessary but not sufficient: it says the queue emptied, and this says
+        // everything that went into it came back. Short of that the run is incomplete, so the server
+        // keeps its old resume point and stays in pointer-changes bootstrap to be retried — committing
+        // the tentative mark here would move it past whatever the deployer dropped.
+        const report = deploymentReports.get(server)
+        if (report && report.acknowledged < report.scheduled) {
+          logger.warn(
+            'Not all pointer-change deployments were acknowledged once the deployer drained; keeping the server in bootstrap.',
+            {
+              server,
+              scheduled: String(report.scheduled),
+              acknowledged: String(report.acknowledged)
+            }
+          )
+          continue
+        }
         // Committed only here: the drain succeeded, so everything this pass scheduled for this server
         // really did deploy. A rejection above skips this entirely and the pass is retried from the
         // timestamp it started at.

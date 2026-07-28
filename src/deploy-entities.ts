@@ -9,8 +9,26 @@ import {
 } from './types'
 
 /**
+ * What a pointer-changes run handed to the deployer, against what the deployer confirmed.
+ *
+ * `deployer.onIdle()` proves the deployer's queue drained, not that every entity in it reported back
+ * through `markAsDeployed`. The two counts are how a caller tells those apart: because the resume point
+ * is a maximum over acknowledged timestamps, a deployer that drops an entity at t=100 and confirms one
+ * at t=200 leaves a mark past the dropped one. Only a caller that knows the run was incomplete can
+ * refuse to adopt that mark.
+ * @public
+ */
+export type PointerChangesDeploymentReport = {
+  scheduled: number
+  acknowledged: number
+}
+
+/**
  * This function streams and deploys the entities of pointer-changes of a server. It calls 'increaseLastTimestamp'
  * for each entity deployed.
+ *
+ * @param report - Optional tally of scheduled versus acknowledged deployments. Callers that record sync
+ *   progress from this run must pass one and require `acknowledged >= scheduled` before doing so.
  * @public
  */
 export async function deployEntitiesFromPointerChanges(
@@ -20,7 +38,8 @@ export async function deployEntitiesFromPointerChanges(
   options: PointerChangesDeployedEntityStreamOptions,
   contentServer: string,
   shouldStopStream: () => boolean,
-  increaseLastTimestamp: (contentServer: string, ...newTimestamps: number[]) => void
+  increaseLastTimestamp: (contentServer: string, ...newTimestamps: number[]) => void,
+  report?: PointerChangesDeploymentReport
 ) {
   const logger = components.logs.getLogger('deployEntitiesFromPointerChanges')
   const metricsLabels = contentServerMetricLabels(contentServer)
@@ -35,6 +54,12 @@ export async function deployEntitiesFromPointerChanges(
       return
     }
 
+    // Counted before the await, not after: a synchronous deployer calls markAsDeployed from inside
+    // scheduleEntityDeployment, so incrementing afterwards would let acknowledged briefly exceed
+    // scheduled and make an incomplete run look complete.
+    if (report) {
+      report.scheduled++
+    }
     await components.deployer.scheduleEntityDeployment(
       {
         ...deployment,
@@ -43,6 +68,9 @@ export async function deployEntitiesFromPointerChanges(
             ...metricsLabels,
             source: 'pointer-changes'
           })
+          if (report) {
+            report.acknowledged++
+          }
           // update greatest processed timestamp
           increaseLastTimestamp(contentServer, deployment.localTimestamp)
         }

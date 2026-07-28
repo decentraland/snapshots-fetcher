@@ -251,3 +251,85 @@ test('synchronizer when a pointer-changes deployment marks a later timestamp and
     await synchronizer.stop!()
   })
 })
+
+test('synchronizer when a pointer-changes bootstrap deployment is silently dropped', ({ components }) => {
+  let synchronizer: SynchronizerComponent
+  let requestedFrom: string[]
+  let scheduled: number
+
+  // The earlier delta is dropped by the deployer; the later one is acknowledged. Because the resume point
+  // is a maximum over acknowledged timestamps, the mark would land past the dropped one — and the drain
+  // resolving cleanly cannot tell the difference.
+  const droppedLocalTimestamp = 50 * 60_000
+  const acknowledgedLocalTimestamp = 100 * 60_000
+
+  it('prepares the endpoints', () => {
+    requestedFrom = []
+    scheduled = 0
+    components.router.get('/snapshots', async () => ({ body: [] }))
+    components.router.get('/pointer-changes', async (ctx: any) => {
+      requestedFrom.push(new URL(ctx.url.toString()).searchParams.get('from') ?? '')
+      if (requestedFrom.length > 1) {
+        return { body: { deltas: [], pagination: {} } }
+      }
+      return {
+        body: {
+          deltas: [
+            {
+              entityId: 'ba000000000000000000000000000000000000000000000000000000001',
+              entityType: 'profile',
+              pointers: ['0x1'],
+              entityTimestamp: 1,
+              localTimestamp: droppedLocalTimestamp,
+              authChain: [{ type: 'SIGNER', payload: '0x1', signature: '' }]
+            },
+            {
+              entityId: 'ba000000000000000000000000000000000000000000000000000000002',
+              entityType: 'profile',
+              pointers: ['0x2'],
+              entityTimestamp: 2,
+              localTimestamp: acknowledgedLocalTimestamp,
+              authChain: [{ type: 'SIGNER', payload: '0x1', signature: '' }]
+            }
+          ],
+          pagination: {}
+        }
+      }
+    })
+  })
+
+  it('attempts the bootstrap', async () => {
+    synchronizer = await buildSynchronizer(
+      components,
+      {
+        async scheduleEntityDeployment(entity: DeployableEntity) {
+          scheduled++
+          // Only the second delta reports back. The first is dropped without an error, which is exactly
+          // what a resolving onIdle() cannot rule out.
+          if (scheduled === 2 && entity.markAsDeployed) {
+            await entity.markAsDeployed()
+          }
+        },
+        // Drains cleanly regardless.
+        onIdle: jest.fn(),
+        prepareForDeploymentsIn: jest.fn()
+      },
+      50
+    )
+
+    await synchronizer.syncWithServers(new Set([await components.getBaseUrl()]))
+    await waitUntil(() => scheduled >= 2 && requestedFrom.length >= 2, 'the bootstrap has been retried')
+  })
+
+  it('should not adopt a resume point past the dropped deployment', () => {
+    // The retry must re-request from where the first attempt started, not from the acknowledged mark.
+    // Deliberately the only assertion here: a "was it promoted?" check on the request count would pass
+    // either way, because a promoted server's syncing job polls this endpoint too. The `from` value is
+    // what actually distinguishes the two outcomes.
+    expect(requestedFrom[1]).toEqual(requestedFrom[0])
+  })
+
+  afterAll(async () => {
+    await synchronizer.stop!()
+  })
+})
