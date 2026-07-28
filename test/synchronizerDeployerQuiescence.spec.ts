@@ -333,3 +333,68 @@ test('synchronizer when a pointer-changes bootstrap deployment is silently dropp
     await synchronizer.stop!()
   })
 })
+
+test('synchronizer when a server is dropped midway through its pointer-changes bootstrap', ({ components }) => {
+  let synchronizer: SynchronizerComponent
+  let pagesServed: number
+  const totalPages = 6
+
+  function pageDelta(index: number) {
+    return {
+      entityId: `ba00000000000000000000000000000000000000000000000000000000${index}`,
+      entityType: 'profile',
+      pointers: ['0x1'],
+      entityTimestamp: index,
+      localTimestamp: index,
+      authChain: [{ type: 'SIGNER', payload: '0x1', signature: '' }]
+    }
+  }
+
+  it('prepares the endpoints', () => {
+    pagesServed = 0
+    components.router.get('/snapshots', async () => ({ body: [] }))
+    // A long paginated backlog, so the bootstrap pass takes several round trips to work through.
+    components.router.get('/pointer-changes', async () => {
+      pagesServed++
+      const isLast = pagesServed >= totalPages
+      return {
+        body: {
+          deltas: [pageDelta(pagesServed)],
+          pagination: isLast ? {} : { next: `?from=0&page=${pagesServed + 1}` }
+        }
+      }
+    })
+  })
+
+  it('drops the server while the backlog is still streaming', async () => {
+    synchronizer = await buildSynchronizer(
+      components,
+      {
+        async scheduleEntityDeployment(entity: DeployableEntity) {
+          if (entity.markAsDeployed) await entity.markAsDeployed()
+          // Remove the server the moment its bootstrap is underway, the way a DAO refresh would.
+          if (pagesServed === 2) {
+            await synchronizer.syncWithServers(new Set())
+          }
+        },
+        onIdle: jest.fn(),
+        prepareForDeploymentsIn: jest.fn()
+      },
+      60_000
+    )
+
+    await synchronizer.syncWithServers(new Set([await components.getBaseUrl()]))
+    await waitUntil(() => pagesServed >= 2, 'the bootstrap has started streaming the backlog')
+    await new Promise((ok) => setTimeout(ok, 300))
+  })
+
+  it('should stop streaming rather than working through the rest of the backlog', () => {
+    // Without a desired-server check in the stream predicate the pass runs to the last page, deploying
+    // entities for a server the caller had already removed.
+    expect(pagesServed).toBeLessThan(totalPages)
+  })
+
+  afterAll(async () => {
+    await synchronizer.stop!()
+  })
+})

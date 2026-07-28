@@ -200,6 +200,22 @@ export function isUsableTimestamp(value: unknown): value is number {
   )
 }
 
+/**
+ * Whether {@link assertHash} can verify bytes against this hash at all.
+ *
+ * `isValidContentHash` is deliberately looser, because it answers a different question: is this string
+ * safe to use as a filesystem path and a storage key. Verification is narrower — assertHash dispatches on
+ * the `Qm`/`ba` CID prefixes and can do nothing with anything else — so a hash that passes the first check
+ * but not this one can only fail *after* its bytes have been fetched.
+ *
+ * Deliberately mirrors assertHash's own dispatch rather than a stricter CID grammar: a tighter predicate
+ * here could refuse a hash assertHash would have happily verified, which would stop syncing content that
+ * works today. This can only ever reject hashes that were going to fail anyway.
+ */
+export function isVerifiableContentHash(hash: string): boolean {
+  return hash.startsWith('Qm') || hash.startsWith('ba')
+}
+
 export async function assertHash(filename: string, hash: string) {
   if (hash.startsWith('Qm')) {
     const file = fs.createReadStream(filename)

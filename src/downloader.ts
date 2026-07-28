@@ -1,7 +1,7 @@
 import * as path from 'path'
 import { saveContentFileToDisk } from './client'
 import { SnapshotsFetcherComponents } from './types'
-import { isValidContentHash, pickRandomServer, sleepUnlessStopped } from './utils'
+import { isValidContentHash, isVerifiableContentHash, pickRandomServer, sleepUnlessStopped } from './utils'
 
 // In-flight downloads, per storage component and then per content hash.
 //
@@ -40,6 +40,21 @@ async function downloadJob(
 
   // cancel early if the file is already downloaded
   if (await components.storage.exist(hashToDownload)) return
+
+  // Refuse a hash whose bytes could never be verified, before spending a request on it. isValidContentHash
+  // only makes a hash safe to use as a path and a storage key; assertHash is what proves the bytes, and it
+  // can only do that for the Qm/ba CID shapes. Without this an alphanumeric-but-unverifiable hash from a
+  // hostile or corrupt manifest is downloaded in full, once per retry per server, and then discarded by
+  // assertHash — bounded work, but work we can know up front is wasted.
+  //
+  // Checked *after* the storage short-circuit deliberately: a file already present under an unverifiable id
+  // keeps being served exactly as before, so this only ever removes a download that was going to fail.
+  if (!isVerifiableContentHash(hashToDownload)) {
+    throw new Error(
+      `Refusing to download ${JSON.stringify(hashToDownload)}: unknown hashing algorithm, so its bytes could ` +
+        `never be verified against it`
+    )
+  }
 
   // Sample the number of candidate servers once per job, not once per retry (which would skew the histogram).
   components.metrics?.observe('dcl_available_servers_histogram', {}, presentInServers.length)

@@ -56,7 +56,9 @@ test('saveToDisk', ({ components, stubComponents }) => {
       }
     })
 
-    components.router.get(`/contents/alwaysFails`, async () => {
+    // ba-prefixed so the hash is verifiable and the download is really attempted: what this test
+    // exercises is the retry ladder converging, not hash validation.
+    components.router.get(`/contents/baaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`, async () => {
       return {
         status: 503
       }
@@ -295,7 +297,7 @@ test('saveToDisk', ({ components, stubComponents }) => {
     await expect(async () => {
       await downloadFileWithRetries(
         { metrics, storage: components.storage },
-        'alwaysFails',
+        'baaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         contentFolder,
         [await components.getBaseUrl()],
         new Map(),
@@ -363,4 +365,28 @@ test('saveToDisk', ({ components, stubComponents }) => {
     // check file exists and has correct content
     expect(await checkFileExists(filename)).toEqual(false)
   })
+  it('refuses an unverifiable hash before spending a request on it', async () => {
+    let requests = 0
+    components.router.get('/contents/notacidatall', async () => {
+      requests++
+      return { body: 'anything' }
+    })
+
+    // Alphanumeric, so it passes the path-safety check, but assertHash can only verify Qm/ba shapes —
+    // downloading it could only ever end in "Unknown hashing algorithm" after the bytes had arrived.
+    await expect(
+      downloadFileWithRetries(
+        { metrics, storage: components.storage },
+        'notacidatall',
+        contentFolder,
+        [await components.getBaseUrl()],
+        new Map(),
+        maxRetries,
+        waitTimeBetweenRetries
+      )
+    ).rejects.toThrow('unknown hashing algorithm')
+
+    expect(requests).toEqual(0)
+  })
+
 })
