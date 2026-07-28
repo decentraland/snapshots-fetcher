@@ -1,5 +1,4 @@
 import { hashV1 } from '@dcl/hashing'
-import future from 'fp-future'
 import { resolve } from 'path'
 import { createSynchronizer } from '../src/synchronizer'
 import { IDeployerComponent, SnapshotsFetcherComponents, SynchronizerComponent } from '../src/types'
@@ -46,10 +45,12 @@ test('synchronizer when a server serves a snapshot with unreadable lines', ({ co
   let pointerChangesRequested: number
   let markedAsProcessed: string[]
   let unusableSnapshotHash: string
+  let contentsRequested: number
 
   it('prepares the endpoints', async () => {
     pointerChangesRequested = 0
     markedAsProcessed = []
+    contentsRequested = 0
     // The real content hash, so the download passes verification and the snapshot actually reaches the
     // parser. A fabricated hash would fail hash verification first and mask what is under test.
     unusableSnapshotHash = await hashV1(partlyUnusableSnapshot)
@@ -57,9 +58,10 @@ test('synchronizer when a server serves a snapshot with unreadable lines', ({ co
     components.router.get('/snapshots', async () => ({
       body: [{ hash: unusableSnapshotHash, timeRange: { initTimestamp: 0, endTimestamp: snapshotEndTimestamp } }]
     }))
-    components.router.get(`/contents/${unusableSnapshotHash}`, async () => ({
-      body: partlyUnusableSnapshot.toString()
-    }))
+    components.router.get(`/contents/${unusableSnapshotHash}`, async () => {
+      contentsRequested++
+      return { body: partlyUnusableSnapshot.toString() }
+    })
     components.router.get('/pointer-changes', async () => {
       pointerChangesRequested++
       return { body: { deltas: [], pagination: {} } }
@@ -81,12 +83,19 @@ test('synchronizer when a server serves a snapshot with unreadable lines', ({ co
       prepareForDeploymentsIn: jest.fn()
     })
 
-    const syncJob = await synchronizer.syncWithServers(new Set([await components.getBaseUrl()]))
-    // The bootstrap cannot finish: the server stays in snapshot bootstrap and the sync job keeps
-    // retrying, so wait for the first attempt to have been made rather than for completion.
-    const firstAttemptSettled = future<void>()
-    void syncJob.onInitialBootstrapFinished(async () => firstAttemptSettled.resolve())
-    await Promise.race([firstAttemptSettled, new Promise((ok) => setTimeout(ok, 1500))])
+    await synchronizer.syncWithServers(new Set([await components.getBaseUrl()]))
+
+    // The bootstrap cannot finish — the server stays in snapshot bootstrap and the job keeps retrying —
+    // so completion is not the signal to wait for. Wait for the snapshot to have actually been fetched
+    // and parsed, and fail if that never happens: a race against a timeout that ignores which side won
+    // would let the assertions below pass vacuously if this code path were never reached.
+    const deadline = Date.now() + 10_000
+    while (contentsRequested === 0) {
+      if (Date.now() > deadline) {
+        throw new Error('Timed out waiting for the unusable snapshot to be requested; the path under test never ran')
+      }
+      await new Promise((ok) => setTimeout(ok, 10))
+    }
   })
 
   it('should not mark the unusable snapshot as processed', () => {
