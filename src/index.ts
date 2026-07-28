@@ -360,6 +360,18 @@ export async function downloadEntityAndContentFiles(
     throw new Error(`Failed to parse the downloaded entity file for ${entityId}; ${kept}. Cause: ${cause}`)
   }
 
+  // Checked before any download work, because the alternative is worse than a TypeError: every consumer
+  // of content[] guards with Array.isArray and falls back to "no content", so an entity declaring an
+  // object or a string here would be reported as fully downloaded while its dependencies were never
+  // fetched — and then deployed as complete. null and undefined are genuinely "no content declared";
+  // anything else is a manifest we cannot read and must not silently treat as empty.
+  const declaredContent: unknown = entityMetadata.content
+  if (declaredContent !== undefined && declaredContent !== null && !Array.isArray(declaredContent)) {
+    throw new Error(
+      `Entity ${entityId} declares a content field that is not an array: ${typeof declaredContent}. Refusing to treat it as having no content files.`
+    )
+  }
+
   if (entityMetadata.type === 'profile' && entityMetadata.metadata) {
     /*
      * Profiles can have some images referenced in the avatar snapshots that are not included in content section.

@@ -108,18 +108,43 @@ test('downloadEntityAndContentFiles when the profile metadata has a malformed sh
     })
   })
 
-  describe('and the content property is not an array', () => {
+  describe.each([
+    ['an object', { file: 'body.png' }],
+    ['a string', 'body.png'],
+    ['a number', 42]
+  ])('and the content property is %s rather than an array', (_label: string, content: unknown) => {
     let entityId: string
 
     beforeEach(async () => {
       entityId = await storeEntity(components.storage, {
         type: 'profile',
         metadata: { avatars: [] },
-        content: { file: 'body.png' }
+        content
       })
     })
 
-    it('should return the parsed entity without throwing on the content iteration', async () => {
+    // This used to resolve: every reader of content[] guards with Array.isArray and falls back to "no
+    // content", so a malformed manifest was reported as a fully downloaded entity whose dependencies had
+    // never been fetched — and it would then be deployed as complete. Not iterating it is not the same as
+    // there being nothing to iterate.
+    it('should reject rather than reporting an entity with no content files', async () => {
+      await expect(
+        downloadEntityAndContentFiles(components, entityId, [await components.getBaseUrl()], new Map(), targetFolder, 1, 0)
+      ).rejects.toThrow('declares a content field that is not an array')
+    })
+  })
+
+  describe.each([
+    ['undefined', undefined],
+    ['null', null]
+  ])('and the content property is %s', (_label: string, content: unknown) => {
+    let entityId: string
+
+    beforeEach(async () => {
+      entityId = await storeEntity(components.storage, { type: 'profile', metadata: { avatars: [] }, content })
+    })
+
+    it('should treat it as an entity with no content files', async () => {
       await expect(
         downloadEntityAndContentFiles(components, entityId, [await components.getBaseUrl()], new Map(), targetFolder, 1, 0)
       ).resolves.toMatchObject({ type: 'profile' })
