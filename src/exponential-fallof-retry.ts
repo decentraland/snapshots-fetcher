@@ -134,11 +134,12 @@ export function createExponentialFallofRetry(
         return
       }
 
-      if (options.maxInterval) {
-        reconnectionTime = Math.min(reconnectionTime, options.maxInterval)
-      } else {
-        reconnectionTime = Math.min(reconnectionTime, 86_400_000 /* one day */)
-      }
+      // The ceiling bounds how far the exponential growth can run, so it must never pull the interval
+      // *below* the configured base: `retryTime` is an explicit statement of how often the action
+      // should run. Clamping it made a `retryTime` longer than the ceiling unreachable — the
+      // synchronizer asks for a 14-day snapshot re-sync and silently got a daily one.
+      const growthCeiling = options.maxInterval || 86_400_000 /* one day */
+      reconnectionTime = Math.min(reconnectionTime, Math.max(growthCeiling, options.retryTime))
 
       logs.info('Retrying in ' + reconnectionTime.toFixed(1) + 'ms')
       await interruptibleSleep(reconnectionTime)

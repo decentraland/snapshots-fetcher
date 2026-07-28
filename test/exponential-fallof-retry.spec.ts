@@ -172,6 +172,62 @@ describe('createExponentialFallofRetry', () => {
       })
     })
 
+    describe('and retryTime is longer than the default one-day ceiling', () => {
+      let component: ReturnType<typeof createExponentialFallofRetry>
+      let firstActionFinished: ReturnType<typeof future<void>>
+      const fourteenDays: number = 86_400_000 * 14
+
+      beforeEach(async () => {
+        firstActionFinished = future<void>()
+
+        component = createExponentialFallofRetry(logger, {
+          async action() {
+            firstActionFinished.resolve()
+          },
+          // Mirrors the synchronizer's post-bootstrap snapshot re-sync, which sets no maxInterval.
+          retryTime: fourteenDays,
+          retryTimeExponent: 1
+        })
+
+        void component.start()
+        await firstActionFinished
+        // The interval is logged synchronously once the action settles, before the sleep starts.
+        await sleep(10)
+        await component.stop()
+      })
+
+      it('should schedule the configured interval rather than truncating it to one day', () => {
+        expect(scheduledIntervals[0]).toEqual(fourteenDays)
+      })
+    })
+
+    describe('and maxInterval is shorter than the configured retryTime', () => {
+      let component: ReturnType<typeof createExponentialFallofRetry>
+      let firstActionFinished: ReturnType<typeof future<void>>
+
+      beforeEach(async () => {
+        firstActionFinished = future<void>()
+
+        component = createExponentialFallofRetry(logger, {
+          async action() {
+            firstActionFinished.resolve()
+          },
+          retryTime: 50_000,
+          retryTimeExponent: 1,
+          maxInterval: 1_000
+        })
+
+        void component.start()
+        await firstActionFinished
+        await sleep(10)
+        await component.stop()
+      })
+
+      it('should still schedule the configured retryTime, since the ceiling only bounds growth', () => {
+        expect(scheduledIntervals[0]).toEqual(50_000)
+      })
+    })
+
     describe('and the action fails but had been running for longer than healthyRunTime', () => {
       let component: ReturnType<typeof createExponentialFallofRetry>
       let reachedThirdAttempt: ReturnType<typeof future<void>>
