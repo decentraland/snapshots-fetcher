@@ -98,9 +98,17 @@ Remote servers are treated as untrusted, which constrains where requests may go:
 ## Shutdown
 
 `synchronizer.stop()` waits for in-flight work to finish rather than only signalling it, so once it
-resolves nothing is still deploying or mutating state. Retry ladders and poll intervals are abandoned
-when stopping, which bounds that wait at roughly one in-flight request — but it is not instant, so give
-it room in your termination grace period.
+resolves nothing is still deploying or mutating state. That includes your deployer: because
+`scheduleEntityDeployment` may resolve before the entity is actually deployed, `stop()` awaits
+`deployer.onIdle()` last, so an asynchronous or batching deployer is drained before it returns. Retry
+ladders and poll intervals are abandoned when stopping, which bounds that wait at roughly one in-flight
+request plus whatever your deployer still has queued — so give it room in your termination grace period.
+
+For the same reason, `onIdle()` is awaited at the two bootstrap transitions as well: before a server's
+last-entity timestamp is advanced after its snapshots, and before it is promoted from pointer-changes
+bootstrap to syncing. Both of those decide where the server resumes from, so they must reflect entities
+that were actually deployed rather than merely scheduled. A deployer whose `onIdle()` never resolves will
+therefore stall the bootstrap.
 
 Anything you schedule through `createJobQueue({ timeout })` must be **idempotent**: a timed-out attempt
 is retried, and because a promise cannot be cancelled the original keeps running alongside it.

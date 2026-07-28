@@ -307,6 +307,11 @@ export async function createSynchronizer(
     deploymentsProcessorsQueue.start()
 
     await deploymentsProcessorsQueue.onIdle()
+    // The queue draining only means every snapshot finished STREAMING. Per IDeployerComponent,
+    // scheduleEntityDeployment may resolve before the entity is deployed and onIdle() is the drain
+    // signal, so with a batching deployer the entities are still in flight here. Advancing a server's
+    // timestamp now would resume its pointer-changes past entities that had only been scheduled.
+    await components.deployer.onIdle()
     logger.info('End deploying entities from snapshots.')
 
     // Once the snapshots were correctly streamed, update the last entity timestamps
@@ -357,6 +362,9 @@ export async function createSynchronizer(
   async function bootstrapFromPointerChanges() {
     logger.debug(`Bootstrapping servers (Pointer Changes): ${Array.from(bootstrappingServersFromPointerChanges)}`)
     const pointerChangesBootstrappingJobs: (() => Promise<void>)[] = []
+    // Servers whose pointer-changes bootstrap streamed through without error. They are promoted to the
+    // syncing state only after the deployer has drained, not as each stream ends.
+    const bootstrappedFromPointerChanges = new Set<string>()
     let minStartingPoint: undefined | number
     for (const bootstrappingServersFromPointerChange of bootstrappingServersFromPointerChanges) {
       const fromTimestamp = pointerChangesStartingTimestamp(bootstrappingServersFromPointerChange)
@@ -372,13 +380,8 @@ export async function createSynchronizer(
             increaseLastTimestamp
           )
           bootstrappingServersFromPointerChanges.delete(bootstrappingServersFromPointerChange)
-          if (!canAdvanceServer(bootstrappingServersFromPointerChange)) {
-            logger.info('Not moving a server to the syncing state: it is no longer desired.', {
-              server: bootstrappingServersFromPointerChange
-            })
-            return
-          }
-          syncingServers.add(bootstrappingServersFromPointerChange)
+          // Promotion is deferred until the deployer has drained, below.
+          bootstrappedFromPointerChanges.add(bootstrappingServersFromPointerChange)
         } catch (error) {
           // If there's an error, the server doesn't pass to syncing state
           logger.info(`Error bootstrapping from pointer changes for server: ${bootstrappingServersFromPointerChange}`)
@@ -397,6 +400,18 @@ export async function createSynchronizer(
 
     if (pointerChangesBootstrappingJobs.length > 0) {
       await Promise.all(pointerChangesBootstrappingJobs.map((job) => job()))
+      // A stream ending means every deployment was SCHEDULED. Entering the syncing state is what makes
+      // the server resume from its high-water timestamp, so wait for the deployer's own drain signal
+      // first — otherwise an asynchronous deployer is still working through entities the server is
+      // already considered to be past.
+      await components.deployer.onIdle()
+      for (const server of bootstrappedFromPointerChanges) {
+        if (!canAdvanceServer(server)) {
+          logger.info('Not moving a server to the syncing state: it is no longer desired.', { server })
+          continue
+        }
+        syncingServers.add(server)
+      }
     }
 
     reportServerStateMetric()
@@ -666,6 +681,10 @@ export async function createSynchronizer(
           await regularSyncFromSnapshotsAfterBootstrapJob.stop()
           // Signalling it is not enough: wait for the run itself, as we do for every other job.
           await regularSyncRun?.catch(() => undefined)
+          // Our own queues being drained does not mean the deployer is. Entities scheduled before the
+          // stop are still being deployed — and mutating the caller's state — until it reports idle, so
+          // this is what makes stop() resolving mean "nothing is still deploying".
+          await components.deployer.onIdle()
         })()
       }
       return shutdown
