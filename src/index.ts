@@ -200,32 +200,45 @@ function avatarSnapshotHashesFrom(entityMetadata: {
     (Array.isArray(entityMetadata.content) ? entityMetadata.content : []).map((content) => content?.hash)
   )
 
-  return (
-    allAvatars
-      .flatMap((avatar) => {
-        const snapshots: unknown = avatar?.avatar?.snapshots
-        // Must be an object of named snapshots. Object.values on a *string* yields one entry per
-        // character, so a long string would expand into a download job per character — a ~50 MB
-        // metadata value is millions of queued jobs and gigabytes of heap, from a profile whose hash the
-        // attacker controls and which therefore passes verification.
-        if (!snapshots || typeof snapshots !== 'object') {
-          return []
-        }
-        return Object.values(snapshots)
-      })
-      .filter((snapshot): snapshot is string => typeof snapshot === 'string' && snapshot.length > 0)
-      .map((snapshot) => {
-        const matches = snapshot.match(/^http.*\/content\/contents\/(.*)/)
-        return matches ? matches[1] : snapshot
-      })
-      .filter((snapshot) => !declaredContentHashes.has(snapshot))
-      // Deduplicated before the cap, for the same reason content[] is: a profile naming one snapshot
-      // repeatedly would otherwise spend the whole budget on jobs for a single hash.
-      .filter((snapshot, index, all) => all.indexOf(snapshot) === index)
-      // Even well-shaped metadata is remote and unbounded (avatars[] has no declared limit), so cap the
-      // extra work one entity can create.
-      .slice(0, MAX_AVATAR_SNAPSHOTS_PER_ENTITY)
-  )
+  // Collected with the cap enforced as we go, rather than expanding everything and slicing at the end.
+  // avatars[] has no declared limit and the entity file may be MAX_ENTITY_FILE_SIZE_IN_BYTES, so a
+  // flatMap over every avatar's snapshots materialised the whole attacker-controlled expansion first and
+  // only then discarded it. Stopping at the cap means the intermediate never exceeds it either.
+  const hashes: string[] = []
+  const alreadyCollected = new Set<string>()
+
+  for (const avatar of allAvatars) {
+    if (hashes.length >= MAX_AVATAR_SNAPSHOTS_PER_ENTITY) {
+      break
+    }
+    const snapshots: unknown = avatar?.avatar?.snapshots
+    // Must be an object of named snapshots. Object.values on a *string* yields one entry per character,
+    // so a long string would expand into a download job per character — a ~50 MB metadata value is
+    // millions of queued jobs and gigabytes of heap, from a profile whose hash the attacker controls and
+    // which therefore passes verification.
+    if (!snapshots || typeof snapshots !== 'object') {
+      continue
+    }
+    for (const declared of Object.values(snapshots)) {
+      if (hashes.length >= MAX_AVATAR_SNAPSHOTS_PER_ENTITY) {
+        break
+      }
+      if (typeof declared !== 'string' || declared.length === 0) {
+        continue
+      }
+      const matches = declared.match(/^http.*\/content\/contents\/(.*)/)
+      const hash = matches ? matches[1] : declared
+      // Deduplicated for the same reason content[] is: a profile naming one snapshot repeatedly would
+      // otherwise spend the whole budget on jobs for a single hash.
+      if (declaredContentHashes.has(hash) || alreadyCollected.has(hash)) {
+        continue
+      }
+      alreadyCollected.add(hash)
+      hashes.push(hash)
+    }
+  }
+
+  return hashes
 }
 
 async function downloadProfileAvatars(
