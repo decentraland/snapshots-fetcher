@@ -161,4 +161,33 @@ test('downloadFileWithRetries when the same hash is requested concurrently', ({ 
       expect(await storage.exist(contentHash)).toBe(true)
     })
   })
+  describe('and several callers are waiting on a job that then fails', () => {
+    let storage: IContentStorageComponent
+    let workingServer: string
+    let brokenServer: string
+
+    beforeEach(async () => {
+      requestCount = 0
+      storage = createInMemoryStorage()
+      workingServer = await components.getBaseUrl()
+      // Nothing listens here, so the shared job fails against it.
+      brokenServer = 'http://127.0.0.1:1'
+    })
+
+    it('should have the woken waiters join one replacement rather than each starting its own', async () => {
+      const waiters = 4
+      const results = await Promise.allSettled([
+        // Registered first, so the others join it — and it is the one that fails.
+        downloadFileWithRetries({ storage }, contentHash, resolve('downloads'), [brokenServer], new Map(), 1, 0),
+        ...Array.from({ length: waiters }, () =>
+          downloadFileWithRetries({ storage }, contentHash, resolve('downloads'), [workingServer], new Map(), 2, 0)
+        )
+      ])
+
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(waiters)
+      // All four waiters wake together when the shared job rejects. Without the joining loop each starts
+      // its own transfer of the same hash; with it, the first registers a replacement and the rest join.
+      expect(requestCount).toEqual(1)
+    })
+  })
 })

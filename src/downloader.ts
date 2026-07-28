@@ -131,14 +131,24 @@ export async function downloadFileWithRetries(
   const finalFileName = path.resolve(targetTempFolder, hashToDownload)
   const inflightForStorage = inflightJobsFor(components.storage)
 
-  const inflightJob = inflightForStorage.get(hashToDownload)
-  if (inflightJob) {
+  // Joining loop, not a single check. When a shared job fails, every waiter wakes at once — and if each
+  // simply fell through to start its own, N waiters would start N parallel transfers of the same hash and
+  // clobber each other's map entry. Re-reading after the failure lets all but the first join the
+  // replacement instead. Bounded by the loop condition: a caller only keeps going while it finds a
+  // *different* job than the one it just watched fail.
+  let alreadyWatched: ReturnType<typeof downloadFileWithRetries> | undefined
+  for (;;) {
+    const inflightJob = inflightForStorage.get(hashToDownload)
+    if (!inflightJob || inflightJob === alreadyWatched) {
+      break
+    }
     try {
       return await inflightJob
     } catch {
       // The shared job failed against *its* candidate servers. This caller may have been given a
-      // different set, so fall through and make its own attempt instead of inheriting a failure it
-      // might not have suffered.
+      // different set, so it does not inherit a failure it might not have suffered — but if some other
+      // waiter has already registered a replacement, join that rather than adding another transfer.
+      alreadyWatched = inflightJob
     }
   }
 
