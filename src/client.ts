@@ -5,6 +5,7 @@ import { SnapshotMetadata, SnapshotsFetcherComponents } from './types'
 import {
   contentServerMetricLabels,
   fetchJson,
+  isUsableTimestamp,
   isValidContentHash,
   saveContentFileToDisk as saveContentFile
 } from './utils'
@@ -38,38 +39,6 @@ const MAX_PAGINATION_LINK_LENGTH = 2048
 // snapshots, and the real ceiling on the total is MAX_JSON_RESPONSE_SIZE_IN_BYTES. Chunking the lookup is
 // what would bound the query itself.
 const MAX_REPLACED_SNAPSHOT_HASHES = 1000
-
-// How far ahead of our own clock a remote timestamp may sit. Snapshots describe history that already
-// happened, so anything beyond this is either the server's clock being wrong or a value we should not
-// adopt as sync state.
-const MAX_TIMESTAMP_CLOCK_SKEW_IN_MS = 24 * 60 * 60 * 1000
-
-/**
- * A remote timestamp we are willing to adopt as sync state.
- *
- * These values become a server's high-water mark, and `increaseLastTimestamp` only ever moves it forward,
- * so a single bad one is permanent for the life of the process: the server then polls `/pointer-changes`
- * from a point nothing can ever reach and silently stops syncing.
- *
- * `typeof x === 'number'` does not begin to cover it, and neither does finiteness:
- *
- * - A JSON body cannot carry NaN (`{"a":NaN}` is a syntax error) but it CAN carry Infinity, because the
- *   number grammar has no range limit and `1e999` parses to it.
- * - `1e308` is finite, non-negative, and every bit as poisonous — it is not a date any deployment can
- *   exceed. Finiteness was the wrong test; being a plausible instant is the right one.
- * - Past 2^53 integer arithmetic silently stops being exact, so `Number.isSafeInteger` is the floor for a
- *   value we do `Math.max` on. It also rejects fractions, which epoch milliseconds never legitimately are
- *   — an earlier version of this deliberately allowed them, but the upper bound below makes that leniency
- *   pointless and a fractional timestamp only ever indicates a malformed server.
- */
-function isUsableTimestamp(value: unknown): value is number {
-  return (
-    typeof value === 'number' &&
-    Number.isSafeInteger(value) &&
-    value >= 0 &&
-    value <= Date.now() + MAX_TIMESTAMP_CLOCK_SKEW_IN_MS
-  )
-}
 
 // Snapshot metadata comes from untrusted servers; keep only entries with the shape we rely on
 // (valid content hash + usable time range) so a malformed response can't break downstream logic.
