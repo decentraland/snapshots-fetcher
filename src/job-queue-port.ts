@@ -107,6 +107,12 @@ export function createJobQueue(options: createJobQueue.Options): IJobQueue & IBa
       return realQueue.add(tracked(fn))
     },
     async onSizeLessThan(limit: number): Promise<void> {
+      // A limit of 0 or below can never be satisfied — the queue size is never negative — so the caller
+      // would wait forever with no indication why. Fail instead of hanging.
+      if (!Number.isInteger(limit) || limit < 1) {
+        throw new Error(`limit must be an integer >= 1, got ${limit}`)
+      }
+
       // Instantly resolve if the queue is already below the limit.
       if (realQueue.size < limit) {
         return
@@ -126,8 +132,13 @@ export function createJobQueue(options: createJobQueue.Options): IJobQueue & IBa
       })
     },
     scheduleJobWithRetries<T>(fn: () => Promise<T>, retries: number): Promise<T> {
-      if (!(retries | 0)) {
-        throw new Error('At least one retry is required')
+      // Plain integer validation, not the bitwise `!(retries | 0)` this used to do. `| 0` coerces to
+      // int32, so it let 2.5 through as 2 and -1 through as -1 (which then rejected on the first failure,
+      // silently behaving like no retries at all), while wrongly refusing anything at or above 2^32
+      // because the coercion wrapped it to 0. Now that the queue is exported from the package root, a
+      // caller passing a bad value deserves to be told rather than to get quiet nonsense.
+      if (!Number.isInteger(retries) || retries < 1) {
+        throw new Error(`retries must be an integer >= 1, got ${retries}`)
       }
       return new Promise<T>((resolve, reject) => {
         function schedule(remainingRetries: number) {

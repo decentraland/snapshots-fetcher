@@ -247,11 +247,34 @@ describe('createJobQueue', () => {
       })
     })
 
-    describe('when no retries are allowed', () => {
-      it('should throw indicating that at least one retry is required', () => {
-        expect(() => queue.scheduleJobWithRetries(async () => 'unused', 0)).toThrow(
-          'At least one retry is required'
+    describe.each([
+      ['zero', 0],
+      // The previous bitwise guard coerced with `| 0`, so it let these through: 2.5 became 2, and -1
+      // stayed truthy and then behaved like no retries at all on the first failure.
+      ['a fraction', 2.5],
+      ['a negative', -1],
+      ['not a number', Number.NaN]
+    ])('when retries is %s', (_label: string, retries: number) => {
+      it('should throw naming the expected range', () => {
+        expect(() => queue.scheduleJobWithRetries(async () => 'unused', retries)).toThrow(
+          `retries must be an integer >= 1, got ${retries}`
         )
+      })
+    })
+
+    describe('when retries is a valid integer above the int32 range', () => {
+      it('should be accepted rather than refused by an overflowing coercion', () => {
+        // The previous guard computed `retries | 0`, which wraps this to 0 and rejected it.
+        expect(() => queue.scheduleJobWithRetries(async () => 'unused', 2 ** 32)).not.toThrow()
+      })
+    })
+
+    describe.each([
+      ['zero', 0],
+      ['a negative', -1]
+    ])('when onSizeLessThan is given %s as a limit', (_label: string, limit: number) => {
+      it('should reject rather than waiting for a size the queue can never reach', async () => {
+        await expect(queue.onSizeLessThan(limit)).rejects.toThrow(`limit must be an integer >= 1, got ${limit}`)
       })
     })
   })
