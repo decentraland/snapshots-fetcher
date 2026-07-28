@@ -3,7 +3,7 @@ import { ILoggerComponent } from '@well-known-components/interfaces'
 import PQueue from 'p-queue'
 import { downloadFileWithRetries } from './downloader'
 import { ContentMapping, EntityHash, Server, SnapshotsFetcherComponents } from './types'
-import { streamToBuffer } from './utils'
+import { isValidContentHash, streamToBuffer } from './utils'
 
 // Guard the runtime before anything else in the package is evaluated. The name is inlined rather than
 // read from package.json so this stays a plain import-time check with no filesystem access.
@@ -57,6 +57,39 @@ const DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY = 10
 // Ceiling on the avatar snapshots a single profile can ask us to fetch. Far above any real profile
 // (a handful per avatar), so it only bounds hostile or corrupt metadata.
 const MAX_AVATAR_SNAPSHOTS_PER_ENTITY = 1000
+
+// Ceiling on the content files one entity may ask us to download. content[] is remote, and every entry
+// becomes a queued job in a single pass, so without a bound one entity sizes the work. Far above any real
+// entity (scenes run to hundreds of assets), so it only trips on a hostile or corrupt manifest.
+const MAX_CONTENT_FILES_PER_ENTITY = 25_000
+
+/**
+ * The distinct, valid hashes to fetch for an entity's content[].
+ *
+ * Deduplicated because a manifest may name the same hash repeatedly: the download layer already collapses
+ * concurrent duplicates, but each one still costs a queue slot and a closure here.
+ *
+ * Invalid entries are rejected rather than skipped. Every file in content[] is part of the entity, so
+ * quietly dropping one would report success for an entity we did not fully fetch — the download call
+ * already refused these, this just fails earlier and names the entity. Exceeding the cap is refused for
+ * the same reason: truncating would silently leave files behind.
+ */
+function contentHashesToDownload(content: unknown[], entityId: EntityHash): string[] {
+  if (content.length > MAX_CONTENT_FILES_PER_ENTITY) {
+    throw new Error(
+      `Entity ${entityId} declares ${content.length} content files, above the maximum of ${MAX_CONTENT_FILES_PER_ENTITY}`
+    )
+  }
+  const hashes = new Set<string>()
+  for (const entry of content) {
+    const hash = (entry as ContentMapping | undefined | null)?.hash
+    if (typeof hash !== 'string' || !isValidContentHash(hash)) {
+      throw new Error(`Entity ${entityId} declares an invalid content file hash: ${JSON.stringify(hash)}`)
+    }
+    hashes.add(hash)
+  }
+  return Array.from(hashes)
+}
 
 // Ceiling on an entity file read fully into memory. Entity documents are JSON manifests measured in
 // KB, but the download cap alone permits a single file of 1 GiB and entities are read concurrently —
@@ -186,6 +219,9 @@ function avatarSnapshotHashesFrom(entityMetadata: {
         return matches ? matches[1] : snapshot
       })
       .filter((snapshot) => !declaredContentHashes.has(snapshot))
+      // Deduplicated before the cap, for the same reason content[] is: a profile naming one snapshot
+      // repeatedly would otherwise spend the whole budget on jobs for a single hash.
+      .filter((snapshot, index, all) => all.indexOf(snapshot) === index)
       // Even well-shaped metadata is remote and unbounded (avatars[] has no declared limit), so cap the
       // extra work one entity can create.
       .slice(0, MAX_AVATAR_SNAPSHOTS_PER_ENTITY)
@@ -351,15 +387,14 @@ export async function downloadEntityAndContentFiles(
   // Array.isArray (not a truthiness check): content[] is remote and untrusted, and a non-array
   // value would make .map throw a TypeError instead of yielding a diagnosable error.
   if (Array.isArray(entityMetadata.content)) {
+    const hashesToDownload = contentHashesToDownload(entityMetadata.content, entityId)
     const downloadQueue = new PQueue({ concurrency: contentFilesConcurrency })
     await Promise.all(
-      entityMetadata.content.map((content) =>
+      hashesToDownload.map((hash) =>
         downloadQueue.add(() =>
           downloadFileWithRetries(
             components,
-            // Optional chaining so a null entry surfaces the descriptive "Invalid content hash"
-            // rejection from downloadFileWithRetries rather than a bare TypeError.
-            content?.hash,
+            hash,
             targetFolder,
             presentInServers,
             _serverMapLRU,
