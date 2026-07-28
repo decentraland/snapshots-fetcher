@@ -99,6 +99,9 @@ export async function* fetchJsonPaginated<T>(
 ): AsyncIterable<T> {
   // Perform the different queries
   let currentUrl = url
+  // Parsed once, and every `next` is validated against THIS rather than against the previous page, so
+  // no chain of individually-permitted hops can walk away from the endpoint the call started from.
+  const requestUrl = new URL(url)
   // Every page a paginated call has already fetched. A server that points `next` back at a page it
   // already served would otherwise cycle forever; this catches that immediately instead of waiting
   // for the page cap.
@@ -154,15 +157,27 @@ export async function* fetchJsonPaginated<T>(
       } catch {
         throw new Error(`Invalid pagination link while fetching ${url}: ${JSON.stringify(nextRelative)}`)
       }
-      // `next` is chosen by the remote server, so an absolute URL here would let it steer our
-      // requests at any host it likes — internal addresses and cloud metadata endpoints included —
-      // using this process as the client. Pagination never legitimately leaves the server that
-      // issued it, so anything cross-origin is rejected rather than followed.
-      if (nextUrl.origin !== new URL(currentUrl).origin) {
+      // `next` is chosen by the remote server, and this process is the client that would follow it, so
+      // it is pinned to the endpoint the call started from and may vary only the query string — which
+      // is all pagination legitimately needs (catalysts return `?from=…&entityId=…`).
+      //
+      // Rejecting cross-origin links stops it naming another host outright. That alone is not the whole
+      // story: a URL origin is a hostname, not an address, so a hostile host can serve page 1 from a
+      // public IP and rebind the name to loopback or 169.254.169.254 before page 2 while the origin
+      // still matches. That rebinding cannot be closed here — `IFetchComponent` exposes no DNS `lookup`
+      // hook, the same reason fetchJson refuses redirects outright — and it applies to the first request
+      // of every poll regardless of pagination. What holding the path fixed removes is the part that IS
+      // ours to control: without it a rebound request would carry a server-chosen path (an internal
+      // admin endpoint); with it, the most a rebound address can be asked for is the very endpoint we
+      // were going to request anyway.
+      if (nextUrl.origin !== requestUrl.origin) {
         throw new Error(
-          `Refusing to follow a cross-origin pagination link while fetching ${url}: ${nextUrl.origin} does not match ${
-            new URL(currentUrl).origin
-          }`
+          `Refusing to follow a cross-origin pagination link while fetching ${url}: ${nextUrl.origin} does not match ${requestUrl.origin}`
+        )
+      }
+      if (nextUrl.pathname !== requestUrl.pathname) {
+        throw new Error(
+          `Refusing to follow a pagination link that changes the path while fetching ${url}: ${nextUrl.pathname} does not match ${requestUrl.pathname}`
         )
       }
       currentUrl = nextUrl.toString()
