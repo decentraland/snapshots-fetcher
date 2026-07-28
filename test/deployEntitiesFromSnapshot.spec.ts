@@ -46,13 +46,17 @@ describe('deployEntitiesFromSnapshot', () => {
       // processed/streamed counters are both 0.
       mockDeployedEntitiesStreamReporting([], 3)
       const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
-      await deployEntitiesFromSnapshot(
-        componentsWithDeployer(components, deployerMock),
-        streamOptions,
-        snapshotHash,
-        new Set(servers),
-        () => false
-      )
+      // Rejects so the caller keeps the advertising servers in snapshot bootstrap; resolving would let
+      // them advance past the range this snapshot covers.
+      await expect(
+        deployEntitiesFromSnapshot(
+          componentsWithDeployer(components, deployerMock),
+          streamOptions,
+          snapshotHash,
+          new Set(servers),
+          () => false
+        )
+      ).rejects.toThrow('could not be read as deployments')
       expect(markSnapshotAsProcessedSpy).not.toBeCalled()
     })
   })
@@ -77,13 +81,15 @@ describe('deployEntitiesFromSnapshot', () => {
       }
       mockDeployedEntitiesStreamReporting([entity], 1)
       const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
-      await deployEntitiesFromSnapshot(
-        componentsWithDeployer(components, deployerDeployingEverything),
-        streamOptions,
-        snapshotHash,
-        new Set(servers),
-        () => false
-      )
+      await expect(
+        deployEntitiesFromSnapshot(
+          componentsWithDeployer(components, deployerDeployingEverything),
+          streamOptions,
+          snapshotHash,
+          new Set(servers),
+          () => false
+        )
+      ).rejects.toThrow('could not be read as deployments')
       expect(markSnapshotAsProcessedSpy).not.toBeCalled()
     })
   })

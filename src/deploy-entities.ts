@@ -137,10 +137,14 @@ export async function deployEntitiesFromSnapshot(
     // pass per sync cycle for a snapshot the server keeps serving broken, which is the cheaper of the
     // two failure modes: marking it would drop those entities for good, with nothing to retry.
     components.metrics.increment('dcl_processed_snapshots_total', { state: 'incomplete' })
-    logger.error('Snapshot had lines that could not be read as deployments; leaving it unprocessed to retry later.', {
-      snapshotHash,
-      unusableLines: String(streamReport.unusableLines)
-    })
+    // Thrown rather than only logged. The caller treats a rejection as "this server's bootstrap is
+    // incomplete", which is what holds its last-entity timestamp back and keeps it in snapshot
+    // bootstrap. Returning normally left the snapshot unmarked — so it would be retried — but still let
+    // the servers advertising it advance past the range it covers and move on to pointer-changes,
+    // skipping the very entities leaving it unmarked was meant to preserve.
+    throw new Error(
+      `Snapshot ${snapshotHash} had ${streamReport.unusableLines} line(s) that could not be read as deployments; leaving it unprocessed to retry later.`
+    )
   }
   await saveIfStreamEndedAndAllEntitiesWereProcessed()
 }
