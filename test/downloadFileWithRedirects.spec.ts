@@ -23,6 +23,64 @@ test('downloadFile redirect handling', ({ components }) => {
       status: 302,
       headers: { location: 'file:///etc/passwd' }
     }))
+
+    // The other standard redirect codes, all common in front of object storage.
+    components.router.get('/see-other', async () => ({ status: 303, headers: { location: '/target' } }))
+    components.router.get('/temporary', async () => ({ status: 307, headers: { location: '/target' } }))
+    components.router.get('/permanent', async () => ({ status: 308, headers: { location: '/target' } }))
+    components.router.get('/target', async () => ({ body: content.toString() }))
+
+    // 300 carries a list of choices, not the content, and a redirect without a Location is unusable.
+    components.router.get('/multiple-choices', async () => ({ status: 300, body: 'not the content' }))
+    components.router.get('/redirect-without-location', async () => ({ status: 302 }))
+  })
+
+  describe.each([
+    ['303 See Other', '/see-other'],
+    ['307 Temporary Redirect', '/temporary'],
+    ['308 Permanent Redirect', '/permanent']
+  ])('when the server answers with %s', (_label: string, path: string) => {
+    it('should follow it and download the content', async () => {
+      const hash = `redirect${path.replace(/\W/g, '')}`
+      await saveContentFileToDisk(
+        { metrics, storage: components.storage },
+        (await components.getBaseUrl()) + path,
+        resolve(contentFolder, hash),
+        hash,
+        false
+      )
+
+      const stored = await streamToBuffer(await (await components.storage.retrieve(hash))!.asStream())
+      expect(stored).toEqual(content)
+    })
+  })
+
+  describe('when the server answers with 300 Multiple Choices', () => {
+    it('should reject rather than storing the choices document as the content', async () => {
+      await expect(
+        saveContentFileToDisk(
+          { metrics, storage: components.storage },
+          (await components.getBaseUrl()) + '/multiple-choices',
+          resolve(contentFolder, 'multiple-choices'),
+          'multiple-choices',
+          false
+        )
+      ).rejects.toThrow('status: 300')
+    })
+  })
+
+  describe('when a redirect status arrives without a Location header', () => {
+    it('should reject instead of treating the empty body as the content', async () => {
+      await expect(
+        saveContentFileToDisk(
+          { metrics, storage: components.storage },
+          (await components.getBaseUrl()) + '/redirect-without-location',
+          resolve(contentFolder, 'no-location'),
+          'no-location',
+          false
+        )
+      ).rejects.toThrow('status: 302')
+    })
   })
 
   describe('when a relative redirect is followed', () => {

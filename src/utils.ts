@@ -273,6 +273,11 @@ async function deleteFileIfPresent(filename: string): Promise<void> {
 
 // Stop following redirects after this many hops.
 const MAX_REDIRECTS = 10
+// Redirects worth following for a content download. 303/307/308 are as common as 301/302 in front of
+// object storage (HTTP->HTTPS upgrades, bucket relocations); treating them as hard errors made every
+// download from such a peer burn its whole retry ladder. All of these are followed with GET, which is
+// what 303 mandates and what 307/308 preserve, since this client only ever issues GET.
+const REDIRECT_STATUS_CODES = new Set([301, 302, 303, 307, 308])
 // Abort a download after this many milliseconds of socket inactivity. Healthy downloads keep the
 // socket busy, so this only trips on stalled connections (e.g. a server that stops sending bytes).
 const DOWNLOAD_INACTIVITY_TIMEOUT_MS = 30_000
@@ -532,13 +537,16 @@ function downloadFile(
       }
 
       const request = httpModule.get(url.toString(), requestOptions, (response) => {
-        if ((response.statusCode === 302 || response.statusCode === 301) && response.headers.location) {
+        if (response.statusCode && REDIRECT_STATUS_CODES.has(response.statusCode) && response.headers.location) {
           // drain the redirect response so its socket is freed (and its inactivity timer cleared)
           response.resume()
           // handle redirection
           requestWithRedirects(response.headers.location!, url.toString(), redirects + 1)
           return
-        } else if (!response.statusCode || response.statusCode > 300) {
+          // Only a 2xx carries the content. The previous `> 300` test also accepted 300 Multiple
+          // Choices, writing its body to disk as though it were the file, and accepted a redirect
+          // status that arrived without a Location header.
+        } else if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
           response.resume()
           settleWithError(new Error('Invalid response from ' + url + ' status: ' + response.statusCode))
           return
