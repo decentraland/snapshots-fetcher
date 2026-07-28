@@ -103,6 +103,16 @@ export async function createSynchronizer(
   let regularSyncRun: Promise<void> | undefined
   // Memoised shutdown, so concurrent stop() callers share one and none of them returns early.
   let shutdown: Promise<void> | undefined
+  // The sync job that is enqueued but has not started yet, if any. At most one is ever waiting: see
+  // the coalescing note in syncWithServers.
+  let queuedSyncJob: ReturnType<typeof createSyncJob> | undefined
+
+  /** Clears the pending slot, but only if `job` is still the one holding it. */
+  function releaseQueuedSyncJob(job: ReturnType<typeof createSyncJob>) {
+    if (queuedSyncJob === job) {
+      queuedSyncJob = undefined
+    }
+  }
 
   function pointerChangesStartingTimestamp(server: string): number {
     const lastTimestamp = lastEntityTimestampFromSnapshotsByServer.get(server)
@@ -563,7 +573,19 @@ export async function createSynchronizer(
 
       reportServerStateMetric()
 
+      // A job that is queued but not yet running is pure redundancy against a second one: when it
+      // starts it re-reads the live bootstrapping/syncing sets, which steps 0-2 above have already
+      // updated for this caller. Handing back the waiting job keeps a periodic DAO refresh from
+      // stacking one full bootstrap pass per call behind a job that is slow or repeatedly failing —
+      // the runner is serial, so that queue only ever drained as N redundant passes.
+      if (queuedSyncJob) {
+        return queuedSyncJob
+      }
+
       const newSyncJob = createSyncJob()
+      // Claimed before the only await below, so a concurrent caller coalesces onto this job rather
+      // than racing to create a second one in that window.
+      queuedSyncJob = newSyncJob
       if (!firstSyncJobStarted) {
         firstSyncJobStarted = true
         await newSyncJob.onInitialBootstrapFinished(async () => {
@@ -574,11 +596,20 @@ export async function createSynchronizer(
           }, 3_600_000)
         })
       }
-      syncJobsRunner.enqueue(newSyncJob)
+      syncJobsRunner.enqueue({
+        async start() {
+          // No longer waiting, so the next caller queues a fresh job instead of being handed this
+          // one, whose view of the desired servers is already fixed.
+          releaseQueuedSyncJob(newSyncJob)
+          await newSyncJob.start()
+        },
+        stop: () => newSyncJob.stop()
+      })
       // The await above is the only suspension point in this method, so stop() can land in the middle
       // of the very first call. The runner silently drops jobs enqueued after it stopped, which would
       // leave this job's onSyncFinished() pending forever, so settle it here instead.
       if (isStopped) {
+        releaseQueuedSyncJob(newSyncJob)
         await newSyncJob.stop()
       }
       return newSyncJob
@@ -590,6 +621,9 @@ export async function createSynchronizer(
         shutdown = (async () => {
           isStopped = true
 
+          // The runner drops whatever is still queued, so the pending slot must not keep handing that
+          // now-dead job to anyone.
+          queuedSyncJob = undefined
           await syncJobsRunner.stop()
           syncingServers.clear()
           if (deployPointerChangesAfterBootstrapJobManager.stop) {
