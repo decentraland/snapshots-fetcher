@@ -7,12 +7,17 @@ import {
   fetchJson,
   isUsableTimestamp,
   isValidContentHash,
+  truncateForLog,
   saveContentFileToDisk as saveContentFile
 } from './utils'
 
 // Cap how many invalid snapshot entries we log per response, so a server returning many of them
 // (the body can be up to MAX_JSON_RESPONSE_SIZE_IN_BYTES) can't flood the logs.
 const MAX_INVALID_SNAPSHOT_LOGS = 100
+
+// The same bound for deltas we refuse from /pointer-changes. A server can put one on every page, and
+// MAX_PAGES_PER_PAGINATED_CALL is 10,000.
+const MAX_REJECTED_DELTA_LOGS = 100
 
 // Every request this module makes must be bounded. The fetch component applies no default timeout,
 // so without an explicit one a server that accepts the connection and then stops responding leaves
@@ -103,7 +108,7 @@ export async function getSnapshots(
     if (invalidSnapshots <= MAX_INVALID_SNAPSHOT_LOGS) {
       logger.error('Ignoring invalid snapshot metadata received from server', {
         server,
-        snapshot: JSON.stringify(snapshot)
+        snapshot: truncateForLog(JSON.stringify(snapshot))
       })
     }
   }
@@ -226,6 +231,24 @@ export async function* fetchPointerChanges(
   const url = new URL(
     `${server}/pointer-changes?sortingOrder=ASC&sortingField=local_timestamp&from=${encodeURIComponent(fromTimestamp)}`
   ).toString()
+  // Bounded like the snapshot-file reader's, and for the same reason: a server can put a rejectable delta
+  // on every page, and the page cap is 10,000. Truncating each entry is not enough on its own when the
+  // number of entries is also attacker-chosen.
+  let rejectedDeltasLogged = 0
+  function reportRejectedDelta(message: string, buildExtra: () => Record<string, string>) {
+    if (rejectedDeltasLogged >= MAX_REJECTED_DELTA_LOGS) {
+      return
+    }
+    rejectedDeltasLogged++
+    logger.error(message, buildExtra())
+    if (rejectedDeltasLogged === MAX_REJECTED_DELTA_LOGS) {
+      logger.error('Too many rejected deltas from /pointer-changes, suppressing further ones', {
+        server,
+        suppressedAfter: String(MAX_REJECTED_DELTA_LOGS)
+      })
+    }
+  }
+
   for await (const deployment of fetchJsonPaginated(
     components,
     url,
@@ -233,10 +256,10 @@ export async function* fetchPointerChanges(
     'dcl_catalysts_pointer_changes_response_time_seconds'
   )) {
     if (!PointerChangesSyncDeployment.validate(deployment)) {
-      logger.error('ERROR: Invalid entity deployment from /pointer-changes', {
-        deployment: JSON.stringify(deployment),
+      reportRejectedDelta('ERROR: Invalid entity deployment from /pointer-changes', () => ({
+        deployment: truncateForLog(JSON.stringify(deployment)),
         error: JSON.stringify(PointerChangesSyncDeployment.validate.errors)
-      })
+      }))
       continue
     }
     // The schema is not enough. It rejects Infinity and negatives but bounds nothing above, so a
@@ -249,11 +272,11 @@ export async function* fetchPointerChanges(
     // stream on it would let a single permanently-broken record stall every later deployment from that
     // server. A snapshot covers a whole range, so there dropping it silently is the worse trade.
     if (!isUsableTimestamp(deployment.localTimestamp) || !isUsableTimestamp(deployment.entityTimestamp)) {
-      logger.error('ERROR: Implausible timestamp in entity deployment from /pointer-changes', {
-        deployment: JSON.stringify(deployment),
+      reportRejectedDelta('ERROR: Implausible timestamp in entity deployment from /pointer-changes', () => ({
+        deployment: truncateForLog(JSON.stringify(deployment)),
         localTimestamp: String(deployment.localTimestamp),
         entityTimestamp: String(deployment.entityTimestamp)
-      })
+      }))
       continue
     }
     yield deployment

@@ -3,7 +3,7 @@ import { createInterface } from 'readline'
 import { Transform } from 'stream'
 import { SnapshotSyncDeployment, SyncDeployment } from '@dcl/schemas'
 import { ILoggerComponent } from '@well-known-components/interfaces'
-import { isUsableTimestamp } from './utils'
+import { isUsableTimestamp, truncateForLog } from './utils'
 
 const CURLY_OPEN = 0x7b // {
 const CURLY_CLOSE = 0x7d // }
@@ -95,22 +95,6 @@ export async function* processDeploymentsInFile(
 // flood the logs.
 const MAX_LINE_ERRORS_TO_LOG = 100
 
-// How much of an offending line is worth keeping in a log entry.
-const LINE_PREVIEW_LENGTH = 512
-
-/**
- * A log-safe rendering of remote text.
- *
- * The line cap is MAX_SNAPSHOT_LINE_LENGTH_IN_BYTES and up to MAX_LINE_ERRORS_TO_LOG lines are reported,
- * so logging offending lines whole let one corrupt snapshot push ~1 GiB of attacker-chosen text into the
- * log pipeline. The prefix is what identifies the problem; the length is what tells you it was truncated.
- */
-function preview(text: string): string {
-  return text.length <= LINE_PREVIEW_LENGTH
-    ? text
-    : `${text.slice(0, LINE_PREVIEW_LENGTH)}… (truncated, original length ${text.length})`
-}
-
 /**
  * Reads line by line from a stream.
  * Parses every line and yields RemoteEntityDeployment.
@@ -158,7 +142,7 @@ export async function* processDeploymentsInStream(
         // A truncated final line, or a snapshot framed differently than we expect, used to be dropped
         // here without a trace — indistinguishable from a genuinely empty snapshot.
         if (!isSnapshotFraming(theLine)) {
-          reportUnusableLine('ERROR: Unrecognized line in snapshot file', () => ({ line: preview(theLine) }))
+          reportUnusableLine('ERROR: Unrecognized line in snapshot file', () => ({ line: truncateForLog(theLine) }))
         }
         continue
       }
@@ -169,7 +153,7 @@ export async function* processDeploymentsInStream(
       } catch (error: any) {
         // A single malformed line should not abort processing of the whole snapshot file.
         reportUnusableLine('ERROR: Could not parse line in snapshot file', () => ({
-          line: preview(theLine),
+          line: truncateForLog(theLine),
           error: error?.message ?? JSON.stringify(error)
         }))
         continue
@@ -184,7 +168,7 @@ export async function* processDeploymentsInStream(
       // `else if (PointerChangesSyncDeployment.validate(...))` could therefore never be reached.
       if (!SnapshotSyncDeployment.validate(parsedLine)) {
         reportUnusableLine('ERROR: Invalid entity deployment in snapshot file', () => ({
-          deployment: preview(JSON.stringify(parsedLine)),
+          deployment: truncateForLog(JSON.stringify(parsedLine)),
           errors: JSON.stringify(SnapshotSyncDeployment.validate.errors)
         }))
         continue
@@ -200,7 +184,7 @@ export async function* processDeploymentsInStream(
         (lineLocalTimestamp !== undefined && !isUsableTimestamp(lineLocalTimestamp))
       ) {
         reportUnusableLine('ERROR: Implausible timestamp in entity deployment in snapshot file', () => ({
-          deployment: preview(JSON.stringify(parsedLine)),
+          deployment: truncateForLog(JSON.stringify(parsedLine)),
           entityTimestamp: String(lineEntityTimestamp),
           localTimestamp: String(lineLocalTimestamp)
         }))

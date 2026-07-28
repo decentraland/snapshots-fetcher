@@ -161,6 +161,24 @@ export async function sleepUnlessStopped(time: number, shouldStop?: () => boolea
   }
 }
 
+// How much of an untrusted string is worth keeping in a log entry.
+const LOG_PREVIEW_LENGTH = 512
+
+/**
+ * A log-safe rendering of remote text.
+ *
+ * Every string a content server sends is a candidate log payload, and several are logged once per
+ * offending item: a snapshot line can be 10 MiB, a snapshot metadata entry or a pointer-change delta can
+ * be most of a 50 MiB response body. Logging them whole lets one bad response push gigabytes of
+ * attacker-chosen text into the log pipeline. The prefix is what identifies the problem; the length is
+ * what tells you it was truncated.
+ */
+export function truncateForLog(text: string): string {
+  return text.length <= LOG_PREVIEW_LENGTH
+    ? text
+    : `${text.slice(0, LOG_PREVIEW_LENGTH)}… (truncated, original length ${text.length})`
+}
+
 // Content hashes are IPFS CIDs (base58/base32), hence alphanumeric. Validating against this charset
 // before using a hash in a path or storage key prevents path traversal from untrusted hashes.
 const VALID_CONTENT_HASH = /^[a-zA-Z0-9]+$/

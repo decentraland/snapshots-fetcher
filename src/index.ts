@@ -3,7 +3,7 @@ import { ILoggerComponent } from '@well-known-components/interfaces'
 import PQueue from 'p-queue'
 import { downloadFileWithRetries } from './downloader'
 import { ContentMapping, EntityHash, Server, SnapshotsFetcherComponents } from './types'
-import { isValidContentHash, streamToBuffer } from './utils'
+import { isValidContentHash, streamToBuffer, truncateForLog } from './utils'
 
 // Guard the runtime before anything else in the package is evaluated. The name is inlined rather than
 // read from package.json so this stays a plain import-time check with no filesystem access.
@@ -266,7 +266,7 @@ async function downloadProfileAvatars(
   // serialising the whole document put that in an info-level log line for every affected profile.
   logger.info('Downloading avatar snapshots missing from the entity content', {
     entityId,
-    snapshots: snapshots.join(',')
+    snapshots: truncateForLog(snapshots.join(','))
   })
   const downloadQueue = new PQueue({ concurrency })
   await Promise.all(
