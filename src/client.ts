@@ -94,11 +94,24 @@ function isValidSnapshotMetadata(snapshot: any): snapshot is SnapshotMetadata {
   // Validating a field we never use can only cause harm here.
 }
 
+/**
+ * A server's snapshot list, together with whether we had to discard anything from it.
+ *
+ * The count matters as much as the list. Each snapshot stands for a whole time range, so a discarded
+ * entry is a range nothing else covers: treating the surviving subset as the server's complete history
+ * would advance it past those entities and never revisit them. Callers that record sync progress must
+ * check this rather than only reading `snapshots`.
+ */
+export type SnapshotsFromServer = {
+  snapshots: SnapshotMetadata[]
+  discardedEntries: number
+}
+
 export async function getSnapshots(
   components: SnapshotsFetcherComponents,
   server: string,
   retries: number
-): Promise<SnapshotMetadata[]> {
+): Promise<SnapshotsFromServer> {
   const logger = components.logs.getLogger('getSnapshots')
   const incrementalSnapshotsUrl = new URL(`${server}/snapshots`).toString()
   const response = await components.downloadQueue.scheduleJobWithRetries(
@@ -132,8 +145,11 @@ export async function getSnapshots(
     })
   }
 
-  // newest first
-  return validSnapshots.sort((s1, s2) => s2.timeRange.endTimestamp - s1.timeRange.endTimestamp)
+  return {
+    // newest first
+    snapshots: validSnapshots.sort((s1, s2) => s2.timeRange.endTimestamp - s1.timeRange.endTimestamp),
+    discardedEntries: invalidSnapshots
+  }
 }
 
 export async function* fetchJsonPaginated<T>(
@@ -247,14 +263,31 @@ export async function* fetchPointerChanges(
     ($) => $.deltas,
     'dcl_catalysts_pointer_changes_response_time_seconds'
   )) {
-    if (PointerChangesSyncDeployment.validate(deployment)) {
-      yield deployment
-    } else {
+    if (!PointerChangesSyncDeployment.validate(deployment)) {
       logger.error('ERROR: Invalid entity deployment from /pointer-changes', {
         deployment: JSON.stringify(deployment),
         error: JSON.stringify(PointerChangesSyncDeployment.validate.errors)
       })
+      continue
     }
+    // The schema is not enough. It rejects Infinity and negatives but bounds nothing above, so a
+    // far-future, 1e308, above-2^53 or fractional localTimestamp is schema-valid — and localTimestamp is
+    // exactly what markAsDeployed feeds to increaseLastTimestamp. One such delta permanently pins the
+    // server's high-water mark at a point no real deployment can exceed, and it then polls from an
+    // impossible `from=` forever. Same hazard the snapshot time ranges are checked for.
+    //
+    // Skipped rather than fatal, unlike a malformed snapshot: a delta is one entity, and failing the
+    // stream on it would let a single permanently-broken record stall every later deployment from that
+    // server. A snapshot covers a whole range, so there dropping it silently is the worse trade.
+    if (!isUsableTimestamp(deployment.localTimestamp) || !isUsableTimestamp(deployment.entityTimestamp)) {
+      logger.error('ERROR: Implausible timestamp in entity deployment from /pointer-changes', {
+        deployment: JSON.stringify(deployment),
+        localTimestamp: String(deployment.localTimestamp),
+        entityTimestamp: String(deployment.entityTimestamp)
+      })
+      continue
+    }
+    yield deployment
   }
 }
 
