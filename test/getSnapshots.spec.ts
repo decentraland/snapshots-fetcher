@@ -76,6 +76,35 @@ test('getSnapshots when the response is not an array', ({ components }) => {
   })
 })
 
+test('getSnapshots when a snapshot reports a time range that is not usable arithmetic', ({ components }) => {
+  it('prepares the endpoints', () => {
+    // Served as raw text, because JSON.stringify would turn Infinity into null and hide the case. A JSON
+    // body cannot carry NaN at all (`{"a":NaN}` is a syntax error), but the number grammar has no range
+    // limit, so a large exponent parses straight to Infinity.
+    components.router.get('/snapshots', async () => ({
+      body: `[
+        {"hash":"${validSnapshot.hash}","timeRange":{"initTimestamp":0,"endTimestamp":100},"replacedSnapshotHashes":[]},
+        {"hash":"ba${'b'.repeat(57)}","timeRange":{"initTimestamp":0,"endTimestamp":1e999}},
+        {"hash":"ba${'c'.repeat(57)}","timeRange":{"initTimestamp":-5,"endTimestamp":-1}},
+        {"hash":"ba${'d'.repeat(57)}","timeRange":{"initTimestamp":500,"endTimestamp":100}}
+      ]`,
+      headers: { 'content-type': 'application/json' }
+    }))
+  })
+
+  it('should keep only the finite, non-negative, non-inverted range', async () => {
+    const snapshots = await getSnapshots(components, await components.getBaseUrl(), 10)
+
+    expect(snapshots).toEqual([validSnapshot])
+  })
+
+  it('should never yield a non-finite endTimestamp, which would poison the high-water mark', async () => {
+    const snapshots = await getSnapshots(components, await components.getBaseUrl(), 10)
+
+    expect(snapshots.every((snapshot) => Number.isFinite(snapshot.timeRange.endTimestamp))).toBe(true)
+  })
+})
+
 test('getSnapshots when the response contains many invalid entries', ({ components }) => {
   const numberOfInvalidEntries = 150
 

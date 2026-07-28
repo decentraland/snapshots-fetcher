@@ -29,16 +29,34 @@ const MAX_PAGES_PER_PAGINATED_CALL = 10_000
 // Conventional URL length ceiling. Bounds what a server can make us retain per page.
 const MAX_PAGINATION_LINK_LENGTH = 2048
 
+/**
+ * A remote timestamp we are willing to do arithmetic with.
+ *
+ * `typeof x === 'number'` is not enough. A JSON body cannot carry NaN — `{"a":NaN}` is a syntax error —
+ * but it CAN carry Infinity, because the JSON number grammar has no range limit and a large exponent
+ * (`1e999`) parses to it. An infinite endTimestamp becomes the server's high-water mark, which
+ * `Math.max` can then never advance past, so it polls `from=Infinity` for the rest of the process's
+ * life. Negative values are nonsense for an epoch timestamp.
+ *
+ * Deliberately not requiring an integer: fractional milliseconds would be odd but harmless, and
+ * rejecting an entry drops the whole snapshot — which silently stops us syncing from that server.
+ */
+function isUsableTimestamp(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+}
+
 // Snapshot metadata comes from untrusted servers; keep only entries with the shape we rely on
-// (valid content hash + numeric time range) so a malformed response can't break downstream logic.
+// (valid content hash + usable time range) so a malformed response can't break downstream logic.
 function isValidSnapshotMetadata(snapshot: any): snapshot is SnapshotMetadata {
   return (
     !!snapshot &&
     typeof snapshot.hash === 'string' &&
     isValidContentHash(snapshot.hash) &&
     !!snapshot.timeRange &&
-    typeof snapshot.timeRange.initTimestamp === 'number' &&
-    typeof snapshot.timeRange.endTimestamp === 'number' &&
+    isUsableTimestamp(snapshot.timeRange.initTimestamp) &&
+    isUsableTimestamp(snapshot.timeRange.endTimestamp) &&
+    // An inverted range is malformed, and it is handed straight to the deployer's warm-up.
+    snapshot.timeRange.initTimestamp <= snapshot.timeRange.endTimestamp &&
     (snapshot.replacedSnapshotHashes === undefined ||
       (Array.isArray(snapshot.replacedSnapshotHashes) &&
         snapshot.replacedSnapshotHashes.every((hash: any) => isValidContentHash(hash))))
