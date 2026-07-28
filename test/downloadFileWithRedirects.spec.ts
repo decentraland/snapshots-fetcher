@@ -33,6 +33,28 @@ test('downloadFile redirect handling', ({ components }) => {
     // 300 carries a list of choices, not the content, and a redirect without a Location is unusable.
     components.router.get('/multiple-choices', async () => ({ status: 300, body: 'not the content' }))
     components.router.get('/redirect-without-location', async () => ({ status: 302 }))
+
+    // A redirect that also carries a sizeable body, which is thrown away rather than read.
+    components.router.get('/redirect-with-body', async () => ({
+      status: 302,
+      headers: { location: '/target' },
+      body: 'x'.repeat(512 * 1024)
+    }))
+  })
+
+  describe('when a redirect response also carries a body', () => {
+    it('should follow it and store the target content, not the discarded redirect body', async () => {
+      await saveContentFileToDisk(
+        { metrics, storage: components.storage },
+        (await components.getBaseUrl()) + '/redirect-with-body',
+        resolve(contentFolder, 'redirect-with-body'),
+        'redirect-with-body',
+        false
+      )
+
+      const stored = await streamToBuffer(await (await components.storage.retrieve('redirect-with-body'))!.asStream())
+      expect(stored).toEqual(content)
+    })
   })
 
   describe.each([

@@ -538,8 +538,13 @@ function downloadFile(
 
       const request = httpModule.get(url.toString(), requestOptions, (response) => {
         if (response.statusCode && REDIRECT_STATUS_CODES.has(response.statusCode) && response.headers.location) {
-          // drain the redirect response so its socket is freed (and its inactivity timer cleared)
-          response.resume()
+          // Destroy rather than drain. Only the Location header matters here, and resume() would keep
+          // reading a body we already decided to throw away — a server can attach an arbitrarily large or
+          // slow one to every hop, so up to MAX_REDIRECTS of them would stream in parallel with the hops
+          // that follow. Destroying frees the socket immediately and bounds a redirect to its headers.
+          // Verified not to make the abandoned request emit 'error': that would otherwise reach
+          // settleWithError and fail the download even though the next hop is proceeding.
+          response.destroy()
           // handle redirection
           requestWithRedirects(response.headers.location!, url.toString(), redirects + 1)
           return
