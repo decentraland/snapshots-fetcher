@@ -234,4 +234,50 @@ describe('processDeploymentsInStream', () => {
       expect(thrownError?.message).toEqual('Snapshot line exceeds the maximum allowed length of 10485760 bytes')
     })
   })
+  describe.each([
+    ['a far-future instant', Date.now() + 400 * 24 * 60 * 60 * 1000],
+    ['1e308', 1e308],
+    ['an unsafe integer', 9007199254740993],
+    ['a fractional value', 100.5]
+  ])('when a line carries %s as its entityTimestamp', (_label: string, entityTimestamp: number) => {
+    let report: SnapshotStreamReport
+    let deployments: SyncDeployment[]
+
+    beforeEach(async () => {
+      report = { unusableLines: 0 }
+      // All four pass SnapshotSyncDeployment.validate: the schema rejects Infinity and negatives but
+      // bounds nothing above. The entity would otherwise be handed to the deployer carrying this value.
+      const lines = [JSON.stringify({ ...validSnapshotLine, entityTimestamp }), JSON.stringify(validSnapshotLine)].join(
+        '\n'
+      )
+      deployments = await collect(Readable.from([Buffer.from(lines)]), logger, report)
+    })
+
+    it('should not yield it', () => {
+      expect(deployments).toHaveLength(1)
+    })
+
+    it('should count it as unusable, so the snapshot stays unprocessed and is retried', () => {
+      expect(report.unusableLines).toEqual(1)
+    })
+  })
+
+  describe('when an invalid line is very large', () => {
+    let loggedLine: string
+
+    beforeEach(async () => {
+      const hugeLine = `{"entityType":"profile","junk":"${'a'.repeat(200_000)}"}`
+      await collect(Readable.from([Buffer.from(hugeLine)]), logger)
+      const call = (logger.error as jest.Mock).mock.calls[0]
+      loggedLine = String(call[1].deployment ?? call[1].line ?? '')
+    })
+
+    it('should log a truncated preview rather than the whole attacker-controlled payload', () => {
+      expect(loggedLine.length).toBeLessThan(1000)
+    })
+
+    it('should record the original length so the truncation is visible', () => {
+      expect(loggedLine).toContain('original length')
+    })
+  })
 })
