@@ -111,7 +111,10 @@ test('downloadEntityAndContentFiles when the profile metadata has a malformed sh
   describe.each([
     ['an object', { file: 'body.png' }],
     ['a string', 'body.png'],
-    ['a number', 42]
+    ['a number', 42],
+    // Rejected too: @dcl/schemas declares content as a required array, so a present-but-null field is
+    // not something a conforming server sends, and reading it as "no content" is a guess.
+    ['null', null]
   ])('and the content property is %s rather than an array', (_label: string, content: unknown) => {
     let entityId: string
 
@@ -134,14 +137,12 @@ test('downloadEntityAndContentFiles when the profile metadata has a malformed sh
     })
   })
 
-  describe.each([
-    ['undefined', undefined],
-    ['null', null]
-  ])('and the content property is %s', (_label: string, content: unknown) => {
+  describe('and the content property is absent altogether', () => {
     let entityId: string
 
     beforeEach(async () => {
-      entityId = await storeEntity(components.storage, { type: 'profile', metadata: { avatars: [] }, content })
+      // Absence is the one case that can be read as "no content files" without guessing.
+      entityId = await storeEntity(components.storage, { type: 'profile', metadata: { avatars: [] } })
     })
 
     it('should treat it as an entity with no content files', async () => {

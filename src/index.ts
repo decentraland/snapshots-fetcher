@@ -362,13 +362,18 @@ export async function downloadEntityAndContentFiles(
 
   // Checked before any download work, because the alternative is worse than a TypeError: every consumer
   // of content[] guards with Array.isArray and falls back to "no content", so an entity declaring an
-  // object or a string here would be reported as fully downloaded while its dependencies were never
-  // fetched — and then deployed as complete. null and undefined are genuinely "no content declared";
-  // anything else is a manifest we cannot read and must not silently treat as empty.
+  // object, a string or an explicit null here would be reported as fully downloaded while its
+  // dependencies were never fetched — and then deployed as complete.
+  //
+  // null is rejected along with the rest: @dcl/schemas declares content as a required array on Entity, so
+  // a present-but-null field is not something a conforming server sends. Only its absence means "no
+  // content declared", and absence is the one case we can read as empty without guessing.
   const declaredContent: unknown = entityMetadata.content
-  if (declaredContent !== undefined && declaredContent !== null && !Array.isArray(declaredContent)) {
+  if (declaredContent !== undefined && !Array.isArray(declaredContent)) {
     throw new Error(
-      `Entity ${entityId} declares a content field that is not an array: ${typeof declaredContent}. Refusing to treat it as having no content files.`
+      `Entity ${entityId} declares a content field that is not an array: ${
+        declaredContent === null ? 'null' : typeof declaredContent
+      }. Refusing to treat it as having no content files.`
     )
   }
 
