@@ -84,8 +84,16 @@ Remote servers are treated as untrusted, which constrains where requests may go:
   whose resolved address changes public↔non-public mid-download is refused as DNS rebinding. The host
   you originally asked for is exempt, so a private catalyst — or loopback in local development — keeps
   working.
-- JSON endpoints (`/snapshots`, `/pointer-changes`) follow redirects only **within the same origin**,
-  and paginate only within the same origin.
+- JSON endpoints (`/snapshots`, `/pointer-changes`) **do not follow redirects at all** — a redirect
+  response is refused. An origin check cannot help here: a URL origin is a hostname, not an address, so
+  a host can answer the first request from a public address and rebind the name before the next one. The
+  download path pins the resolved address instead, but the fetch component exposes no hook to do the
+  same, so refusing redirects is the only complete answer on this path.
+- Pagination follows a `next` link only within the **same origin and the same path** as the request that
+  started the call, so a server can move the query string but cannot aim the next request at a different
+  endpoint. Note this bounds *what* is requested, not *where* it resolves: DNS rebinding on the first
+  request of a poll is not defended against on this path, and closing it needs a fetch component that
+  can pin resolution.
 
 ## Shutdown
 
