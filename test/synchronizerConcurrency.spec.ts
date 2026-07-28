@@ -55,7 +55,20 @@ test('createSynchronizer snapshot deployment concurrency', ({ components }) => {
     components.router.get('/pointer-changes', async () => ({ body: { deltas: [], pagination: {} } }))
   })
 
-  async function bootstrapWith(concurrency: SynchronizerOptions['concurrency']) {
+  // Polls until the condition holds instead of assuming a fixed delay was long enough. The previous
+  // fixed 60ms sleep raced the event loop: when no download had started yet the assertion read a peak
+  // of 0, which it did on most runs.
+  async function waitUntil(condition: () => boolean, description: string, timeoutMs = 10_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs
+    while (!condition()) {
+      if (Date.now() > deadline) {
+        throw new Error(`Timed out after ${timeoutMs}ms waiting until ${description}`)
+      }
+      await new Promise((ok) => setTimeout(ok, 5))
+    }
+  }
+
+  async function bootstrapWith(concurrency: SynchronizerOptions['concurrency'], expectedPeak: number) {
     inFlight = 0
     maxInFlight = 0
     releaseDownloads = future<void>()
@@ -85,10 +98,23 @@ test('createSynchronizer snapshot deployment concurrency', ({ components }) => {
     const syncJob = await synchronizer.syncWithServers(new Set([await components.getBaseUrl()]))
     void syncJob.onInitialBootstrapFinished(async () => bootstrapFinished.resolve())
 
-    // Give every queued snapshot the chance to start before letting them finish.
-    await new Promise((ok) => setTimeout(ok, 60))
-    const observedPeak = maxInFlight
-    releaseDownloads.resolve()
+    let observedPeak: number
+    try {
+      // The downloads are held open, so once this many are in flight the count cannot drop again —
+      // waiting for it is deterministic, unlike sleeping and hoping they started.
+      await waitUntil(
+        () => inFlight >= expectedPeak,
+        `${expectedPeak} snapshot download(s) are in flight (saw ${maxInFlight})`
+      )
+      // Brief settle so a queue that permits MORE than the bound gets the chance to reveal it. This
+      // only guards the upper bound; the lower bound is already established above.
+      await new Promise((ok) => setTimeout(ok, 50))
+      observedPeak = maxInFlight
+    } finally {
+      // Always release, or the held request handlers keep the suite hanging until the jest timeout
+      // instead of reporting why the wait above failed.
+      releaseDownloads.resolve()
+    }
     await bootstrapFinished
     await synchronizer.stop!()
 
@@ -101,7 +127,7 @@ test('createSynchronizer snapshot deployment concurrency', ({ components }) => {
     let observedPeak: number
 
     beforeEach(async () => {
-      observedPeak = await bootstrapWith({ snapshotDeployments: 1 })
+      observedPeak = await bootstrapWith({ snapshotDeployments: 1 }, 1)
     })
 
     it('should download the snapshots one at a time', () => {
@@ -113,7 +139,7 @@ test('createSynchronizer snapshot deployment concurrency', ({ components }) => {
     let observedPeak: number
 
     beforeEach(async () => {
-      observedPeak = await bootstrapWith({ snapshotDeployments: 3 })
+      observedPeak = await bootstrapWith({ snapshotDeployments: 3 }, snapshotHashes.length)
     })
 
     it('should download them in parallel up to the configured bound', () => {
