@@ -391,6 +391,24 @@ export async function createSynchronizer(
     // Servers whose pointer-changes bootstrap streamed through without error. They are promoted to the
     // syncing state only after the deployer has drained, not as each stream ends.
     const bootstrappedFromPointerChanges = new Set<string>()
+    // Where each server WOULD resume from, held back until the drain confirms it.
+    //
+    // Advancing the canonical high-water mark as each entity reports deployed commits progress the drain
+    // has not confirmed. If onIdle() then rejects because some other queued deployment failed, the
+    // server correctly stays in bootstrap — but a later successful deployment has already pushed its
+    // mark past the failed one, so the retry resumes beyond an entity that never deployed. Only the
+    // 20-minute bootstrap shift stood between that and a silent gap.
+    const tentativeTimestamps = new Map<string, number>()
+    function collectTentativeTimestamp(contentServer: string, ...newTimestamps: number[]) {
+      if (newTimestamps.length === 0) {
+        return
+      }
+      const current = tentativeTimestamps.get(contentServer)
+      tentativeTimestamps.set(
+        contentServer,
+        current === undefined ? Math.max(...newTimestamps) : Math.max(current, ...newTimestamps)
+      )
+    }
     let minStartingPoint: undefined | number
     for (const bootstrappingServersFromPointerChange of bootstrappingServersFromPointerChanges) {
       const fromTimestamp = pointerChangesStartingTimestamp(bootstrappingServersFromPointerChange)
@@ -403,7 +421,7 @@ export async function createSynchronizer(
             { ...options, fromTimestamp, pointerChangesWaitTime: 0 },
             bootstrappingServersFromPointerChange,
             () => isStopped,
-            increaseLastTimestamp
+            collectTentativeTimestamp
           )
           // Both leaving pointer-changes bootstrap and entering the syncing state are deferred until
           // the deployer has drained, below. Removing it here would strand the server in neither state
@@ -436,6 +454,13 @@ export async function createSynchronizer(
       // retry picks them up again rather than losing them.
       await components.deployer.onIdle()
       for (const server of bootstrappedFromPointerChanges) {
+        // Committed only here: the drain succeeded, so everything this pass scheduled for this server
+        // really did deploy. A rejection above skips this entirely and the pass is retried from the
+        // timestamp it started at.
+        const tentative = tentativeTimestamps.get(server)
+        if (tentative !== undefined) {
+          increaseLastTimestamp(server, tentative)
+        }
         bootstrappingServersFromPointerChanges.delete(server)
         if (!canAdvanceServer(server)) {
           logger.info('Not moving a server to the syncing state: it is no longer desired.', { server })
@@ -644,6 +669,13 @@ export async function createSynchronizer(
 
       // 2. c) Remove from syncing servers that should stop syncing
       removeServersNotToSyncFromStateSet(serversToSync, syncingServers)
+
+      // Signal the dropped servers' pointer-changes jobs now rather than waiting for the next bootstrap
+      // pass to reconcile. That pass is serialized behind whatever is already running, so a server the
+      // caller just removed would otherwise keep polling and deploying for as long as that takes. Only
+      // already-syncing servers are in this set — newly desired ones start in snapshot bootstrap — so
+      // this stops the removed jobs without starting anything.
+      deployPointerChangesAfterBootstrapJobManager.setDesiredJobs(syncingServers)
 
       reportServerStateMetric()
 

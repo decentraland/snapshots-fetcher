@@ -180,3 +180,74 @@ test('synchronizer when the deployer drains without marking every entity deploye
     await synchronizer.stop!()
   })
 })
+
+test('synchronizer when a pointer-changes deployment marks a later timestamp and the drain then fails', ({
+  components
+}) => {
+  let synchronizer: SynchronizerComponent
+  let requestedFrom: string[]
+  let drainAlreadyFailed: boolean
+
+  // Well past the 20-minute bootstrap shift, so a prematurely committed mark cannot be masked by it.
+  const lateLocalTimestamp = 100 * 60_000
+
+  it('prepares the endpoints', () => {
+    requestedFrom = []
+    drainAlreadyFailed = false
+    components.router.get('/snapshots', async () => ({ body: [] }))
+    components.router.get('/pointer-changes', async (ctx: any) => {
+      requestedFrom.push(new URL(ctx.url.toString()).searchParams.get('from') ?? '')
+      // Only the first poll carries the deployment, so the retry cannot re-advance the mark by itself.
+      if (requestedFrom.length > 1) {
+        return { body: { deltas: [], pagination: {} } }
+      }
+      return {
+        body: {
+          deltas: [
+            {
+              entityId: 'bafkreibivsdakhiouzuth2nr7c4d3iiolbobj32xhat3nzm5uwyi4raxwu',
+              entityType: 'profile',
+              pointers: ['0x1'],
+              entityTimestamp: 1,
+              localTimestamp: lateLocalTimestamp,
+              authChain: [{ type: 'SIGNER', payload: '0x1', signature: '' }]
+            }
+          ],
+          pagination: {}
+        }
+      }
+    })
+  })
+
+  it('retries the bootstrap after the failed drain', async () => {
+    synchronizer = await buildSynchronizer(
+      components,
+      {
+        // Reports the entity as deployed, which is what advances the high-water mark.
+        async scheduleEntityDeployment(entity: DeployableEntity) {
+          if (entity.markAsDeployed) await entity.markAsDeployed()
+        },
+        // ...and then the drain fails, because some OTHER queued deployment did not make it.
+        async onIdle() {
+          if (requestedFrom.length >= 1 && !drainAlreadyFailed) {
+            drainAlreadyFailed = true
+            throw new Error('deployer failed to drain')
+          }
+        },
+        prepareForDeploymentsIn: jest.fn()
+      },
+      50
+    )
+
+    await synchronizer.syncWithServers(new Set([await components.getBaseUrl()]))
+    await waitUntil(() => drainAlreadyFailed && requestedFrom.length >= 2, 'the bootstrap has been retried')
+  })
+
+  it('should resume the retry from the timestamp it started at, not the uncommitted one', () => {
+    expect(requestedFrom[1]).toEqual(requestedFrom[0])
+  })
+
+  afterAll(async () => {
+    await synchronizer.stop!()
+  })
+})
