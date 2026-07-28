@@ -177,6 +177,12 @@ export async function shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded
  * Same decision as shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded, but operating on an
  * already-fetched set of processed snapshot hashes. This lets a caller batch the (potentially
  * expensive) filterProcessedSnapshotsFrom lookup for many snapshots into a single storage call.
+ *
+ * @param processedSnapshots - Hashes already known to be processed. **Mutated**: when this call marks
+ *   `snapshotHash` as processed, it is added here so the set keeps describing storage. A caller reusing
+ *   one set across decisions must also re-run those that came back `true`, since a mark can make a
+ *   snapshot that replaces the marked one skippable in turn — see the fixed-point loop in
+ *   `syncFromSnapshots`.
  */
 export async function decideSnapshotDeploymentFromProcessedSet(
   components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage' | 'snapshotStorage'>,
@@ -197,6 +203,10 @@ export async function decideSnapshotDeploymentFromProcessedSet(
       return greatestEndTimestamp > genesisTimestamp && !(await components.snapshotStorage.has(snapshotHash))
     } else {
       await components.processedSnapshotStorage.markSnapshotAsProcessed(snapshotHash)
+      // Record it in the caller's set too. A batching caller reuses one set across many decisions, and
+      // a snapshot marked here is exactly what makes the snapshot that REPLACES it skippable; leaving
+      // the set stale meant the next link in a replacement chain was deployed for nothing.
+      processedSnapshots.add(snapshotHash)
     }
   }
   return false

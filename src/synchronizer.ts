@@ -226,42 +226,70 @@ export async function createSynchronizer(
     // snapshot sync — up to 14 days later.
     const serversWithFailedSnapshots = new Set<string>()
     // Each decision may still hit snapshotStorage; run them with bounded concurrency instead of a
-    // serial chain. The synchronous push/enqueue after each await can't interleave.
+    // serial chain.
     const shouldProcessChecksQueue = new PQueue({ concurrency: snapshotChecksConcurrency })
-    await Promise.all(
-      Array.from(snapshotsByHash).map(([snapshotHash, snapshots]) =>
-        shouldProcessChecksQueue.add(async () => {
-          const replacedSnapshotHashes = snapshots.map((s) => s.replacedSnapshotHashes ?? [])
-          const greatestEndTimestamp = Math.max(...snapshots.map((s) => s.timeRange.endTimestamp))
-          const shouldProcessSnapshot = await decideSnapshotDeploymentFromProcessedSet(
-            components,
-            processedSnapshots,
-            genesisTimestamp,
-            snapshotHash,
-            greatestEndTimestamp,
-            replacedSnapshotHashes
-          )
-          if (shouldProcessSnapshot) {
-            const servers = new Set(snapshots.map((s) => s.server))
-            timeRangesOfEntitiesToDeploy.push(...snapshots.map((s) => s.timeRange))
-            deploymentsProcessorsQueue
-              .add(async () => {
-                try {
-                  await deployEntitiesFromSnapshot(components, options, snapshotHash, servers, () => isStopped)
-                } catch (err: any) {
-                  // Recorded inside the job (not in a .catch on the add() promise) so the set is
-                  // guaranteed to be populated before onIdle() resolves and it gets read below.
-                  logger.error(err)
-                  for (const server of servers) {
-                    serversWithFailedSnapshots.add(server)
-                  }
-                }
-              })
-              .catch((err) => logger.error(err))
+
+    // A decision can mark a snapshot as processed, because a group it replaces already is — and that
+    // mark is exactly what makes the snapshot replacing IT skippable in turn. Every decision in one
+    // pass reads the same set, so a replacement chain (h2 replaces h1 replaces an processed h0) only
+    // collapses one link per pass and its tail gets deployed for nothing.
+    //
+    // So re-run over the candidates that still look deployable until a pass marks nothing new. Only
+    // that outcome can change: "already processed", "older than the genesis timestamp" and "present in
+    // snapshotStorage" do not depend on what else got marked, so those snapshots are decided for good
+    // the first time and drop out. Each pass therefore either marks at least one snapshot — shrinking
+    // the candidate pool, since a marked snapshot is no longer deployable — or ends the loop.
+    let candidates = Array.from(snapshotsByHash)
+    let snapshotsToDeploy: typeof candidates = []
+    for (;;) {
+      const markedBeforePass = processedSnapshots.size
+      const stillDeployable: typeof candidates = []
+      await Promise.all(
+        candidates.map(([snapshotHash, snapshots]) =>
+          shouldProcessChecksQueue.add(async () => {
+            const replacedSnapshotHashes = snapshots.map((s) => s.replacedSnapshotHashes ?? [])
+            const greatestEndTimestamp = Math.max(...snapshots.map((s) => s.timeRange.endTimestamp))
+            const shouldProcessSnapshot = await decideSnapshotDeploymentFromProcessedSet(
+              components,
+              processedSnapshots,
+              genesisTimestamp,
+              snapshotHash,
+              greatestEndTimestamp,
+              replacedSnapshotHashes
+            )
+            if (shouldProcessSnapshot) {
+              // Only collected here; the deployment is enqueued once the set has settled, so a snapshot
+              // a later pass turns out to have marked is never queued at all.
+              stillDeployable.push([snapshotHash, snapshots])
+            }
+          })
+        )
+      )
+      if (processedSnapshots.size === markedBeforePass) {
+        snapshotsToDeploy = stillDeployable
+        break
+      }
+      candidates = stillDeployable
+    }
+
+    for (const [snapshotHash, snapshots] of snapshotsToDeploy) {
+      const servers = new Set(snapshots.map((s) => s.server))
+      timeRangesOfEntitiesToDeploy.push(...snapshots.map((s) => s.timeRange))
+      deploymentsProcessorsQueue
+        .add(async () => {
+          try {
+            await deployEntitiesFromSnapshot(components, options, snapshotHash, servers, () => isStopped)
+          } catch (err: any) {
+            // Recorded inside the job (not in a .catch on the add() promise) so the set is
+            // guaranteed to be populated before onIdle() resolves and it gets read below.
+            logger.error(err)
+            for (const server of servers) {
+              serversWithFailedSnapshots.add(server)
+            }
           }
         })
-      )
-    )
+        .catch((err) => logger.error(err))
+    }
 
     // stop() now waits for this action to return, so bail before the expensive phase rather than
     // deploying every queued snapshot while the caller's shutdown blocks on us. The queue is never
