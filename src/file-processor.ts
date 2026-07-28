@@ -129,6 +129,13 @@ export async function* processDeploymentsInStream(
   }
 
   const lineLengthLimiter = createLineLengthLimiter(MAX_SNAPSHOT_LINE_LENGTH_IN_BYTES)
+  // pipe() does NOT forward the source's errors to the destination, so this bridge is what keeps a
+  // failing storage read from becoming an unhandled 'error' event — i.e. a process crash — instead of a
+  // rejected snapshot. readline used to sit directly on the source and got this for free; inserting the
+  // limiter is what took it away, so it has to be put back explicitly.
+  stream.on('error', (error: Error) => {
+    lineLengthLimiter.destroy(error)
+  })
   // Iterate the readline interface directly. Wrapping it in an extra async generator added a promise
   // and a microtask per line, which on a multi-million-entity snapshot is pure overhead.
   const lines = createInterface({ input: stream.pipe(lineLengthLimiter), crlfDelay: Infinity })

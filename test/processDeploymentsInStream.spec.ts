@@ -280,4 +280,35 @@ describe('processDeploymentsInStream', () => {
       expect(loggedLine).toContain('original length')
     })
   })
+  describe('when the underlying stream fails midway through the snapshot', () => {
+    let thrownError: Error | undefined
+    let yielded: number
+
+    beforeEach(async () => {
+      thrownError = undefined
+      yielded = 0
+      // A storage read that dies after one good line. pipe() does not forward a source error to its
+      // destination, so before this was bridged explicitly the error surfaced as an unhandled 'error'
+      // event — a process crash — rather than rejecting the snapshot.
+      const source = new Readable({ read() {} })
+      source.push(Buffer.from(JSON.stringify(validSnapshotLine) + '\n'))
+      setTimeout(() => source.destroy(new Error('storage read failed mid-snapshot')), 20)
+
+      try {
+        for await (const _deployment of processDeploymentsInStream(source, logger)) {
+          yielded++
+        }
+      } catch (error: any) {
+        thrownError = error
+      }
+    })
+
+    it('should reject with the source error rather than crashing or hanging', () => {
+      expect(thrownError?.message).toEqual('storage read failed mid-snapshot')
+    })
+
+    it('should still have yielded the deployments it read before the failure', () => {
+      expect(yielded).toEqual(1)
+    })
+  })
 })
