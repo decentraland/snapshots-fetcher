@@ -6,7 +6,7 @@ import {
   SnapshotDeployedEntityStreamOptions,
   SnapshotsFetcherComponents
 } from './types'
-import { sleepUnlessStopped } from './utils'
+import { contentServerMetricLabels, sleepUnlessStopped } from './utils'
 
 export { metricsDefinitions } from './metrics'
 export { IDeployerComponent, SynchronizerComponent } from './types'
@@ -49,7 +49,12 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
     const deploymentsInFile = processDeploymentsInFile(snapshotHash, components, logs)
     for await (const deployment of deploymentsInFile) {
       if (deployment.entityTimestamp >= genesisTimestamp) {
-        components.metrics?.increment('dcl_entities_deployments_streamed_total', { source: 'snapshots' })
+        // Empty remote_server: a snapshot is content-addressed and usually advertised by several
+        // servers at once, so its entities cannot be attributed to one origin.
+        components.metrics?.increment('dcl_entities_deployments_streamed_total', {
+          remote_server: '',
+          source: 'snapshots'
+        })
         yield {
           ...deployment,
           snapshotHash,
@@ -86,6 +91,10 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
   shouldStop: () => boolean = () => false
 ) {
   const logs = components.logs.getLogger(`pointerChangesStream(${contentServer})`)
+  // Origin only, so the label stays low-cardinality. Unlike a snapshot, a pointer-changes deployment
+  // has exactly one server behind it, which is what makes "who stopped delivering entities?"
+  // answerable from this counter.
+  const pointerChangesMetricLabels = contentServerMetricLabels(contentServer)
   // fetch the /pointer-changes of the remote server using the last timestamp from the previous step with a grace period of 20 min
   const genesisTimestamp = options.fromTimestamp || 0
   let greatestLocalTimestampProcessed = genesisTimestamp
@@ -124,7 +133,10 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
 
       // selectively ignore deployments by localTimestamp, and skip ones already yielded this run
       if (localTimestamp >= genesisTimestamp && !alreadyYielded) {
-        components.metrics?.increment('dcl_entities_deployments_streamed_total', { source: 'pointer-changes' })
+        components.metrics?.increment('dcl_entities_deployments_streamed_total', {
+          ...pointerChangesMetricLabels,
+          source: 'pointer-changes'
+        })
         yield deployment
         if (localTimestamp === greatestLocalTimestampProcessed) {
           entityIdsYieldedAtGreatestTimestamp.add(deployment.entityId)

@@ -1,4 +1,5 @@
 import { getDeployedEntitiesStreamFromPointerChanges, getDeployedEntitiesStreamFromSnapshot } from '.'
+import { contentServerMetricLabels } from './utils'
 import {
   IDeployerComponent,
   PointerChangesDeployedEntityStreamOptions,
@@ -21,6 +22,7 @@ export async function deployEntitiesFromPointerChanges(
   increaseLastTimestamp: (contentServer: string, ...newTimestamps: number[]) => void
 ) {
   const logger = components.logs.getLogger('deployEntitiesFromPointerChanges')
+  const metricsLabels = contentServerMetricLabels(contentServer)
   // The predicate goes into the stream too: checking it only in the loop below cannot end a polling
   // stream whose latest poll returned no deployments at all.
   const deployments = getDeployedEntitiesStreamFromPointerChanges(components, options, contentServer, shouldStopStream)
@@ -36,7 +38,10 @@ export async function deployEntitiesFromPointerChanges(
       {
         ...deployment,
         markAsDeployed: async function () {
-          components.metrics.increment('dcl_entities_deployments_processed_total', { source: 'pointer-changes' })
+          components.metrics.increment('dcl_entities_deployments_processed_total', {
+            ...metricsLabels,
+            source: 'pointer-changes'
+          })
           // update greatest processed timestamp
           increaseLastTimestamp(contentServer, deployment.localTimestamp)
         }
@@ -97,7 +102,11 @@ export async function deployEntitiesFromSnapshot(
       {
         ...entity,
         markAsDeployed: async function () {
-          components.metrics.increment('dcl_entities_deployments_processed_total', { source: 'snapshots' })
+          // Empty remote_server, matching the streamed counter: a snapshot has no single origin.
+          components.metrics.increment('dcl_entities_deployments_processed_total', {
+            remote_server: '',
+            source: 'snapshots'
+          })
           numberOfProcessedEntities++
           await saveIfStreamEndedAndAllEntitiesWereProcessed()
         },

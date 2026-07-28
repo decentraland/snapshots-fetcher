@@ -96,6 +96,34 @@ describe('deployEntitiesFromPointerChanges', () => {
       expect(markSnapshotAsProcessedSpy).not.toBeCalledWith(snapshotHash)
     })
   })
+
+  test('when an entity coming from pointer-changes is marked as deployed', ({ components }) => {
+    it('should count it against the origin of the server it came from', async () => {
+      const entity = { entityId: 'id1', entityType: 't1', pointers: ['p1'], localTimestamp: 0, authChain: [] }
+      mockDeployedEntitiesStreamWith([entity])
+      const deployerDeployingEverything: IDeployerComponent = {
+        scheduleEntityDeployment: async (scheduled: DeployableEntity) => {
+          await scheduled.markAsDeployed!()
+        },
+        onIdle: jest.fn(),
+        prepareForDeploymentsIn: jest.fn()
+      }
+      const incrementSpy = jest.spyOn(components.metrics, 'increment')
+
+      await deployEntitiesFromPointerChanges(
+        componentsWithDeployer(components, deployerDeployingEverything),
+        streamOptions,
+        server,
+        () => false,
+        () => {}
+      )
+
+      expect(incrementSpy).toBeCalledWith('dcl_entities_deployments_processed_total', {
+        remote_server: 'http://aserver.com',
+        source: 'pointer-changes'
+      })
+    })
+  })
 })
 
 function mockDeployedEntitiesStreamWith(entities: any[]) {
