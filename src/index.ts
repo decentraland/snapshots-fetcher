@@ -7,7 +7,8 @@ import { streamToBuffer } from './utils'
 
 // Guard the runtime before anything else in the package is evaluated. The name is inlined rather than
 // read from package.json so this stays a plain import-time check with no filesystem access.
-const MINIMUM_NODE_MAJOR_VERSION = 22
+// Raised from 22 to 24 by @dcl/catalyst-storage@5, whose own engines field requires >=24.
+const MINIMUM_NODE_MAJOR_VERSION = 24
 if (parseInt(process.versions.node.split('.')[0], 10) < MINIMUM_NODE_MAJOR_VERSION) {
   throw new Error(
     `In order to work, the package @dcl/snapshots-fetcher needs to run in Node v${MINIMUM_NODE_MAJOR_VERSION} or newer to handle streams properly.`

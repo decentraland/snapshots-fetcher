@@ -6,7 +6,7 @@ Synchronizes deployed entities from a set of Decentraland content servers. It bo
 servers' snapshot files and then keeps up with their `/pointer-changes` feeds, handing every entity to
 a deployer component supplied by the caller.
 
-Requires Node 22 or newer.
+Requires Node 24 or newer.
 
 ## Usage
 
