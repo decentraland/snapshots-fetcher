@@ -440,7 +440,12 @@ export async function createSynchronizer(
             components,
             { ...options, fromTimestamp, pointerChangesWaitTime: 0 },
             bootstrappingServersFromPointerChange,
-            () => isStopped,
+            // Also stops when the caller drops this server, not only on a full shutdown. A bootstrap
+            // pass over a long backlog can run for a while, and canAdvanceServer only stops the server
+            // being promoted at the end of it — it does not stop the streaming and deploying in the
+            // meantime, so a server removed mid-pass kept having its entities deployed until the pass
+            // happened to finish.
+            () => isStopped || !desiredServers.has(bootstrappingServersFromPointerChange),
             collectTentativeTimestamp,
             report
           )
