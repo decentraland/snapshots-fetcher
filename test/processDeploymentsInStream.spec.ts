@@ -1,7 +1,7 @@
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import { Readable } from 'stream'
 import { SyncDeployment } from '@dcl/schemas'
-import { processDeploymentsInStream } from '../src/file-processor'
+import { processDeploymentsInStream, SnapshotStreamReport } from '../src/file-processor'
 
 const validSnapshotLine = {
   entityId: 'bafkreibivsdakhiouzuth2nr7c4d3iiolbobj32xhat3nzm5uwyi4raxwu',
@@ -11,9 +11,13 @@ const validSnapshotLine = {
   authChain: [{ type: 'SIGNER', payload: '0x1', signature: '' }]
 }
 
-async function collect(stream: Readable, logger: ILoggerComponent.ILogger): Promise<SyncDeployment[]> {
+async function collect(
+  stream: Readable,
+  logger: ILoggerComponent.ILogger,
+  report?: SnapshotStreamReport
+): Promise<SyncDeployment[]> {
   const collected: SyncDeployment[] = []
-  for await (const deployment of processDeploymentsInStream(stream, logger)) {
+  for await (const deployment of processDeploymentsInStream(stream, logger, report)) {
     collected.push(deployment)
   }
   return collected
@@ -107,7 +111,8 @@ describe('processDeploymentsInStream', () => {
     let deployments: SyncDeployment[]
 
     beforeEach(async () => {
-      // The snapshot format prefixes a header line; anything not wrapped in braces is ignored silently.
+      // The header line and blank padding are part of the snapshot format, so they are framing rather
+      // than lines we failed to read.
       const lines = ['### Decentraland json snapshot', '', '   ', JSON.stringify(validSnapshotLine)].join('\n')
       deployments = await collect(Readable.from([Buffer.from(lines)]), logger)
     })
@@ -136,6 +141,97 @@ describe('processDeploymentsInStream', () => {
         'Too many invalid lines in snapshot file, suppressing further line errors',
         { suppressedAfter: '100' }
       )
+    })
+  })
+
+  describe('when a report is supplied and every line is readable', () => {
+    let report: SnapshotStreamReport
+
+    beforeEach(async () => {
+      report = { unusableLines: 0 }
+      const lines = ['### Decentraland json snapshot', '', JSON.stringify(validSnapshotLine)].join('\n')
+      await collect(Readable.from([Buffer.from(lines)]), logger, report)
+    })
+
+    it('should leave the unusable line count at zero so the snapshot can be marked processed', () => {
+      expect(report.unusableLines).toEqual(0)
+    })
+  })
+
+  describe('when a report is supplied and the file ends with a truncated line', () => {
+    let report: SnapshotStreamReport
+    let deployments: SyncDeployment[]
+
+    beforeEach(async () => {
+      report = { unusableLines: 0 }
+      const lines = [JSON.stringify(validSnapshotLine), '{"entityType":"pro'].join('\n')
+      deployments = await collect(Readable.from([Buffer.from(lines)]), logger, report)
+    })
+
+    it('should count the truncated line as unusable', () => {
+      expect(report.unusableLines).toEqual(1)
+    })
+
+    it('should log the unrecognized line instead of dropping it in silence', () => {
+      expect(logger.error).toHaveBeenCalledWith('ERROR: Unrecognized line in snapshot file', {
+        line: '{"entityType":"pro'
+      })
+    })
+
+    it('should still yield the deployments it could read', () => {
+      expect(deployments).toHaveLength(1)
+    })
+  })
+
+  describe('when a report is supplied and a line fails schema validation', () => {
+    let report: SnapshotStreamReport
+
+    beforeEach(async () => {
+      report = { unusableLines: 0 }
+      const lines = [JSON.stringify(validSnapshotLine), JSON.stringify({ not: 'a deployment' })].join('\n')
+      await collect(Readable.from([Buffer.from(lines)]), logger, report)
+    })
+
+    it('should count the invalid deployment as unusable', () => {
+      expect(report.unusableLines).toEqual(1)
+    })
+  })
+
+  describe('when a report is supplied and more lines are invalid than the log cap allows', () => {
+    let report: SnapshotStreamReport
+
+    beforeEach(async () => {
+      report = { unusableLines: 0 }
+      const lines = Array.from({ length: 150 }, (_unused, index) => JSON.stringify({ invalid: index })).join('\n')
+      await collect(Readable.from([Buffer.from(lines)]), logger, report)
+    })
+
+    it('should keep counting past the log cap so suppression cannot hide missing entities', () => {
+      expect(report.unusableLines).toEqual(150)
+    })
+  })
+
+  describe('when a single line exceeds the maximum allowed length', () => {
+    let thrownError: Error | undefined
+
+    beforeEach(async () => {
+      thrownError = undefined
+      // 12 MiB with no newline, against a 10 MiB cap.
+      const chunk = Buffer.alloc(1024 * 1024, 0x61)
+      async function* newlineless() {
+        for (let index = 0; index < 12; index++) {
+          yield chunk
+        }
+      }
+      try {
+        await collect(Readable.from(newlineless()), logger)
+      } catch (error: any) {
+        thrownError = error
+      }
+    })
+
+    it('should fail the snapshot rather than buffering the whole file into one string', () => {
+      expect(thrownError?.message).toEqual('Snapshot line exceeds the maximum allowed length of 10485760 bytes')
     })
   })
 })

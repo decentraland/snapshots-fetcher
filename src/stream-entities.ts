@@ -1,6 +1,6 @@
 import { fetchPointerChanges } from './client'
 import { downloadFileWithRetries } from './downloader'
-import { processDeploymentsInFile } from './file-processor'
+import { processDeploymentsInFile, SnapshotStreamReport } from './file-processor'
 import {
   PointerChangesDeployedEntityStreamOptions,
   SnapshotDeployedEntityStreamOptions,
@@ -24,7 +24,8 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
   options: SnapshotDeployedEntityStreamOptions,
   snapshotHash: string,
   servers: Set<string>,
-  shouldStop: () => boolean = () => false
+  shouldStop: () => boolean = () => false,
+  report?: SnapshotStreamReport
 ) {
   const genesisTimestamp = options.fromTimestamp || 0
   const logs = components.logs.getLogger('getDeployedEntitiesStreamFromSnapshot')
@@ -46,7 +47,7 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
     )
 
     // 2. open the snapshot file and process line by line
-    const deploymentsInFile = processDeploymentsInFile(snapshotHash, components, logs)
+    const deploymentsInFile = processDeploymentsInFile(snapshotHash, components, logs, report)
     for await (const deployment of deploymentsInFile) {
       if (deployment.entityTimestamp >= genesisTimestamp) {
         // Empty remote_server: a snapshot is content-addressed and usually advertised by several

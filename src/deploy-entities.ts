@@ -1,4 +1,5 @@
 import { getDeployedEntitiesStreamFromPointerChanges, getDeployedEntitiesStreamFromSnapshot } from '.'
+import { SnapshotStreamReport } from './file-processor'
 import { contentServerMetricLabels } from './utils'
 import {
   IDeployerComponent,
@@ -71,7 +72,19 @@ export async function deployEntitiesFromSnapshot(
   const logger = components.logs.getLogger('deployEntitiesFromSnapshot')
   // Passed down so the snapshot download abandons its retry ladder on shutdown rather than making
   // whoever called stop() wait it out.
-  const stream = getDeployedEntitiesStreamFromSnapshot(components, options, snapshotHash, servers, shouldStopStream)
+  // Lines the parser could not turn into deployments. Marking a snapshot as processed retires it
+  // permanently, so it must only happen when the whole file was actually read: a truncated line or a
+  // batch of schema-invalid entities otherwise ends the stream normally and looks identical to an
+  // empty snapshot, silently dropping every entity behind those lines.
+  const streamReport: SnapshotStreamReport = { unusableLines: 0 }
+  const stream = getDeployedEntitiesStreamFromSnapshot(
+    components,
+    options,
+    snapshotHash,
+    servers,
+    shouldStopStream,
+    streamReport
+  )
   let snapshotWasCompletelyStreamed = false
   let numberOfStreamedEntities = 0
   let numberOfProcessedEntities = 0
@@ -82,6 +95,7 @@ export async function deployEntitiesFromSnapshot(
     if (
       !snapshotWasMarkedAsProcessed &&
       snapshotWasCompletelyStreamed &&
+      streamReport.unusableLines === 0 &&
       numberOfProcessedEntities >= numberOfStreamedEntities
     ) {
       snapshotWasMarkedAsProcessed = true
@@ -118,6 +132,16 @@ export async function deployEntitiesFromSnapshot(
   snapshotWasCompletelyStreamed = true
   components.metrics.increment('dcl_processed_snapshots_total', { state: 'stream_end' })
   logger.info('Stream ended.', { snapshotHash })
+  if (streamReport.unusableLines > 0) {
+    // Deliberately left unmarked so a later sync re-downloads and re-streams it. That costs a repeated
+    // pass per sync cycle for a snapshot the server keeps serving broken, which is the cheaper of the
+    // two failure modes: marking it would drop those entities for good, with nothing to retry.
+    components.metrics.increment('dcl_processed_snapshots_total', { state: 'incomplete' })
+    logger.error('Snapshot had lines that could not be read as deployments; leaving it unprocessed to retry later.', {
+      snapshotHash,
+      unusableLines: String(streamReport.unusableLines)
+    })
+  }
   await saveIfStreamEndedAndAllEntitiesWereProcessed()
 }
 
