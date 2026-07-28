@@ -398,3 +398,99 @@ test('synchronizer when a server is dropped midway through its pointer-changes b
     await synchronizer.stop!()
   })
 })
+
+test('synchronizer when a syncing-phase deployment is dropped and the stream then reconnects', ({ components }) => {
+  let synchronizer: SynchronizerComponent
+  let requestedFrom: string[]
+  let scheduled: number
+
+  // Well past the 20-minute bootstrap shift, so nothing masks a mark that moved too far.
+  const droppedLocalTimestamp = 50 * 60_000
+  const acknowledgedLocalTimestamp = 100 * 60_000
+
+  function delta(entityId: string, localTimestamp: number, entityTimestamp: number) {
+    return {
+      entityId,
+      entityType: 'profile',
+      pointers: ['0x1'],
+      entityTimestamp,
+      localTimestamp,
+      authChain: [{ type: 'SIGNER', payload: '0x1', signature: '' }]
+    }
+  }
+
+  it('prepares the endpoints', () => {
+    requestedFrom = []
+    scheduled = 0
+    components.router.get('/snapshots', async () => ({ body: [] }))
+    components.router.get('/pointer-changes', async (ctx: any) => {
+      requestedFrom.push(new URL(ctx.url.toString()).searchParams.get('from') ?? '')
+      // The first poll is the bootstrap's, and it must come back empty so the bootstrap completes and the
+      // server is promoted — otherwise the bootstrap guard, not the syncing path, is what is under test.
+      // The second poll is the first syncing one, and it carries the pair.
+      if (requestedFrom.length === 2) {
+        return {
+          body: {
+            deltas: [
+              delta('ba000000000000000000000000000000000000000000000000000000001', droppedLocalTimestamp, 1),
+              delta('ba000000000000000000000000000000000000000000000000000000002', acknowledgedLocalTimestamp, 2)
+            ],
+            pagination: {}
+          }
+        }
+      }
+      return { body: { deltas: [], pagination: {} } }
+    })
+  })
+
+  it('bootstraps, then drops a syncing deployment and lets the stream reconnect', async () => {
+    const { fetcher, downloadQueue, logs, storage, metrics, processedSnapshotStorage, snapshotStorage } = components
+    synchronizer = await createSynchronizer(
+      {
+        fetcher,
+        downloadQueue,
+        logs,
+        storage,
+        metrics,
+        processedSnapshotStorage,
+        snapshotStorage,
+        deployer: {
+          async scheduleEntityDeployment(entity: DeployableEntity) {
+            scheduled++
+            // The earlier entity is dropped, the later one confirmed. A max over acknowledged timestamps
+            // would carry the durable resume point past the dropped one.
+            if (scheduled !== 1 && entity.markAsDeployed) {
+              await entity.markAsDeployed()
+            }
+          },
+          onIdle: jest.fn(),
+          prepareForDeploymentsIn: jest.fn()
+        }
+      },
+      {
+        bootstrapReconnection: { reconnectTime: 60_000 },
+        // Short, so the syncing stream reconnects inside the test and records its resume point.
+        syncingReconnection: { reconnectTime: 50 },
+        tmpDownloadFolder: resolve('downloads'),
+        requestMaxRetries: 1,
+        requestRetryWaitTime: 0,
+        pointerChangesWaitTime: 0
+      }
+    )
+
+    await synchronizer.syncWithServers(new Set([await components.getBaseUrl()]))
+    // Poll 1 bootstrap, poll 2 the syncing poll carrying the pair, poll 3+ the reconnects whose `from`
+    // is the durable resume point being asserted.
+    await waitUntil(() => requestedFrom.length >= 4, 'the syncing stream has reconnected after the drop')
+  })
+
+  it('should never resume past the dropped deployment', () => {
+    const resumedPastTheDrop = requestedFrom.filter((from) => Number(from) > droppedLocalTimestamp)
+
+    expect(resumedPastTheDrop).toEqual([])
+  })
+
+  afterAll(async () => {
+    await synchronizer.stop!()
+  })
+})

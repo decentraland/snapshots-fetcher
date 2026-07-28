@@ -29,6 +29,9 @@ export type PointerChangesDeploymentReport = {
  *
  * @param report - Optional tally of scheduled versus acknowledged deployments. Callers that record sync
  *   progress from this run must pass one and require `acknowledged >= scheduled` before doing so.
+ * @param onPollEnd - Awaited at the end of every poll, before the next one begins. For a polling stream
+ *   this is the only checkpoint there is, so it is where a caller settles its deployer and decides what
+ *   progress is safe to record.
  * @public
  */
 export async function deployEntitiesFromPointerChanges(
@@ -39,13 +42,20 @@ export async function deployEntitiesFromPointerChanges(
   contentServer: string,
   shouldStopStream: () => boolean,
   increaseLastTimestamp: (contentServer: string, ...newTimestamps: number[]) => void,
-  report?: PointerChangesDeploymentReport
+  report?: PointerChangesDeploymentReport,
+  onPollEnd?: () => Promise<void>
 ) {
   const logger = components.logs.getLogger('deployEntitiesFromPointerChanges')
   const metricsLabels = contentServerMetricLabels(contentServer)
   // The predicate goes into the stream too: checking it only in the loop below cannot end a polling
   // stream whose latest poll returned no deployments at all.
-  const deployments = getDeployedEntitiesStreamFromPointerChanges(components, options, contentServer, shouldStopStream)
+  const deployments = getDeployedEntitiesStreamFromPointerChanges(
+    components,
+    options,
+    contentServer,
+    shouldStopStream,
+    onPollEnd
+  )
 
   for await (const deployment of deployments) {
     // if the stream is closed then we should not process more deployments

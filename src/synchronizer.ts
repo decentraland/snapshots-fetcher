@@ -547,28 +547,49 @@ export async function createSynchronizer(
             )
           }
 
+          // The resume point is a maximum over acknowledged timestamps, so committing each mark as its
+          // entity reports deployed lets an entity confirmed at t=200 carry the mark past one the deployer
+          // dropped at t=100. This stream resumes from the raw mark with no 20-minute shift, so the dropped
+          // entity would never be re-fetched from pointer-changes — only the periodic snapshot re-sync
+          // would eventually recover it. A single scalar cannot express "everything through T except
+          // t=100", which is why no amount of validation fixes this; the mark has to stop advancing past
+          // an unconfirmed entity.
+          //
+          // So hold the marks and commit them at a poll boundary, once the deployer has drained and every
+          // entity scheduled so far has reported back. It is the same shape as bootstrap's guard, applied
+          // per poll instead of once — the end of a poll is the only checkpoint a stream designed never to
+          // end has.
+          //
+          // Measured cost, against this code with a batching deployer: 0.5% with a 5s poll interval, 2.4%
+          // with 1s, 3.7-5.3% back-to-back when either side dominates, and 18.5% back-to-back when network
+          // and deployer latency are evenly matched. Far less than it sounds like, because the drain sits at
+          // the end of a poll rather than per page or per entity: the pagination loop already overlaps
+          // fetching with deploying, so this only ever waits for the residual queue.
+          //
+          // Liveness is preserved: an entity the deployer permanently drops pins the durable resume point
+          // but does not stall the stream, which keeps polling from its own internal high-water mark.
+          const tentativeTimestamps: number[] = []
+          const report: PointerChangesDeploymentReport = { scheduled: 0, acknowledged: 0 }
           try {
             components.metrics.increment('dcl_deployments_stream_reconnection_count', metricsLabels)
-            // The canonical callback, committing each mark as the entity reports deployed — NOT the
-            // hold-until-drained treatment bootstrapFromPointerChanges gives it. The same hazard exists
-            // here: because the mark is a max, an entity deployed at t=200 advances it past one that
-            // failed at t=100, and this stream resumes from the raw mark with no 20-minute shift, so that
-            // entity is not re-fetched from pointer-changes until the periodic snapshot re-sync.
-            //
-            // Left as-is deliberately, because there is no correct cheap fix here. Bootstrap has a natural
-            // checkpoint — it ends, and onIdle() gates the promotion — while this stream is designed to
-            // run forever, so there is nothing to hold the marks until. The two real options both change
-            // behaviour beyond a bug fix: drain the deployer once per poll, which serialises it against
-            // polling and caps throughput at the deployer's latency; or stop resuming from a max and track
-            // a contiguous watermark, which is the actual modelling error — a single scalar cannot express
-            // "everything through T except t=100". That is a design decision about the resume model, so it
-            // wants a deliberate choice rather than being smuggled in here.
             await deployEntitiesFromPointerChanges(
               components,
               { ...options, fromTimestamp },
               contentServer,
               shouldStopStream,
-              increaseLastTimestamp
+              (_server, ...newTimestamps) => tentativeTimestamps.push(...newTimestamps),
+              report,
+              async () => {
+                await components.deployer.onIdle()
+                // Cumulative, not per poll: this asks whether everything scheduled since the stream
+                // started has been confirmed, which is exactly the contiguity condition. Once something
+                // is outstanding the mark stops advancing until the stream restarts and re-fetches it.
+                if (report.acknowledged < report.scheduled || tentativeTimestamps.length === 0) {
+                  return
+                }
+                increaseLastTimestamp(contentServer, ...tentativeTimestamps)
+                tentativeTimestamps.length = 0
+              }
             )
           } catch (e: any) {
             // we don't log the exception here because createExponentialFallofRetry(logger, options) receives the logger

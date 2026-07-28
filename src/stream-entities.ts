@@ -89,7 +89,9 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
   },
   options: PointerChangesDeployedEntityStreamOptions,
   contentServer: string,
-  shouldStop: () => boolean = () => false
+  shouldStop: () => boolean = () => false,
+  /** Awaited at the end of every poll, before the next one starts. See the call site below. */
+  onPollEnd?: () => Promise<void>
 ) {
   const logs = components.logs.getLogger(`pointerChangesStream(${contentServer})`)
   // Origin only, so the label stays low-cardinality. Unlike a snapshot, a pointer-changes deployment
@@ -143,6 +145,14 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
           entityIdsYieldedAtGreatestTimestamp.add(deployment.entityId)
         }
       }
+    }
+
+    // The end of a poll: everything this poll had to offer has been yielded, and nothing more will be
+    // until the next one. That makes it the only point in a stream designed never to end where a
+    // consumer can ask "did all of it actually land?" — awaited here rather than announced, so the
+    // consumer can settle its deployer before more entities arrive.
+    if (onPollEnd) {
+      await onPollEnd()
     }
 
     // Interruptible: lifecycle stop now awaits the running stream, so a plain sleep here would make
