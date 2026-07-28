@@ -200,6 +200,7 @@ async function downloadProfileAvatars(
   maxRetries: number,
   waitTimeBetweenRetries: number,
   concurrency: number,
+  entityId: EntityHash,
   entityMetadata: {
     type: string
     metadata?: any
@@ -211,7 +212,12 @@ async function downloadProfileAvatars(
     return
   }
 
-  logger.info(`Downloading snapshots ${snapshots} for fixing entity ${JSON.stringify(entityMetadata)}`)
+  // Only the ids, never the metadata: a profile carries the owner's avatar fields and ethAddress, and
+  // serialising the whole document put that in an info-level log line for every affected profile.
+  logger.info('Downloading avatar snapshots missing from the entity content', {
+    entityId,
+    snapshots: snapshots.join(',')
+  })
   const downloadQueue = new PQueue({ concurrency })
   await Promise.all(
     snapshots.map((snapshot) =>
@@ -336,6 +342,7 @@ export async function downloadEntityAndContentFiles(
       maxRetries,
       waitTimeBetweenRetries,
       contentFilesConcurrency,
+      entityId,
       entityMetadata
     )
   }
