@@ -38,8 +38,15 @@ test('getSnapshots when the response mixes valid and invalid snapshot metadata',
   })
 
   it('returns only the valid snapshots, sorted newest first', async () => {
-    const snapshots = await getSnapshots(components, await components.getBaseUrl(), 10)
+    const { snapshots } = await getSnapshots(components, await components.getBaseUrl(), 10)
     expect(snapshots).toEqual([newerValidSnapshot, validSnapshot])
+  })
+
+  it('should report how many entries it had to discard, so the caller knows the list is incomplete', async () => {
+    const { discardedEntries } = await getSnapshots(components, await components.getBaseUrl(), 10)
+
+    // Each discarded entry stood for a time range nothing in the surviving list covers.
+    expect(discardedEntries).toEqual(6)
   })
 })
 
@@ -60,7 +67,7 @@ test('getSnapshots when a snapshot reports the unused informational fields with 
   it('should still return the snapshot, since nothing reads those fields', async () => {
     // Rejecting the entry would silently stop this server from ever being synced from, over a value
     // the package never looks at.
-    const snapshots = await getSnapshots(components, await components.getBaseUrl(), 10)
+    const { snapshots } = await getSnapshots(components, await components.getBaseUrl(), 10)
 
     expect(snapshots).toEqual([snapshotWithStringCount])
   })
@@ -99,13 +106,13 @@ test('getSnapshots when a snapshot reports a time range that is not usable arith
   })
 
   it('should keep only the finite, non-negative, non-inverted range', async () => {
-    const snapshots = await getSnapshots(components, await components.getBaseUrl(), 10)
+    const { snapshots } = await getSnapshots(components, await components.getBaseUrl(), 10)
 
     expect(snapshots).toEqual([validSnapshot])
   })
 
   it('should reject every value that cannot be a plausible instant', async () => {
-    const snapshots = await getSnapshots(components, await components.getBaseUrl(), 10)
+    const { snapshots } = await getSnapshots(components, await components.getBaseUrl(), 10)
 
     // Every rejected value above is finite and non-negative; that is exactly why finiteness was not a
     // sufficient test on its own.
@@ -113,7 +120,7 @@ test('getSnapshots when a snapshot reports a time range that is not usable arith
   })
 
   it('should never yield a non-finite endTimestamp, which would poison the high-water mark', async () => {
-    const snapshots = await getSnapshots(components, await components.getBaseUrl(), 10)
+    const { snapshots } = await getSnapshots(components, await components.getBaseUrl(), 10)
 
     expect(snapshots.every((snapshot) => Number.isFinite(snapshot.timeRange.endTimestamp))).toBe(true)
   })
@@ -144,7 +151,7 @@ test('getSnapshots when a snapshot claims to replace an implausible number of ot
   })
 
   it('should drop the entry above the cap and keep the one within it', async () => {
-    const snapshots = await getSnapshots(components, await components.getBaseUrl(), 10)
+    const { snapshots } = await getSnapshots(components, await components.getBaseUrl(), 10)
 
     expect(snapshots).toEqual([withinTheCap])
   })
@@ -170,7 +177,7 @@ test('getSnapshots when the response contains many invalid entries', ({ componen
       error: errorMock
     })
 
-    const snapshots = await getSnapshots(components, await components.getBaseUrl(), 10)
+    const { snapshots } = await getSnapshots(components, await components.getBaseUrl(), 10)
 
     expect(snapshots).toEqual([])
     // 100 per-entry errors + 1 summary line

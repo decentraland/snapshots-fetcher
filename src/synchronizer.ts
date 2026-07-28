@@ -175,12 +175,29 @@ export async function createSynchronizer(
     type Snapshot = SnapshotMetadata & { server: string }
     const snapshotsByHash: Map<string, Snapshot[]> = new Map()
     const snapshotLastTimestampByServer: Map<string, number> = new Map()
+    // Servers whose bootstrap is incomplete, for any reason: a snapshot list we could not fully read, or
+    // a snapshot that failed to deploy. They must neither advance their last-entity timestamp nor be
+    // reported as synced — either one would resume pointer-changes past entities that were never
+    // deployed, and (because the snapshot stays unmarked) those entities would only reappear on the next
+    // full snapshot sync.
+    const serversWithFailedSnapshots = new Set<string>()
     // Fetch all servers concurrently; getSnapshots already runs through the concurrency-limited
     // downloadQueue. The synchronous map mutations below can't interleave (no await between them).
     await Promise.all(
       Array.from(serversToSync).map(async (server) => {
         try {
-          const snapshots = await getSnapshots(components, server, options.requestMaxRetries)
+          const { snapshots, discardedEntries } = await getSnapshots(components, server, options.requestMaxRetries)
+          if (discardedEntries > 0) {
+            // The surviving subset is not this server's history. Each discarded entry stood for a time
+            // range, so deploying only what parsed and then advancing past the newest of them would skip
+            // whatever lived in the ranges we threw away. Still deploy what we can read — that work is
+            // real — but keep the server in snapshot bootstrap so the list is fetched again.
+            logger.warn('Snapshot list was not fully readable; keeping the server in snapshot bootstrap.', {
+              server,
+              discardedEntries: String(discardedEntries)
+            })
+            serversWithFailedSnapshots.add(server)
+          }
           // A server may legitimately have no snapshots yet (e.g. brand new). Math.max() of an empty
           // list is -Infinity, so fall back to the genesis timestamp to keep a sane starting point.
           const lastTimestamp =
@@ -219,12 +236,6 @@ export async function createSynchronizer(
         : new Set<string>()
 
     const timeRangesOfEntitiesToDeploy: TimeRange[] = []
-    // Servers with at least one snapshot that could not be fully deployed. Their bootstrap is
-    // incomplete, so they must neither advance their last-entity timestamp nor be reported as
-    // synced: either one would resume pointer-changes past entities that were never deployed, and
-    // (because the snapshot stays unmarked) those entities would only reappear on the next full
-    // snapshot sync — up to 14 days later.
-    const serversWithFailedSnapshots = new Set<string>()
     // Each decision may still hit snapshotStorage; run them with bounded concurrency instead of a
     // serial chain.
     const shouldProcessChecksQueue = new PQueue({ concurrency: snapshotChecksConcurrency })
