@@ -1,5 +1,5 @@
 import { AuthChain, AuthLinkType, PointerChangesSyncDeployment } from '@dcl/schemas'
-import { getDeployedEntitiesStreamFromPointerChanges } from '../src/stream-entities'
+import { boundaryRowFingerprint, getDeployedEntitiesStreamFromPointerChanges } from '../src/stream-entities'
 import { test } from './components'
 
 const authChain: AuthChain = [{ type: AuthLinkType.SIGNER, payload: '0x1', signature: '' }]
@@ -135,6 +135,81 @@ test('getDeployedEntitiesStreamFromPointerChanges when rows repeat an entity at 
       // Asserted on the signer, not the entity id: both rows share an id, so an id-only assertion cannot
       // tell the new row from the replay and would pass either way.
       expect(signers).toEqual(['0xA', '0xB'])
+    })
+  })
+})
+
+test('boundaryRowFingerprint', () => {
+  describe('when a row contains large remote-controlled pointer and auth-chain fields', () => {
+    let fingerprint: string
+
+    beforeEach(() => {
+      const largeRemoteValue = 'x'.repeat(1024 * 1024)
+      const deployment: PointerChangesSyncDeployment = {
+        ...deltaSignedBy('1', 1000, largeRemoteValue),
+        pointers: [largeRemoteValue],
+        authChain: [
+          {
+            type: AuthLinkType.SIGNER,
+            payload: largeRemoteValue,
+            signature: largeRemoteValue
+          }
+        ]
+      }
+      fingerprint = boundaryRowFingerprint(deployment)
+    })
+
+    afterEach(() => {
+      fingerprint = ''
+    })
+
+    it('should reduce the row to one fixed-size SHA-256 digest', () => {
+      expect(fingerprint).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    })
+  })
+
+  describe('when equivalent rows list their pointers in a different order', () => {
+    let firstFingerprint: string
+    let reorderedFingerprint: string
+
+    beforeEach(() => {
+      const deployment: PointerChangesSyncDeployment = {
+        ...delta('1', 1000),
+        pointers: ['pointer-b', 'pointer-a']
+      }
+      firstFingerprint = boundaryRowFingerprint(deployment)
+      reorderedFingerprint = boundaryRowFingerprint({
+        ...deployment,
+        pointers: ['pointer-a', 'pointer-b']
+      })
+    })
+
+    afterEach(() => {
+      firstFingerprint = ''
+      reorderedFingerprint = ''
+    })
+
+    it('should produce the same digest', () => {
+      expect(reorderedFingerprint).toBe(firstFingerprint)
+    })
+  })
+
+  describe('when rows differ by an auth-chain signer', () => {
+    let firstFingerprint: string
+    let secondFingerprint: string
+
+    beforeEach(() => {
+      firstFingerprint = boundaryRowFingerprint(deltaSignedBy('1', 1000, '0xA'))
+      secondFingerprint = boundaryRowFingerprint(deltaSignedBy('1', 1000, '0xB'))
+    })
+
+    afterEach(() => {
+      firstFingerprint = ''
+      secondFingerprint = ''
+    })
+
+    it('should produce different digests so a new row is not suppressed as a replay', () => {
+      expect(secondFingerprint).not.toBe(firstFingerprint)
     })
   })
 })

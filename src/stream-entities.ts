@@ -1,4 +1,5 @@
 import { AuthLink, PointerChangesSyncDeployment } from '@dcl/schemas'
+import { createHash } from 'crypto'
 import { fetchPointerChanges } from './client'
 import { downloadFileWithRetries } from './downloader'
 import { processDeploymentsInFile, SnapshotStreamReport } from './file-processor'
@@ -100,11 +101,16 @@ const MAX_BOUNDARY_ROWS_TRACKED = 10_000
  * new row arrives before the replay of the one already delivered, an id-keyed budget spends the allowance
  * on the new row, suppresses it, and then yields the replay: the new pointer-change is silently lost.
  *
- * Fingerprinting every field the schema carries removes that guesswork. Counts are still kept alongside,
- * because two rows identical in all of these fields are genuinely indistinguishable.
+ * Fingerprinting every field the schema carries removes that guesswork. The canonical row is reduced to a
+ * fixed-size digest before it becomes a retained map key: remote pointer and auth-chain strings are bounded
+ * only by the per-page response cap, and retaining their serialized values across many pages would let one
+ * timestamp grow this state far beyond that cap. Counts are still kept alongside the digest, because two
+ * rows identical in all of these fields are genuinely indistinguishable.
+ *
+ * @internal
  */
-function boundaryRowFingerprint(deployment: PointerChangesSyncDeployment): string {
-  return JSON.stringify([
+export function boundaryRowFingerprint(deployment: PointerChangesSyncDeployment): string {
+  const canonicalRow = JSON.stringify([
     deployment.entityType,
     deployment.entityId,
     deployment.entityTimestamp,
@@ -113,6 +119,8 @@ function boundaryRowFingerprint(deployment: PointerChangesSyncDeployment): strin
     [...deployment.pointers].sort(),
     deployment.authChain.map((link: AuthLink) => [link.type, link.payload, link.signature ?? ''])
   ])
+
+  return createHash('sha256').update(canonicalRow).digest('base64url')
 }
 
 export async function* getDeployedEntitiesStreamFromPointerChanges(
