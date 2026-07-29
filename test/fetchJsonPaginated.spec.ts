@@ -417,4 +417,50 @@ test('fetchJsonPaginated when the server returns a malformed or endless feed', (
       expect(pagesServed).toBeLessThanOrEqual(2)
     })
   })
+  describe('and the initial url carries a fragment', () => {
+    let baseUrl: string
+    let pagesServed: number
+
+    beforeEach(async () => {
+      baseUrl = await components.getBaseUrl()
+      pagesServed = 0
+      // Points `next` at the same resource without a fragment. Unless the initial url is normalised the
+      // same way `next` is, page 1 is remembered as the fragment-bearing string and this reads as new.
+      components.router.get('/initial-fragment', async (): Promise<any> => {
+        pagesServed++
+        return { body: { deltas: [`page${pagesServed}`], pagination: { next: '?page=1' } } }
+      })
+    })
+
+    // Named for the outcome rather than the mechanism: without normalisation the loop is still caught,
+    // just one wasted fetch later, so this assertion holds either way. The fetch count below is the one
+    // that discriminates.
+    it('should still end in a detected loop rather than running to the page cap', async () => {
+      await expect(
+        drain(
+          fetchJsonPaginated(
+            components,
+            `${baseUrl}/initial-fragment?page=1#top`,
+            ($) => $.deltas,
+            'dcl_catalysts_pointer_changes_response_time_seconds'
+          )
+        )
+      ).rejects.toThrow('Pagination loop')
+    })
+
+    it('should fetch the page once rather than twice', async () => {
+      await expect(
+        drain(
+          fetchJsonPaginated(
+            components,
+            `${baseUrl}/initial-fragment?page=1#top`,
+            ($) => $.deltas,
+            'dcl_catalysts_pointer_changes_response_time_seconds'
+          )
+        )
+      ).rejects.toThrow()
+
+      expect(pagesServed).toEqual(1)
+    })
+  })
 })

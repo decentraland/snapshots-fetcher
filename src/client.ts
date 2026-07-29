@@ -137,6 +137,16 @@ export async function* fetchJsonPaginated<T>(
   // Parsed once, and every `next` is validated against THIS rather than against the previous page, so
   // no chain of individually-permitted hops can walk away from the endpoint the call started from.
   const requestUrl = new URL(url)
+  // The initial url is normalised exactly as every `next` is below, so the visited-URL rule reads the
+  // same for page 1 as for the rest: a caller-supplied fragment is just as meaningless to the server,
+  // and leaving one on would let page 1 and a fragmentless `next` to the same resource count as two
+  // distinct pages. Re-serialised only when there is a fragment to drop, so a url without one is passed
+  // through byte for byte. Internal callers build fragmentless urls, so today this is consistency
+  // rather than a live bug.
+  if (requestUrl.hash) {
+    requestUrl.hash = ''
+    currentUrl = requestUrl.toString()
+  }
   // Every page a paginated call has already fetched. A server that points `next` back at a page it
   // already served would otherwise cycle forever; this catches that immediately instead of waiting
   // for the page cap.
