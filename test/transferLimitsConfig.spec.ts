@@ -165,14 +165,19 @@ describe('fetchJson', () => {
 
 test('downloadEntityAndContentFiles when the caller tightens the download size cap', ({ components }) => {
   let entityId: string
+  // Held at suite scope, not declared inside the beforeEach: the router accumulates handlers across
+  // beforeEach runs and the first one registered wins, so a handler closing over a per-run binding would
+  // serve the first test's bytes to every later test. Reading a suite-scoped binding keeps every
+  // registration equivalent.
+  let entityBytes: Buffer
 
   beforeEach(async () => {
     const entity = { type: 'profile', metadata: { avatars: [] }, content: [] }
-    const bytes = Buffer.from(JSON.stringify(entity))
-    entityId = await hashV1(bytes)
+    entityBytes = Buffer.from(JSON.stringify(entity))
+    entityId = await hashV1(entityBytes)
     // Serves the real entity bytes, so the download passes hash verification and the only thing that can
     // fail it is a transfer bound. Junk bytes would fail on the hash instead and prove nothing.
-    components.router.get('/contents/:file', async () => ({ body: bytes.toString() }))
+    components.router.get('/contents/:file', async () => ({ body: entityBytes.toString() }))
   })
 
   // The point of this one is the plumbing, not the policy: the cap has to survive five levels of call
@@ -197,7 +202,7 @@ test('downloadEntityAndContentFiles when the caller tightens the download size c
     ).rejects.toThrow('exceeds the maximum allowed size of 8 bytes')
   })
 
-  it('should use the 1 GiB default when no limits are supplied', async () => {
+  it('should fall back to the 1 GiB default with no limits supplied', async () => {
     await components.storage.delete([entityId])
 
     await expect(
