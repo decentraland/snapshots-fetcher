@@ -799,11 +799,37 @@ function downloadFile(
           settleWithError(new Error('Invalid response from ' + url + ' status: ' + response.statusCode))
           return
         } else {
+          // Content-coding tokens are case-insensitive (RFC 9110 §8.4.1) and `x-gzip` is a legacy alias
+          // for `gzip` that some servers still send, so matching the exact string `gzip` meant a correct
+          // `Content-Encoding: GZip` response was written to disk still compressed, failed hash
+          // verification, and burned the whole retry ladder against a well-behaved server. `identity`
+          // means no coding was applied and is dropped here rather than treated as one.
+          const declaredEncodings = String(response.headers['content-encoding'] ?? '')
+            .split(',')
+            .map((coding) => coding.trim().toLowerCase())
+            .filter((coding) => coding !== '' && coding !== 'identity')
+          const isGzip =
+            declaredEncodings.length === 1 && (declaredEncodings[0] === 'gzip' || declaredEncodings[0] === 'x-gzip')
+
+          // Any other coding — `br`, `deflate`, or several layered together — is one this client cannot
+          // undo, so the bytes could never match the hash. Failing here names the reason instead of
+          // surfacing as a hash mismatch after the retry ladder has been spent. Truncated because the
+          // header value is the server's choice.
+          if (declaredEncodings.length > 0 && !isGzip) {
+            response.resume()
+            settleWithError(
+              new Error(
+                `Cannot decode ${url}: unsupported content-encoding ${truncateForLog(
+                  JSON.stringify(declaredEncodings.join(', '))
+                )}`
+              )
+            )
+            return
+          }
+
           const file = fs.createWriteStream(tmpFileName, {
             emitClose: true
           })
-
-          const isGzip = response.headers['content-encoding'] === 'gzip'
 
           const pipe = streamPipeline([response, ...createDownloadTransforms(isGzip, limits), file])
 

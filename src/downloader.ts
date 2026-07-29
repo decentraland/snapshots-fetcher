@@ -39,6 +39,8 @@ async function downloadJob(
   maxRetries: number,
   waitTimeBetweenRetries: number,
   shouldStop?: () => boolean,
+  /** Bounds for this transfer. **Shared, not per-caller, when a download is already in flight** — see the
+   * de-duplication note below. */
   transferLimits?: TransferLimits
 ): Promise<void> {
   if (shouldStop?.()) {
@@ -128,6 +130,8 @@ export async function downloadFileWithRetries(
   /** Consulted before the first attempt and between retries, so a shutdown does not have to wait out
    * the whole retry ladder. */
   shouldStop?: () => boolean,
+  /** Bounds for this transfer. **Shared, not per-caller, when a download is already in flight** — see the
+   * de-duplication note below. */
   transferLimits?: TransferLimits
 ): Promise<void> {
   // Reject untrusted hashes that are not plain content addresses before using them to build a
@@ -146,6 +150,14 @@ export async function downloadFileWithRetries(
   // clobber each other's map entry. Re-reading after the failure lets all but the first join the
   // replacement instead. Bounded by the loop condition: a caller only keeps going while it finds a
   // *different* job than the one it just watched fail.
+  // Keyed by hash alone, deliberately not by the resolved transferLimits: a caller that joins an
+  // in-flight download inherits the bounds of the caller that started it. Keying on limits too would give
+  // callers with differing bounds a transfer each, which is real duplicated bandwidth to reach a byte-
+  // identical result — the hash is a content address, so both transfers produce the same file, and the
+  // file lands in the same shared storage whichever caller asked for it. Bounds are policy about how much
+  // to tolerate from a peer, not a property of the content, and the bounds that actually governed the
+  // bytes on the wire are the first caller's. In synchronizer usage every caller threads the same options
+  // object, so this only arises for direct callers of the public download helpers.
   let alreadyWatched: ReturnType<typeof downloadFileWithRetries> | undefined
   for (;;) {
     const inflightJob = inflightForStorage.get(hashToDownload)

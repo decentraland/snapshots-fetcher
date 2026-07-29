@@ -88,6 +88,11 @@ arriving, never whether they add up to progress. Lower it on a constrained link,
 disables the check**, restoring the pre-`3.0.0` behaviour where an arbitrarily slow transfer continued
 as long as it kept sending something.
 
+Content downloads accept `Content-Encoding: gzip` case-insensitively, plus the legacy `x-gzip` alias.
+Any other coding — `br`, `deflate`, or several layered together — is refused up front with a message
+naming it, rather than being written undecoded and surfacing as a hash mismatch once the retries are
+spent.
+
 `maxDownloadedFileSizeInBytes` is applied on both sides of a gzip boundary: to the decompressed bytes,
 which is the gzip-bomb bound, and to the compressed response as well. The second one matters because a
 peer can stream valid gzip indefinitely while producing no decompressed output at all — concatenated
@@ -98,6 +103,12 @@ then by about 0.03%.
 `createSynchronizer` validates these up front, so a bad value is rejected at construction rather than
 surfacing as a puzzling failure on one download later. Every field must be an integer; the two rate
 fields accept `0`, the timeout and size cap require `>= 1`.
+
+Downloads of the same hash are de-duplicated while one is in flight, keyed by the hash alone: a caller
+that joins an existing transfer inherits the bounds of whoever started it. The hash is a content address,
+so a second transfer under different bounds would spend real bandwidth reaching a byte-identical result.
+Under `createSynchronizer` every caller threads the same options, so this only arises if you call the
+download helpers directly with differing limits.
 
 The same object is accepted by `getDeployedEntitiesStreamFromSnapshot`,
 `getDeployedEntitiesStreamFromPointerChanges` (on their options) and `downloadEntityAndContentFiles` (as

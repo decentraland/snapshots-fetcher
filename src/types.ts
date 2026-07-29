@@ -76,8 +76,16 @@ export type TransferLimits = {
    */
   downloadInactivityTimeoutInMs?: number
   /**
-   * Hard ceiling on the bytes written to disk for a single content file, after decompression. Guards
-   * against gzip bombs and otherwise unbounded responses. Must be an integer >= 1.
+   * Hard ceiling on the bytes of a single content file. Applied on **both sides** of a gzip boundary: to
+   * the decompressed bytes written to disk, which is the gzip-bomb bound, and to the compressed response
+   * as well.
+   *
+   * The compressed bound is needed because a peer can stream valid gzip indefinitely while producing no
+   * decompressed output at all — concatenated empty gzip members are legal — so a bound only on the
+   * decompressed side never receives a byte to measure. For real content it never binds: gzip exceeds its
+   * input only for incompressible data, and then by about 0.03%. A failure names which side tripped.
+   *
+   * Must be an integer >= 1.
    * @defaultValue 1073741824
    */
   maxDownloadedFileSizeInBytes?: number
