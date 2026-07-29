@@ -115,5 +115,40 @@ describe('decideSnapshotDeploymentFromProcessedSet', () => {
         expect(markSnapshotAsProcessed).not.toHaveBeenCalled()
       })
     })
+
+    describe('and marking it as processed is what makes another snapshot skippable', () => {
+      let processedSnapshots: Set<string>
+
+      beforeEach(async () => {
+        // A caller batching decisions shares one set. Marking must be reflected in it, or the snapshot
+        // that replaces the marked one is deployed for nothing.
+        processedSnapshots = new Set(['h0'])
+        await decideSnapshotDeploymentFromProcessedSet(
+          components,
+          processedSnapshots,
+          genesisTimestamp,
+          'h1',
+          genesisTimestamp + 1,
+          [['h0']]
+        )
+      })
+
+      it('should record the newly-processed snapshot in the set it was given', () => {
+        expect(processedSnapshots.has('h1')).toBe(true)
+      })
+
+      it('should then decide that the snapshot replacing it does not need deploying', async () => {
+        const result = await decideSnapshotDeploymentFromProcessedSet(
+          components,
+          processedSnapshots,
+          genesisTimestamp,
+          'h2',
+          genesisTimestamp + 2,
+          [['h1']]
+        )
+
+        expect(result).toBe(false)
+      })
+    })
   })
 })

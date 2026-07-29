@@ -40,6 +40,97 @@ describe('deployEntitiesFromSnapshot', () => {
     })
   })
 
+  test('when the snapshot yielded no entities because every line was unreadable', ({ components }) => {
+    it('does not save the snapshot as processed, so a later sync re-downloads and retries it', async () => {
+      // Indistinguishable from an empty snapshot without the report: the stream ends normally and the
+      // processed/streamed counters are both 0.
+      mockDeployedEntitiesStreamReporting([], 3)
+      const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
+      // Rejects so the caller keeps the advertising servers in snapshot bootstrap; resolving would let
+      // them advance past the range this snapshot covers.
+      await expect(
+        deployEntitiesFromSnapshot(
+          componentsWithDeployer(components, deployerMock),
+          streamOptions,
+          snapshotHash,
+          new Set(servers),
+          () => false
+        )
+      ).rejects.toThrow('could not be read as deployments')
+      expect(markSnapshotAsProcessedSpy).not.toBeCalled()
+    })
+  })
+
+  test('when every streamed entity deployed but some lines were unreadable', ({ components }) => {
+    it('does not save the snapshot as processed, since the unread lines are missing entities', async () => {
+      const entity: DeployableEntity = {
+        entityId: 'id1',
+        entityType: 't1',
+        pointers: ['p1'],
+        entityTimestamp: 0,
+        authChain: [],
+        snapshotHash,
+        servers
+      } as any
+      const deployerDeployingEverything: IDeployerComponent = {
+        scheduleEntityDeployment: async (scheduled: DeployableEntity) => {
+          await scheduled.markAsDeployed!()
+        },
+        onIdle: jest.fn(),
+        prepareForDeploymentsIn: jest.fn()
+      }
+      mockDeployedEntitiesStreamReporting([entity], 1)
+      const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
+      await expect(
+        deployEntitiesFromSnapshot(
+          componentsWithDeployer(components, deployerDeployingEverything),
+          streamOptions,
+          snapshotHash,
+          new Set(servers),
+          () => false
+        )
+      ).rejects.toThrow('could not be read as deployments')
+      expect(markSnapshotAsProcessedSpy).not.toBeCalled()
+    })
+  })
+
+  test('when the deployer acknowledges one entity twice and never acknowledges another', ({ components }) => {
+    it('does not mark the snapshot as processed on the strength of the duplicate', async () => {
+      const entity1: any = {
+        entityId: 'id1', entityType: 't1', pointers: ['p1'], entityTimestamp: 0, authChain: [], snapshotHash, servers
+      }
+      const entity2: any = {
+        entityId: 'id2', entityType: 't2', pointers: ['p2'], entityTimestamp: 1, authChain: [], snapshotHash, servers
+      }
+      let scheduled = 0
+      const deployerAcknowledgingTwice: IDeployerComponent = {
+        scheduleEntityDeployment: async (scheduledEntity: DeployableEntity) => {
+          scheduled++
+          // The first entity never reports. The second reports twice, which is enough to make a
+          // call-counting guard see processed >= streamed and retire the snapshot with a hole in it.
+          if (scheduled === 2) {
+            await scheduledEntity.markAsDeployed!()
+            await scheduledEntity.markAsDeployed!()
+          }
+        },
+        onIdle: jest.fn(),
+        prepareForDeploymentsIn: jest.fn()
+      }
+      mockDeployedEntitiesStreamReporting([entity1, entity2], 0)
+      const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
+
+      await deployEntitiesFromSnapshot(
+        componentsWithDeployer(components, deployerAcknowledgingTwice),
+        streamOptions,
+        snapshotHash,
+        new Set(servers),
+        () => false
+      )
+
+      expect(markSnapshotAsProcessedSpy).not.toBeCalled()
+    })
+  })
+
   test('when the snapshot is not empty', ({ components }) => {
     it('streams and deployes its entities', async () => {
       const entity1 = { entityId: 'id1', entityType: 't1', pointers: ['p1'], entityTimestamp: 0, authChain: [], snapshotHash, servers }
@@ -103,7 +194,7 @@ describe('deployEntitiesFromSnapshot', () => {
         { entityId: 'id2', entityType: 't2', pointers: ['p2'], entityTimestamp: 1, authChain: [], snapshotHash, servers },
       ])
 
-      const entitiesToDeploy = []
+      const entitiesToDeploy: (() => Promise<void>)[] = []
       const deployerMock = {
         async scheduleEntityDeployment(entity: DeployableEntity) {
           if (entity.markAsDeployed) {
@@ -242,6 +333,29 @@ function mockDeployedEntitiesStreamWith(entities: any[]) {
       }
       return
     })
+}
+
+// Same as mockDeployedEntitiesStreamWith, but also fills in the report the real stream populates so
+// the "snapshot was only partly readable" path can be exercised.
+function mockDeployedEntitiesStreamReporting(entities: any[], unusableLines: number) {
+  return jest
+    .spyOn(streamEntities, 'getDeployedEntitiesStreamFromSnapshot')
+    .mockImplementation(async function* gen(
+      _components: any,
+      _options: any,
+      _snapshotHash: any,
+      _servers: any,
+      _shouldStop: any,
+      report: any
+    ) {
+      for (const entity of entities) {
+        yield entity
+      }
+      if (report) {
+        report.unusableLines = unusableLines
+      }
+      return
+    } as any)
 }
 
 function componentsWithDeployer(components: TestComponents, deployer: IDeployerComponent):

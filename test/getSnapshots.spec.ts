@@ -38,8 +38,38 @@ test('getSnapshots when the response mixes valid and invalid snapshot metadata',
   })
 
   it('returns only the valid snapshots, sorted newest first', async () => {
-    const snapshots = await getSnapshots(components, await components.getBaseUrl(), 10)
+    const { snapshots } = await getSnapshots(components, await components.getBaseUrl(), 10)
     expect(snapshots).toEqual([newerValidSnapshot, validSnapshot])
+  })
+
+  it('should report how many entries it had to discard, so the caller knows the list is incomplete', async () => {
+    const { discardedEntries } = await getSnapshots(components, await components.getBaseUrl(), 10)
+
+    // Each discarded entry stood for a time range nothing in the surviving list covers.
+    expect(discardedEntries).toEqual(6)
+  })
+})
+
+test('getSnapshots when a snapshot reports the unused informational fields with an unexpected type', ({
+  components
+}) => {
+  const snapshotWithStringCount = {
+    hash: 'bafkreig6sfhegnp4okzecgx3v6gj6pohh5qzw6zjtrdqtggx64743rkmz4',
+    timeRange: { initTimestamp: 0, endTimestamp: 300 },
+    numberOfEntities: '5',
+    generationTimestamp: 'yesterday'
+  }
+
+  it('prepares the endpoints', () => {
+    components.router.get('/snapshots', async () => ({ body: [snapshotWithStringCount] }))
+  })
+
+  it('should still return the snapshot, since nothing reads those fields', async () => {
+    // Rejecting the entry would silently stop this server from ever being synced from, over a value
+    // the package never looks at.
+    const { snapshots } = await getSnapshots(components, await components.getBaseUrl(), 10)
+
+    expect(snapshots).toEqual([snapshotWithStringCount])
   })
 })
 
@@ -50,6 +80,80 @@ test('getSnapshots when the response is not an array', ({ components }) => {
 
   it('rejects indicating that an array was expected', async () => {
     await expect(getSnapshots(components, await components.getBaseUrl(), 10)).rejects.toThrow('expected an array')
+  })
+})
+
+test('getSnapshots when a snapshot reports a time range that is not usable arithmetic', ({ components }) => {
+  it('prepares the endpoints', () => {
+    // Served as raw text, because JSON.stringify would turn Infinity into null and hide the case. A JSON
+    // body cannot carry NaN at all (`{"a":NaN}` is a syntax error), but the number grammar has no range
+    // limit, so a large exponent parses straight to Infinity.
+    // Far past the allowed clock skew, but a perfectly ordinary finite number.
+    const farFuture = Date.now() + 400 * 24 * 60 * 60 * 1000
+    components.router.get('/snapshots', async () => ({
+      body: `[
+        {"hash":"${validSnapshot.hash}","timeRange":{"initTimestamp":0,"endTimestamp":100},"replacedSnapshotHashes":[]},
+        {"hash":"ba${'b'.repeat(57)}","timeRange":{"initTimestamp":0,"endTimestamp":1e999}},
+        {"hash":"ba${'c'.repeat(57)}","timeRange":{"initTimestamp":-5,"endTimestamp":-1}},
+        {"hash":"ba${'d'.repeat(57)}","timeRange":{"initTimestamp":500,"endTimestamp":100}},
+        {"hash":"ba${'e'.repeat(57)}","timeRange":{"initTimestamp":0,"endTimestamp":1e308}},
+        {"hash":"ba${'f'.repeat(57)}","timeRange":{"initTimestamp":0,"endTimestamp":9007199254740993}},
+        {"hash":"ba${'g'.repeat(57)}","timeRange":{"initTimestamp":0,"endTimestamp":100.5}},
+        {"hash":"ba${'h'.repeat(57)}","timeRange":{"initTimestamp":0,"endTimestamp":${farFuture}}}
+      ]`,
+      headers: { 'content-type': 'application/json' }
+    }))
+  })
+
+  it('should keep only the finite, non-negative, non-inverted range', async () => {
+    const { snapshots } = await getSnapshots(components, await components.getBaseUrl(), 10)
+
+    expect(snapshots).toEqual([validSnapshot])
+  })
+
+  it('should reject every value that cannot be a plausible instant', async () => {
+    const { snapshots } = await getSnapshots(components, await components.getBaseUrl(), 10)
+
+    // Every rejected value above is finite and non-negative; that is exactly why finiteness was not a
+    // sufficient test on its own.
+    expect(snapshots.map((snapshot) => snapshot.hash)).toEqual([validSnapshot.hash])
+  })
+
+  it('should never yield a non-finite endTimestamp, which would poison the high-water mark', async () => {
+    const { snapshots } = await getSnapshots(components, await components.getBaseUrl(), 10)
+
+    expect(snapshots.every((snapshot) => Number.isFinite(snapshot.timeRange.endTimestamp))).toBe(true)
+  })
+})
+
+test('getSnapshots when a snapshot claims to replace an implausible number of others', ({ components }) => {
+  const withinTheCap = {
+    hash: 'bafkreico6luxnkk5vxuxvmpsg7hva4upamyz3br2b6ucc7rf3hdlcaehha',
+    timeRange: { initTimestamp: 100, endTimestamp: 200 },
+    replacedSnapshotHashes: Array.from({ length: 1000 }, (_unused, index) => `ba${String(index).padStart(57, '0')}`)
+  }
+
+  it('prepares the endpoints', () => {
+    components.router.get('/snapshots', async () => ({
+      body: [
+        withinTheCap,
+        {
+          hash: validSnapshot.hash,
+          timeRange: { initTimestamp: 0, endTimestamp: 100 },
+          // One over the cap. Every entry would land in the batched processed-snapshots lookup.
+          replacedSnapshotHashes: Array.from(
+            { length: 1001 },
+            (_unused, index) => `bb${String(index).padStart(57, '0')}`
+          )
+        }
+      ]
+    }))
+  })
+
+  it('should drop the entry above the cap and keep the one within it', async () => {
+    const { snapshots } = await getSnapshots(components, await components.getBaseUrl(), 10)
+
+    expect(snapshots).toEqual([withinTheCap])
   })
 })
 
@@ -73,7 +177,7 @@ test('getSnapshots when the response contains many invalid entries', ({ componen
       error: errorMock
     })
 
-    const snapshots = await getSnapshots(components, await components.getBaseUrl(), 10)
+    const { snapshots } = await getSnapshots(components, await components.getBaseUrl(), 10)
 
     expect(snapshots).toEqual([])
     // 100 per-entry errors + 1 summary line

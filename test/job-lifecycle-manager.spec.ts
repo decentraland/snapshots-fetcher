@@ -55,7 +55,7 @@ test('job-manager-1', ({ components, stubComponents }) => {
   })
 
   afterAll(async () => {
-    await jobManager.stop()
+    await jobManager.stop!()
   })
 })
 
@@ -90,7 +90,57 @@ test('job-manager-stops-all', ({ components, stubComponents }) => {
   it('stopping the component kills all the jobs', async () => {
     jobManager.setDesiredJobs(new Set(['a', 'b', 'c']))
     expect(Array.from(jobManager.getRunningJobs())).toEqual(['a', 'b', 'c'])
-    await jobManager.stop()
+    await jobManager.stop!()
     expect(Array.from(jobManager.getRunningJobs())).toEqual([])
+  })
+})
+
+test('job-manager when a job name is removed and immediately re-added', ({ components }) => {
+  let jobManager: JobLifecycleManagerComponent & { stop?: () => Promise<void> }
+  let concurrentlyRunning: number
+  let maxConcurrentlyRunning: number
+
+  it('creates a manager whose jobs take a while to stop', () => {
+    concurrentlyRunning = 0
+    maxConcurrentlyRunning = 0
+
+    jobManager = createJobLifecycleManagerComponent(
+      { logs: components.logs },
+      {
+        jobManagerName: 'test-manager',
+        createJob() {
+          let shouldRun = true
+          return {
+            async start() {
+              concurrentlyRunning++
+              maxConcurrentlyRunning = Math.max(maxConcurrentlyRunning, concurrentlyRunning)
+              while (shouldRun) {
+                await sleep(5)
+              }
+              concurrentlyRunning--
+            },
+            async stop() {
+              // A stop that does not take effect instantly, like a stream that has to wind down.
+              await sleep(30)
+              shouldRun = false
+            }
+          }
+        }
+      }
+    )
+  })
+
+  it('should never run two jobs for the same name at once', async () => {
+    jobManager.setDesiredJobs(new Set(['a']))
+    jobManager.setDesiredJobs(new Set())
+    jobManager.setDesiredJobs(new Set(['a']))
+
+    await sleep(120)
+
+    expect(maxConcurrentlyRunning).toBe(1)
+  })
+
+  afterAll(async () => {
+    await jobManager.stop!()
   })
 })

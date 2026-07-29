@@ -25,6 +25,18 @@ export type ExponentialFallofRetryOptions = {
    */
   maxInterval?: number
   exitOnSuccess?: boolean
+  /**
+   * When the action fails *after* running for at least this many milliseconds, the run is treated as
+   * healthy and the retry interval goes back to `retryTime` instead of growing.
+   *
+   * Set this for long-lived actions that only ever return by failing (e.g. a polling stream). Without
+   * it, such an action inherits the interval grown by failures from hours or days earlier and
+   * reconnects at the maxed-out delay even though it had been perfectly healthy in between.
+   *
+   * When unset, only a clean completion resets the interval — which is the right default for
+   * short actions whose normal duration may exceed `retryTime`.
+   */
+  healthyRunTime?: number
 }
 
 /**
@@ -38,8 +50,31 @@ export function createExponentialFallofRetry(
   options: ExponentialFallofRetryOptions
 ): ExponentialFallofRetryComponent {
   let started: boolean = false
+  // Terminal once stop() is called, so the component can never be restarted into an unstoppable loop.
+  let stopped: boolean = false
 
+  if (options.maxInterval !== undefined && !Number.isFinite(options.maxInterval)) {
+    throw new Error('options.maxInterval must be a finite number')
+  }
   if (options.maxInterval && options.maxInterval < 0) throw new Error('options.maxInterval must be >= 0')
+  // A negative retryTime passes the `!options.retryTime` guard below and then makes every retry sleep
+  // resolve immediately, turning the loop into a busy spin. Zero is allowed: it means "do not retry".
+  if (!Number.isFinite(options.retryTime)) throw new Error('options.retryTime must be a finite number')
+  if (options.retryTime < 0) throw new Error('options.retryTime must be >= 0')
+  if (
+    options.retryTimeExponent !== undefined &&
+    (!Number.isFinite(options.retryTimeExponent) || options.retryTimeExponent < 1)
+  ) {
+    throw new Error('options.retryTimeExponent must be a finite number >= 1')
+  }
+  if (options.healthyRunTime !== undefined) {
+    if (!Number.isFinite(options.healthyRunTime)) {
+      throw new Error('options.healthyRunTime must be a finite number')
+    }
+    if (options.healthyRunTime < 0) {
+      throw new Error('options.healthyRunTime must be >= 0')
+    }
+  }
 
   const exitOnSuccess = options.exitOnSuccess || false
 
@@ -75,6 +110,9 @@ export function createExponentialFallofRetry(
       logs.info('Starting...')
       reconnectionCount++
 
+      const actionStartedAt = Date.now()
+      let actionFailed = false
+
       try {
         await options.action()
         if (exitOnSuccess) {
@@ -83,11 +121,20 @@ export function createExponentialFallofRetry(
         }
       } catch (e: any) {
         logs.error(e)
-        // increment reconnection time
+        actionFailed = true
+      }
+
+      // A run counts as healthy when the action completed without throwing, or when it stayed up for
+      // at least healthyRunTime before failing. Only an unhealthy run grows the interval; otherwise
+      // the backoff would never come back down after a recovery.
+      const runWasHealthy =
+        !actionFailed ||
+        (options.healthyRunTime !== undefined && Date.now() - actionStartedAt >= options.healthyRunTime)
+
+      if (runWasHealthy) {
+        reconnectionTime = options.retryTime
+      } else {
         reconnectionTime = reconnectionTime * (options.retryTimeExponent ?? 1.1)
-        if (options.maxInterval) {
-          reconnectionTime = Math.min(reconnectionTime, options.maxInterval)
-        }
       }
 
       if (!started) {
@@ -102,14 +149,22 @@ export function createExponentialFallofRetry(
         return
       }
 
-      if (options.maxInterval) {
-        reconnectionTime = Math.min(reconnectionTime, options.maxInterval)
-      } else {
-        reconnectionTime = Math.min(reconnectionTime, 86_400_000 /* one day */)
-      }
+      // The ceiling bounds how far the exponential growth can run, so it must never pull the interval
+      // *below* the configured base: `retryTime` is an explicit statement of how often the action
+      // should run. Clamping it made a `retryTime` longer than the ceiling unreachable — the
+      // synchronizer asks for a 14-day snapshot re-sync and silently got a daily one.
+      const growthCeiling = options.maxInterval || 86_400_000 /* one day */
+      reconnectionTime = Math.min(reconnectionTime, Math.max(growthCeiling, options.retryTime))
 
       logs.info('Retrying in ' + reconnectionTime.toFixed(1) + 'ms')
       await interruptibleSleep(reconnectionTime)
+
+      // stop() interrupts the sleep, so re-check before running the action again. Without this the
+      // action always runs one extra time after a stop.
+      if (!started) {
+        logs.info('Breaking iteration after the retry sleep, started == false')
+        return
+      }
     }
   }
 
@@ -121,6 +176,11 @@ export function createExponentialFallofRetry(
       return !started
     },
     async start() {
+      // stop() is terminal. `started` alone cannot express that: it is false both before a first start
+      // and after a stop, so without this flag a start() that races or follows a stop() would spin up
+      // a loop whose `if (!started) return` exit can never be reached — an unstoppable job, and a
+      // second concurrent loop clobbering the shared cancelCurrentSleep.
+      if (stopped) return
       if (started === true) return
       started = true
       try {
@@ -132,6 +192,7 @@ export function createExponentialFallofRetry(
       }
     },
     async stop() {
+      stopped = true
       started = false
       if (cancelCurrentSleep) {
         cancelCurrentSleep()

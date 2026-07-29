@@ -11,23 +11,27 @@ export type SerialJobRunner = {
   enqueue(job: IJobWithLifecycle): void
   /** Number of jobs queued, including the one currently running. */
   size(): number
-  /** Stop the running job and drop the rest; no further jobs will start. */
+  /** Stop every queued job (the running one included); no further jobs will start. */
   stop(): Promise<void>
 }
 
 export function createSerialJobRunner(logger: ILoggerComponent.ILogger): SerialJobRunner {
   const jobs: IJobWithLifecycle[] = []
   let stopped = false
+  // The run of the job currently executing, so stop() can wait for it to actually finish rather than
+  // merely signalling it. Undefined whenever nothing is running.
+  let currentRun: Promise<void> | undefined
 
   function startNext() {
     if (stopped || jobs.length === 0) {
       return
     }
-    jobs[0]
+    currentRun = jobs[0]
       .start()
       .catch((err) => logger.error(err))
       .finally(() => {
         jobs.shift()
+        currentRun = undefined
         startNext()
       })
   }
@@ -49,11 +53,23 @@ export function createSerialJobRunner(logger: ILoggerComponent.ILogger): SerialJ
     },
     async stop() {
       stopped = true
-      const runningJob = jobs[0]
+      // Stop every queued job, not just the running one: a job that is dropped without being
+      // stopped never gets to settle whatever it handed its caller (e.g. a completion future), and
+      // the caller would wait on it forever.
+      const queuedJobs = jobs.slice()
       jobs.length = 0
-      if (runningJob) {
-        await runningJob.stop()
+      for (const job of queuedJobs) {
+        try {
+          await job.stop()
+        } catch (err: any) {
+          logger.error(err)
+        }
       }
+
+      // stop() above only raises the signal; the running job ends when its start() returns. Waiting
+      // for it here is what lets a caller treat a resolved stop() as "nothing is running any more".
+      // `stopped` already prevents startNext from picking up anything else.
+      await currentRun
     }
   }
 }

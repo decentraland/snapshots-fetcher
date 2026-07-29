@@ -117,4 +117,65 @@ describe('createSerialJobRunner', () => {
       expect(startOrder).toEqual(['a'])
     })
   })
+
+  describe('and jobs are queued behind the running one', () => {
+    let stoppedJobs: string[]
+    let releaseRunningJob: ReturnType<typeof future<void>>
+
+    beforeEach(async () => {
+      stoppedJobs = []
+      releaseRunningJob = future<void>()
+
+      const makeJob = (id: string): IJobWithLifecycle => ({
+        async start() {
+          if (id === 'running') {
+            await releaseRunningJob
+          }
+        },
+        async stop() {
+          stoppedJobs.push(id)
+          releaseRunningJob.resolve()
+        }
+      })
+
+      runner.enqueue(makeJob('running'))
+      runner.enqueue(makeJob('queued-1'))
+      runner.enqueue(makeJob('queued-2'))
+
+      await sleep(20)
+      await runner.stop()
+    })
+
+    it('should stop the queued jobs too, so nothing they handed a caller stays pending', () => {
+      expect(stoppedJobs).toEqual(['running', 'queued-1', 'queued-2'])
+    })
+  })
+
+  describe('when a queued job throws while being stopped', () => {
+    let stoppedJobs: string[]
+
+    beforeEach(async () => {
+      stoppedJobs = []
+
+      runner.enqueue({
+        async start() {},
+        async stop() {
+          throw new Error('failed to stop')
+        }
+      })
+      runner.enqueue({
+        async start() {},
+        async stop() {
+          stoppedJobs.push('second')
+        }
+      })
+
+      await runner.stop()
+    })
+
+    it('should log the failure and still stop the remaining jobs', () => {
+      expect(logger.error).toHaveBeenCalled()
+      expect(stoppedJobs).toEqual(['second'])
+    })
+  })
 })
