@@ -191,13 +191,13 @@ async function evictCorruptEntityFile(
  * shape-checked: a single malformed profile must not abort the download of an otherwise valid
  * entity. Unexpected shapes contribute no hashes rather than throwing.
  */
-function avatarSnapshotHashesFrom(entityMetadata: {
-  metadata?: any
-  content?: ContentMapping[] | undefined
-}): string[] {
+function avatarSnapshotHashesFrom(entityMetadata: { metadata?: any; content?: ContentMapping[] | undefined }): {
+  hashes: string[]
+  truncated: boolean
+} {
   const allAvatars: unknown = entityMetadata.metadata?.avatars
   if (!Array.isArray(allAvatars)) {
-    return []
+    return { hashes: [], truncated: false }
   }
 
   const declaredContentHashes = new Set(
@@ -210,9 +210,13 @@ function avatarSnapshotHashesFrom(entityMetadata: {
   // only then discarded it. Stopping at the cap means the intermediate never exceeds it either.
   const hashes: string[] = []
   const alreadyCollected = new Set<string>()
+  // Reported rather than swallowed, so an operator can tell "this profile had no missing snapshots" from
+  // "this profile declared more than we are willing to fetch, and the rest were dropped".
+  let truncated = false
 
   for (const avatar of allAvatars) {
     if (hashes.length >= MAX_AVATAR_SNAPSHOTS_PER_ENTITY) {
+      truncated = true
       break
     }
     const snapshots: unknown = avatar?.avatar?.snapshots
@@ -225,6 +229,7 @@ function avatarSnapshotHashesFrom(entityMetadata: {
     }
     for (const declared of Object.values(snapshots)) {
       if (hashes.length >= MAX_AVATAR_SNAPSHOTS_PER_ENTITY) {
+        truncated = true
         break
       }
       if (typeof declared !== 'string' || declared.length === 0) {
@@ -242,7 +247,7 @@ function avatarSnapshotHashesFrom(entityMetadata: {
     }
   }
 
-  return hashes
+  return { hashes, truncated }
 }
 
 async function downloadProfileAvatars(
@@ -261,7 +266,13 @@ async function downloadProfileAvatars(
     content?: ContentMapping[] | undefined
   }
 ) {
-  const snapshots = avatarSnapshotHashesFrom(entityMetadata)
+  const { hashes: snapshots, truncated } = avatarSnapshotHashesFrom(entityMetadata)
+  if (truncated) {
+    logger.warn('Profile declared more avatar snapshots than will be fetched; the rest were dropped.', {
+      entityId,
+      limit: String(MAX_AVATAR_SNAPSHOTS_PER_ENTITY)
+    })
+  }
   if (snapshots.length === 0) {
     return
   }
@@ -398,6 +409,12 @@ export async function downloadEntityAndContentFiles(
     )
   }
 
+  // Resolved before any download work, including the profile-avatar fallback below. Validation lives in
+  // here, so computing it late meant a manifest with one unusable content hash could spend the whole
+  // bounded avatar budget first and only then be rejected — work for an entity that was never going to
+  // be accepted.
+  const hashesToDownload = Array.isArray(declaredContent) ? contentHashesToDownload(declaredContent, entityId) : []
+
   if (entityMetadata.type === 'profile' && entityMetadata.metadata) {
     /*
      * Profiles can have some images referenced in the avatar snapshots that are not included in content section.
@@ -422,10 +439,7 @@ export async function downloadEntityAndContentFiles(
     )
   }
 
-  // Array.isArray (not a truthiness check): content[] is remote and untrusted, and a non-array
-  // value would make .map throw a TypeError instead of yielding a diagnosable error.
-  if (Array.isArray(entityMetadata.content)) {
-    const hashesToDownload = contentHashesToDownload(entityMetadata.content, entityId)
+  if (hashesToDownload.length > 0) {
     const downloadQueue = new PQueue({ concurrency: contentFilesConcurrency })
     await Promise.all(
       hashesToDownload.map((hash) =>

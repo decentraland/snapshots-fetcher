@@ -227,3 +227,97 @@ test('downloadEntityAndContentFiles when a profile references an avatar snapshot
     expect(requestedFiles).toEqual([snapshotHash])
   })
 })
+
+test('downloadEntityAndContentFiles when a profile declares avatar snapshots and a bad content hash', ({
+  components
+}) => {
+  const targetFolder = 'downloads'
+  let requestedFiles: number
+
+  beforeEach(() => {
+    requestedFiles = 0
+    components.router.get('/contents/:file', async () => {
+      requestedFiles++
+      return { body: 'unused' }
+    })
+  })
+
+  it('should reject without spending the avatar budget first', async () => {
+    const entityId = await storeEntity(components.storage, {
+      type: 'profile',
+      metadata: {
+        avatars: [
+          {
+            avatar: {
+              // Deliberately NOT fixture hashes: test-component preloads every fixture into storage, so a
+              // fixture-named snapshot short-circuits on storage.exist and never reaches the network —
+              // which would make this assertion pass whatever the ordering is.
+              snapshots: {
+                body: `ba${'a'.repeat(57)}`,
+                face: `ba${'b'.repeat(57)}`
+              }
+            }
+          }
+        ]
+      },
+      // One unusable required hash means the entity can never be accepted, so none of the avatar
+      // fallback downloads above were ever worth starting.
+      content: [{ file: 'good.png', hash: 'QmazJLZfUmZgNMTdwWSmJRvw4dBfcjS9GuqkwkKGRWb4K6' }, { file: 'evil', hash: '../../etc/passwd' }]
+    })
+
+    await expect(
+      downloadEntityAndContentFiles(components, entityId, [await components.getBaseUrl()], new Map(), targetFolder, 1, 0)
+    ).rejects.toThrow('declares an invalid content file hash')
+
+    expect(requestedFiles).toEqual(0)
+  })
+})
+
+test('downloadEntityAndContentFiles when a profile declares more avatar snapshots than the cap', ({ components }) => {
+  const targetFolder = 'downloads'
+  let warnings: Array<{ message: string; extra?: any }>
+
+  beforeEach(() => {
+    warnings = []
+    components.router.get('/contents/:file', async () => ({ body: 'unused' }))
+    jest.spyOn(components.logs, 'getLogger').mockReturnValue({
+      log: jest.fn(),
+      debug: jest.fn(),
+      info: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn((message: string, extra?: any) => warnings.push({ message, extra }))
+    })
+  })
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  it('should log that the list was truncated, not silently drop the rest', async () => {
+    // 1001 distinct snapshot hashes against a cap of 1000. Without a signal an operator cannot tell this
+    // apart from a profile that simply had nothing missing.
+    const snapshots: Record<string, string> = {}
+    for (let index = 0; index < 1001; index++) {
+      snapshots[`slot${index}`] = `ba${String(index).padStart(57, '0')}`
+    }
+    const entityId = await storeEntity(components.storage, {
+      type: 'profile',
+      metadata: { avatars: [{ avatar: { snapshots } }] },
+      content: []
+    })
+
+    await downloadEntityAndContentFiles(
+      components,
+      entityId,
+      [await components.getBaseUrl()],
+      new Map(),
+      targetFolder,
+      1,
+      0
+    )
+
+    expect(warnings.map((entry) => entry.message)).toContain(
+      'Profile declared more avatar snapshots than will be fetched; the rest were dropped.'
+    )
+  })
+})
