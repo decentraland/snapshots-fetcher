@@ -84,7 +84,11 @@ function contentHashesToDownload(content: unknown[], entityId: EntityHash): stri
   for (const entry of content) {
     const hash = (entry as ContentMapping | undefined | null)?.hash
     if (typeof hash !== 'string' || !isValidContentHash(hash)) {
-      throw new Error(`Entity ${entityId} declares an invalid content file hash: ${JSON.stringify(hash)}`)
+      // Truncated for the same reason as the downloader's: an entry that failed validation can be any
+      // length the manifest chose.
+      throw new Error(
+        `Entity ${entityId} declares an invalid content file hash: ${truncateForLog(String(JSON.stringify(hash)))}`
+      )
     }
     hashes.add(hash)
   }

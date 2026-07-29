@@ -1,7 +1,13 @@
 import * as path from 'path'
 import { saveContentFileToDisk } from './client'
 import { SnapshotsFetcherComponents } from './types'
-import { isValidContentHash, isVerifiableContentHash, pickRandomServer, sleepUnlessStopped } from './utils'
+import {
+  isValidContentHash,
+  isVerifiableContentHash,
+  pickRandomServer,
+  sleepUnlessStopped,
+  truncateForLog
+} from './utils'
 
 // In-flight downloads, per storage component and then per content hash.
 //
@@ -125,7 +131,9 @@ export async function downloadFileWithRetries(
   // Reject untrusted hashes that are not plain content addresses before using them to build a
   // filesystem path. Without this, a value like "../../etc/x" would escape targetTempFolder.
   if (!isValidContentHash(hashToDownload)) {
-    throw new Error(`Invalid content hash: ${JSON.stringify(hashToDownload)}`)
+    // Truncated: this is the path where the hash failed validation, so its length is the server's
+    // choice, not ours — the bounded shapes are only guaranteed after this check passes.
+    throw new Error(`Invalid content hash: ${truncateForLog(String(JSON.stringify(hashToDownload)))}`)
   }
 
   const finalFileName = path.resolve(targetTempFolder, hashToDownload)
