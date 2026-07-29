@@ -339,6 +339,25 @@ export function isUsableTimestamp(value: unknown): value is number {
  * here could refuse a hash assertHash would have happily verified, which would stop syncing content that
  * works today. This can only ever reject hashes that were going to fail anyway.
  */
+/**
+ * Makes a URL safe to put in an error or log line.
+ *
+ * Two problems, both of which only exist once redirects are in play: after a hop the URL is the server's
+ * text rather than ours, so its length is unbounded; and a URL can carry `user:password@`, which must
+ * never reach a log. Falls back to truncation alone for something unparseable, since that is already not
+ * a URL we should be echoing in full.
+ */
+export function sanitizeUrlForLog(value: string): string {
+  try {
+    const parsed = new URL(value)
+    parsed.username = ''
+    parsed.password = ''
+    return truncateForLog(parsed.toString())
+  } catch {
+    return truncateForLog(value)
+  }
+}
+
 export function isVerifiableContentHash(hash: string): boolean {
   return hash.startsWith('Qm') || hash.startsWith('ba')
 }
@@ -745,12 +764,17 @@ function downloadFile(
       try {
         url = new URL(redirectedUrl, baseUrl)
       } catch {
-        settleWithError(new Error(`Invalid redirect location ${JSON.stringify(redirectedUrl)} from ${baseUrl}`))
+        settleWithError(
+          new Error(
+            `Invalid redirect location ${truncateForLog(JSON.stringify(redirectedUrl))} from ` +
+              sanitizeUrlForLog(baseUrl)
+          )
+        )
         return
       }
       // Only http(s) is supported; reject other schemes (e.g. file:) a redirect could point to.
       if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-        settleWithError(new Error('Unsupported protocol in URL ' + url.toString()))
+        settleWithError(new Error('Unsupported protocol in URL ' + sanitizeUrlForLog(url.toString())))
         return
       }
       const httpModule = url.protocol === 'https:' ? https : http
@@ -795,8 +819,15 @@ function downloadFile(
           // Choices, writing its body to disk as though it were the file, and accepted a redirect
           // status that arrived without a Location header.
         } else if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
-          response.resume()
-          settleWithError(new Error('Invalid response from ' + url + ' status: ' + response.statusCode))
+          // Destroyed, not drained, for the same reason as the redirect path above: this body is already
+          // being thrown away, and resume() keeps reading it to completion outside every transfer bound —
+          // the size caps and rate floor live in createDownloadTransforms, which this path never reaches.
+          // A server can therefore pair an error status with an endless body and keep the socket and the
+          // bandwidth after the promise has already rejected and the caller has moved on.
+          response.destroy()
+          settleWithError(
+            new Error('Invalid response from ' + sanitizeUrlForLog(url.toString()) + ' status: ' + response.statusCode)
+          )
           return
         } else {
           // Content-coding tokens are case-insensitive (RFC 9110 §8.4.1) and `x-gzip` is a legacy alias
@@ -816,12 +847,13 @@ function downloadFile(
           // surfacing as a hash mismatch after the retry ladder has been spent. Truncated because the
           // header value is the server's choice.
           if (declaredEncodings.length > 0 && !isGzip) {
-            response.resume()
+            // Destroyed rather than drained: see the status path above. The coding is chosen by the
+            // server, so draining here would be an attacker-selectable way back to an unbounded read.
+            response.destroy()
             settleWithError(
               new Error(
-                `Cannot decode ${url}: unsupported content-encoding ${truncateForLog(
-                  JSON.stringify(declaredEncodings.join(', '))
-                )}`
+                `Cannot decode ${sanitizeUrlForLog(url.toString())}: unsupported content-encoding ` +
+                  truncateForLog(JSON.stringify(declaredEncodings.join(', ')))
               )
             )
             return
@@ -847,7 +879,7 @@ function downloadFile(
 
       // Reject (instead of hanging forever) when the connection stalls before/while downloading.
       request.setTimeout(limits.downloadInactivityTimeoutInMs, () => {
-        request.destroy(new Error('Timeout while downloading ' + url.toString()))
+        request.destroy(new Error('Timeout while downloading ' + sanitizeUrlForLog(url.toString())))
       })
 
       request.on('error', function (err) {
