@@ -474,7 +474,10 @@ test('synchronizer when a syncing-phase deployment is dropped and the stream the
         tmpDownloadFolder: resolve('downloads'),
         requestMaxRetries: 1,
         requestRetryWaitTime: 0,
-        pointerChangesWaitTime: 0
+        // Non-zero, so the syncing stream is long-lived and keeps polling from its own internal
+        // high-water mark. With 0 it ends after one poll and reconnects regardless, which hides whether
+        // an incomplete poll is what ends the run.
+        pointerChangesWaitTime: 30
       }
     )
 
@@ -488,6 +491,16 @@ test('synchronizer when a syncing-phase deployment is dropped and the stream the
     const resumedPastTheDrop = requestedFrom.filter((from) => Number(from) > droppedLocalTimestamp)
 
     expect(resumedPastTheDrop).toEqual([])
+  })
+
+  it('should reconnect and re-request the window containing it, rather than only pinning the mark', () => {
+    // Holding the durable mark back alone is not enough: the live stream polls from its own internal
+    // high-water mark, so without ending the run nothing re-fetches the dropped entity until the stream
+    // happens to restart — and the periodic snapshot sync that would otherwise catch it runs every 14
+    // days. Repeated polls at the pre-drop `from` are the evidence it is actually being retried.
+    const pollsAtTheDurableMark = requestedFrom.filter((from) => Number(from) <= droppedLocalTimestamp)
+
+    expect(pollsAtTheDurableMark.length).toBeGreaterThanOrEqual(3)
   })
 
   afterAll(async () => {

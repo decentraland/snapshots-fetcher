@@ -582,9 +582,23 @@ export async function createSynchronizer(
               async () => {
                 await components.deployer.onIdle()
                 // Cumulative, not per poll: this asks whether everything scheduled since the stream
-                // started has been confirmed, which is exactly the contiguity condition. Once something
-                // is outstanding the mark stops advancing until the stream restarts and re-fetches it.
-                if (report.acknowledged < report.scheduled || tentativeTimestamps.length === 0) {
+                // started has been confirmed, which is exactly the contiguity condition.
+                if (report.acknowledged < report.scheduled) {
+                  // End the run rather than carry on. Holding the durable mark back already stops the
+                  // missing entity being skipped, but the live stream polls from its OWN internal
+                  // high-water mark, so continuing means nothing re-fetches that entity until the stream
+                  // happens to restart — and the periodic snapshot sync that would otherwise catch it runs
+                  // every 14 days. Ending the run reconnects from the durable mark, which re-delivers it.
+                  //
+                  // Well-behaved against a deployer that drops it permanently: each attempt now fails
+                  // fast, so the exponential falloff throttles the retries, while healthyRunTime means a
+                  // single bad poll after a long healthy run reconnects promptly instead of inheriting an
+                  // interval grown by unrelated failures.
+                  throw new Error(
+                    `Not all pointer-change deployments were acknowledged for ${contentServer} (${report.acknowledged} of ${report.scheduled}); reconnecting from the last confirmed timestamp`
+                  )
+                }
+                if (tentativeTimestamps.length === 0) {
                   return
                 }
                 increaseLastTimestamp(contentServer, ...tentativeTimestamps)

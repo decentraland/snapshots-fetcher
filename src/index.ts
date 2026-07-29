@@ -284,7 +284,11 @@ async function downloadProfileAvatars(
           _serverMapLRU,
           maxRetries,
           waitTimeBetweenRetries
-        ).catch(() => logger.info(`File ${snapshot} not available for download.`))
+        ).catch(() =>
+          // Truncated: the value comes from remote profile metadata, and this path is reached precisely
+          // when it was unusable, so its length is the manifest's choice.
+          logger.info('Avatar snapshot not available for download.', { entityId, snapshot: truncateForLog(snapshot) })
+        )
       )
     )
   )
