@@ -320,4 +320,58 @@ test('fetchJsonPaginated when the server returns a malformed or endless feed', (
       expect(elements).toEqual(['only'])
     })
   })
+  describe.each([
+    ['true', true],
+    ['a string', 'more'],
+    ['a number', 42],
+    ['an array', ['?from=2']]
+  ])('and the pagination container is %s instead of an object', (_label: string, pagination: unknown) => {
+    let baseUrl: string
+
+    beforeEach(async () => {
+      baseUrl = await components.getBaseUrl()
+      components.router.get('/wrong-typed-pagination', async (): Promise<any> => ({
+        body: { deltas: ['only'], pagination }
+      }))
+    })
+
+    it('should reject rather than reading a container it cannot parse as the end of the feed', async () => {
+      // Reading `.next` off `true` or `"more"` yields undefined, which the truthiness check then ended the
+      // feed on — the same "a shape we cannot read means there is no more" hazard as a wrong-typed link.
+      await expect(
+        drain(
+          fetchJsonPaginated(
+            components,
+            `${baseUrl}/wrong-typed-pagination`,
+            ($) => $.deltas,
+            'dcl_catalysts_pointer_changes_response_time_seconds'
+          )
+        )
+      ).rejects.toThrow('expected an object')
+    })
+  })
+
+  describe('and the pagination container is an empty object', () => {
+    let baseUrl: string
+
+    beforeEach(async () => {
+      baseUrl = await components.getBaseUrl()
+      components.router.get('/empty-pagination', async (): Promise<any> => ({
+        body: { deltas: ['only'], pagination: {} }
+      }))
+    })
+
+    it('should treat it as the end of the feed, which is how a real last page looks', async () => {
+      const elements = await drain(
+        fetchJsonPaginated(
+          components,
+          `${baseUrl}/empty-pagination`,
+          ($) => $.deltas,
+          'dcl_catalysts_pointer_changes_response_time_seconds'
+        )
+      )
+
+      expect(elements).toEqual(['only'])
+    })
+  })
 })

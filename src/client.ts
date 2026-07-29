@@ -175,8 +175,22 @@ export async function* fetchJsonPaginated<T>(
       yield elem
     }
 
-    if (partialHistory.pagination) {
-      const nextRelative: unknown = partialHistory.pagination.next
+    const pagination: unknown = partialHistory.pagination
+    // Absent or null means an unpaginated response, which is a legitimate way for a feed to end.
+    if (pagination !== undefined && pagination !== null) {
+      // A truthy non-object was previously waved through by the `if`: reading `.next` off `true` or
+      // `"more"` yields undefined, which then ended the feed as though the server had said there was
+      // nothing more. Same hazard as a wrong-typed `next` — a container we cannot read must not be read
+      // as an ending — so the shape is checked before the link inside it. An array is not a container
+      // either, despite being typeof 'object'.
+      if (typeof pagination !== 'object' || Array.isArray(pagination)) {
+        throw new Error(
+          `Invalid pagination while fetching ${url}: expected an object, got ${
+            Array.isArray(pagination) ? 'an array' : typeof pagination
+          }`
+        )
+      }
+      const nextRelative: unknown = (pagination as { next?: unknown }).next
       // Absent, null or empty means "no next page", which is how a feed legitimately ends.
       if (nextRelative === undefined || nextRelative === null || nextRelative === '') {
         break
