@@ -451,7 +451,11 @@ export function isNonPublicAddress(address: string): boolean {
  * host the caller originally asked for, which comes from the trusted server list — is always allowed,
  * which is what keeps loopback-based local development and tests working.
  */
-function createRedirectSafeLookup(allowedHostname: string): LookupFunction {
+/**
+ * Exported for testing: this guard's decisions depend on DNS answer sets that are impractical to
+ * produce through a real download, and it is the piece of this file with the worst track record.
+ */
+export function createRedirectSafeLookup(allowedHostname: string): LookupFunction {
   const allowed = allowedHostname.toLowerCase()
   // Whether the caller's own host resolved to a non-public address the first time we looked it up.
   // Recorded once and then held for the whole download, which is what closes DNS rebinding: a host that
@@ -475,9 +479,25 @@ function createRedirectSafeLookup(allowedHostname: string): LookupFunction {
         // The caller's host comes from the trusted server list, so it is allowed to be private — that
         // is what keeps loopback-based local development and the tests working. It just may not
         // *change* classification mid-download.
+        //
+        // A mixed answer set has no single classification to pin, and taking "contains a non-public
+        // address" as the answer is exploitable: the connection may well use the public address, while
+        // the guard records "non-public" — after which a same-host redirect resolving to ONLY loopback
+        // matches the recorded value and is waved through, which is the exact pivot this exists to stop.
+        // It cuts the other way too, rejecting a redirect that narrows to public-only. Neither set is a
+        // configuration a real content server has, so refuse the ambiguity instead of guessing at it.
+        const everyAddressNonPublic = resolved.every((entry) => isNonPublicAddress(entry.address))
+        if (nonPublic && !everyAddressNonPublic) {
+          callback(
+            new Error(
+              `Refusing to use ${hostname}: it resolves to a mix of public and non-public addresses, which has no single classification to hold for the rest of the download`
+            )
+          )
+          return
+        }
         if (allowedHostWasNonPublic === undefined) {
-          allowedHostWasNonPublic = !!nonPublic
-        } else if (!!nonPublic !== allowedHostWasNonPublic) {
+          allowedHostWasNonPublic = everyAddressNonPublic
+        } else if (everyAddressNonPublic !== allowedHostWasNonPublic) {
           callback(
             new Error(
               `Refusing to follow a redirect to ${hostname}: it now resolves to ${
