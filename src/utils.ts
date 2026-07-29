@@ -8,13 +8,11 @@ import * as https from 'https'
 import * as net from 'net'
 import { LookupFunction } from 'net'
 import * as path from 'path'
-import { pipeline, Readable, Transform } from 'stream'
-import { promisify } from 'util'
+import { Readable, Transform } from 'stream'
+import { pipeline as streamPipeline } from 'stream/promises'
 import * as zlib from 'zlib'
 import { ContentServerMetricLabels } from './metrics'
 import { Path, ResolvedTransferLimits, Server, SnapshotsFetcherComponents, TransferLimits } from './types'
-
-const streamPipeline = promisify(pipeline)
 
 // Bounds buffered JSON responses so a malicious server can't OOM the process via response.json().
 const MAX_JSON_RESPONSE_SIZE_IN_BYTES = 50 * 1024 * 1024 // 50 MiB
@@ -42,6 +40,7 @@ const DEFAULT_BODY_READ_TIMEOUT_IN_MS = 30_000
 // by connection setup and server think-time rather than by throughput.
 export const DEFAULT_TRANSFER_LIMITS: ResolvedTransferLimits = {
   requestTimeoutInMs: 15_000,
+  downloadInactivityTimeoutInMs: 30_000,
   maxDownloadedFileSizeInBytes: 1024 * 1024 * 1024, // 1 GiB
   minTransferRateInBytesPerSecond: 4 * 1024,
   transferRateGracePeriodInMs: 60_000
@@ -51,6 +50,7 @@ export const DEFAULT_TRANSFER_LIMITS: ResolvedTransferLimits = {
 // grace period of 0 judges from the first chunk. A timeout or size cap of 0 would reject every transfer.
 const TRANSFER_LIMIT_MINIMUMS: ResolvedTransferLimits = {
   requestTimeoutInMs: 1,
+  downloadInactivityTimeoutInMs: 1,
   maxDownloadedFileSizeInBytes: 1,
   minTransferRateInBytesPerSecond: 0,
   transferRateGracePeriodInMs: 0
@@ -64,7 +64,16 @@ const TRANSFER_LIMIT_MINIMUMS: ResolvedTransferLimits = {
  * instead of as a puzzling per-download failure.
  */
 export function resolveTransferLimits(limits?: TransferLimits): ResolvedTransferLimits {
-  const resolved = { ...DEFAULT_TRANSFER_LIMITS, ...limits }
+  // Only *defined* fields override a default. A plain spread would let `{ requestTimeoutInMs: undefined }`
+  // overwrite the default with undefined and then fail validation, which punishes the common case of
+  // config assembled from env vars or optional options where an absent value arrives as an explicit
+  // undefined rather than a missing key.
+  const resolved = { ...DEFAULT_TRANSFER_LIMITS }
+  for (const [name, value] of Object.entries(limits ?? {})) {
+    if (value !== undefined) {
+      resolved[name as keyof ResolvedTransferLimits] = value as number
+    }
+  }
   for (const name of Object.keys(DEFAULT_TRANSFER_LIMITS) as Array<keyof ResolvedTransferLimits>) {
     const value = resolved[name]
     const minimum = TRANSFER_LIMIT_MINIMUMS[name]
@@ -446,9 +455,6 @@ const MAX_REDIRECTS = 10
 // download from such a peer burn its whole retry ladder. All of these are followed with GET, which is
 // what 303 mandates and what 307/308 preserve, since this client only ever issues GET.
 const REDIRECT_STATUS_CODES = new Set([301, 302, 303, 307, 308])
-// Abort a download after this many milliseconds of socket inactivity. Healthy downloads keep the
-// socket busy, so this only trips on stalled connections (e.g. a server that stops sending bytes).
-const DOWNLOAD_INACTIVITY_TIMEOUT_MS = 30_000
 function isNonPublicIPv4(address: string): boolean {
   const [first, second] = address.split('.').map(Number)
   if (first === 0) return true // 0.0.0.0/8 "this network"
@@ -621,22 +627,21 @@ export function createRedirectSafeLookup(allowedHostname: string): LookupFunctio
 // Fails the pipeline once more than maxBytes have flowed through it. Placed *after* gunzip so it
 // bounds the decompressed size.
 /**
- * Enforces both bounds a body stream needs: a ceiling on total bytes, and a floor on the rate those
- * bytes arrive at. Named for the pair because size alone was never a time bound — see
- * {@link tooSlowToContinue}. The clock starts when the response headers arrive, which is the right
- * origin for measuring body throughput.
+ * Rate floor for a body stream. **Must sit on the raw response, before any decompression.**
+ *
+ * A Transform's check only runs when a chunk reaches it, and gunzip can consume unbounded raw input while
+ * emitting nothing at all — concatenated empty gzip members are valid and decompress to zero bytes
+ * (measured: 1 MB of raw input, 0 bytes out, this check never invoked once). Placed after gunzip the
+ * guard was not merely lenient, it never ran, while the raw socket traffic kept the inactivity deadline
+ * refreshed. The clock starts when the response headers arrive, which is the right origin for measuring
+ * body throughput.
  */
-export function createTransferLimiter(limits: ResolvedTransferLimits): Transform {
+export function createTransferRateGuard(limits: ResolvedTransferLimits): Transform {
   let total = 0
   const startedAt = Date.now()
-  const maxBytes = limits.maxDownloadedFileSizeInBytes
   return new Transform({
     transform(chunk, _encoding, callback) {
       total += chunk.length
-      if (total > maxBytes) {
-        callback(new Error(`Downloaded file exceeds the maximum allowed size of ${maxBytes} bytes`))
-        return
-      }
       const tooSlow = tooSlowToContinue(total, startedAt, limits)
       if (tooSlow) {
         callback(tooSlow)
@@ -645,6 +650,46 @@ export function createTransferLimiter(limits: ResolvedTransferLimits): Transform
       callback(null, chunk)
     }
   })
+}
+
+/**
+ * Ceiling on the bytes passing through, named by `subject` so a failure says which side of a gzip
+ * boundary tripped.
+ */
+export function createSizeCap(maxBytes: number, subject: string): Transform {
+  let total = 0
+  return new Transform({
+    transform(chunk, _encoding, callback) {
+      total += chunk.length
+      if (total > maxBytes) {
+        callback(new Error(`${subject} exceeds the maximum allowed size of ${maxBytes} bytes`))
+        return
+      }
+      callback(null, chunk)
+    }
+  })
+}
+
+/**
+ * The transforms a download applies, in order, between the response and the file.
+ *
+ * Exported as one unit because the *ordering* is the security property — see
+ * {@link createTransferRateGuard} for what putting the rate check on the wrong side of gunzip costs — and
+ * a test that rebuilt the chain itself would not be testing this ordering at all.
+ */
+export function createDownloadTransforms(isGzip: boolean, limits: ResolvedTransferLimits): Transform[] {
+  const maxBytes = limits.maxDownloadedFileSizeInBytes
+  const transforms: Transform[] = [createTransferRateGuard(limits)]
+  if (isGzip) {
+    // Bounds the compressed stream too, or a peer could stream valid gzip indefinitely while staying
+    // above the rate floor and never produce a decompressed byte for the cap below to measure. For real
+    // content this never binds: gzip exceeds its input only for incompressible data, and then by ~0.03%.
+    transforms.push(createSizeCap(maxBytes, 'Compressed response'))
+    transforms.push(zlib.createGunzip())
+  }
+  // After decompression, so this bounds what actually reaches the disk: the gzip-bomb guard.
+  transforms.push(createSizeCap(maxBytes, 'Downloaded file'))
+  return transforms
 }
 
 function downloadFile(
@@ -759,11 +804,8 @@ function downloadFile(
           })
 
           const isGzip = response.headers['content-encoding'] === 'gzip'
-          const transferLimiter = createTransferLimiter(limits)
 
-          const pipe = isGzip
-            ? streamPipeline(response, zlib.createGunzip(), transferLimiter, file)
-            : streamPipeline(response, transferLimiter, file)
+          const pipe = streamPipeline([response, ...createDownloadTransforms(isGzip, limits), file])
 
           pipe
             .then(() => {
@@ -778,7 +820,7 @@ function downloadFile(
       })
 
       // Reject (instead of hanging forever) when the connection stalls before/while downloading.
-      request.setTimeout(DOWNLOAD_INACTIVITY_TIMEOUT_MS, () => {
+      request.setTimeout(limits.downloadInactivityTimeoutInMs, () => {
         request.destroy(new Error('Timeout while downloading ' + url.toString()))
       })
 

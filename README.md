@@ -73,7 +73,8 @@ await createSynchronizer(components, {
   // …
   transferLimits: {
     requestTimeoutInMs: 15_000, // inactivity deadline on a JSON body read, refreshed per chunk
-    maxDownloadedFileSizeInBytes: 1024 * 1024 * 1024, // 1 GiB ceiling per content file, after gunzip
+    downloadInactivityTimeoutInMs: 30_000, // the same, for a content-file download
+    maxDownloadedFileSizeInBytes: 1024 * 1024 * 1024, // 1 GiB ceiling per content file
     minTransferRateInBytesPerSecond: 4096, // floor a transfer must average to continue
     transferRateGracePeriodInMs: 60_000 // how long before the rate is judged at all
   }
@@ -86,6 +87,13 @@ arriving, never whether they add up to progress. Lower it on a constrained link,
 `transferRateGracePeriodInMs` alongside it if your peers are slow to get going. **Setting it to `0`
 disables the check**, restoring the pre-`3.0.0` behaviour where an arbitrarily slow transfer continued
 as long as it kept sending something.
+
+`maxDownloadedFileSizeInBytes` is applied on both sides of a gzip boundary: to the decompressed bytes,
+which is the gzip-bomb bound, and to the compressed response as well. The second one matters because a
+peer can stream valid gzip indefinitely while producing no decompressed output at all — concatenated
+empty gzip members are legal — so a bound only on the decompressed side never gets a byte to measure. For
+real content the compressed bound never binds: gzip exceeds its input only for incompressible data, and
+then by about 0.03%.
 
 `createSynchronizer` validates these up front, so a bad value is rejected at construction rather than
 surfacing as a puzzling failure on one download later. Every field must be an integer; the two rate

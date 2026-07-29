@@ -2,7 +2,13 @@ import { Readable } from 'stream'
 import { IFetchComponent } from '@dcl/core-commons'
 import { hashV1 } from '@dcl/hashing'
 import { downloadEntityAndContentFiles } from '../src'
-import { DEFAULT_TRANSFER_LIMITS, fetchJson, resolveTransferLimits, tooSlowToContinue } from '../src/utils'
+import {
+  DEFAULT_TRANSFER_LIMITS,
+  fetchJson,
+  resolveTransferLimits,
+  saveContentFileToDisk,
+  tooSlowToContinue
+} from '../src/utils'
 import { test } from './components'
 
 describe('resolveTransferLimits', () => {
@@ -10,6 +16,7 @@ describe('resolveTransferLimits', () => {
     it('should return the values this package used before they were configurable', () => {
       expect(resolveTransferLimits()).toEqual({
         requestTimeoutInMs: 15_000,
+        downloadInactivityTimeoutInMs: 30_000,
         maxDownloadedFileSizeInBytes: 1024 * 1024 * 1024,
         minTransferRateInBytesPerSecond: 4096,
         transferRateGracePeriodInMs: 60_000
@@ -47,6 +54,35 @@ describe('resolveTransferLimits', () => {
   ])('when a limit is %s', (_label: string, value: number) => {
     it('should throw rather than coerce it into a bound that cannot hold', () => {
       expect(() => resolveTransferLimits({ requestTimeoutInMs: value })).toThrow('must be an integer')
+    })
+  })
+
+  describe('when a field is present but explicitly undefined', () => {
+    // Config assembled from env vars or optional options carries explicit undefined for an absent value
+    // far more often than it omits the key, and a plain spread would overwrite the default with it and
+    // then fail validation.
+    it('should treat it as omitted rather than as an invalid value', () => {
+      expect(resolveTransferLimits({ requestTimeoutInMs: undefined })).toEqual(DEFAULT_TRANSFER_LIMITS)
+    })
+
+    it('should still apply the other fields supplied alongside it', () => {
+      expect(
+        resolveTransferLimits({ requestTimeoutInMs: undefined, minTransferRateInBytesPerSecond: 512 })
+      ).toEqual({ ...DEFAULT_TRANSFER_LIMITS, minTransferRateInBytesPerSecond: 512 })
+    })
+  })
+
+  describe('when every field is explicitly undefined', () => {
+    it('should return the defaults untouched', () => {
+      expect(
+        resolveTransferLimits({
+          requestTimeoutInMs: undefined,
+          downloadInactivityTimeoutInMs: undefined,
+          maxDownloadedFileSizeInBytes: undefined,
+          minTransferRateInBytesPerSecond: undefined,
+          transferRateGracePeriodInMs: undefined
+        })
+      ).toEqual(DEFAULT_TRANSFER_LIMITS)
     })
   })
 
@@ -168,4 +204,33 @@ test('downloadEntityAndContentFiles when the caller tightens the download size c
       downloadEntityAndContentFiles(components, entityId, [await components.getBaseUrl()], new Map(), 'downloads', 1, 0)
     ).resolves.toBeDefined()
   })
+})
+
+test('saveContentFileToDisk when a peer accepts the connection and then goes silent', ({ components }) => {
+  let baseUrl: string
+
+  beforeEach(async () => {
+    baseUrl = await components.getBaseUrl()
+    // Headers never sent, body never written: the socket simply idles. Only the inactivity deadline can
+    // end this, so the wait is a direct measure of the configured value being used.
+    components.router.get('/silent/:file', async () => new Promise(() => {}) as any)
+  })
+
+  it('should abort after the configured deadline rather than the hardcoded 30s', async () => {
+    const startedAt = Date.now()
+
+    await expect(
+      saveContentFileToDisk(
+        components,
+        `${baseUrl}/silent/QmTestHash`,
+        'downloads/QmTestHash',
+        'QmTestHash',
+        false,
+        { downloadInactivityTimeoutInMs: 250 }
+      )
+    ).rejects.toThrow('Timeout while downloading')
+
+    // Comfortably under the 30s default, so this cannot pass while the option is ignored.
+    expect(Date.now() - startedAt).toBeLessThan(5_000)
+  }, 40_000)
 })

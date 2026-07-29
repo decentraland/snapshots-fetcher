@@ -62,11 +62,19 @@ export type SnapshotsFetcherComponents = {
  */
 export type TransferLimits = {
   /**
-   * Deadline for a JSON request's body read, refreshed on every chunk received — an inactivity
-   * deadline, not a total one. Must be an integer >= 1.
+   * Deadline for a **JSON request's** body read — `/snapshots` and `/pointer-changes`. Refreshed on every
+   * chunk received, so it is an inactivity deadline rather than a total one. Content-file downloads have
+   * their own, `downloadInactivityTimeoutInMs`, because a file legitimately takes longer than a JSON
+   * document and one value cannot serve both. Must be an integer >= 1.
    * @defaultValue 15000
    */
   requestTimeoutInMs?: number
+  /**
+   * Deadline for a content-file download, measured from the last byte received on the socket rather than
+   * from the start, so a large file making steady progress is never cut off. Must be an integer >= 1.
+   * @defaultValue 30000
+   */
+  downloadInactivityTimeoutInMs?: number
   /**
    * Hard ceiling on the bytes written to disk for a single content file, after decompression. Guards
    * against gzip bombs and otherwise unbounded responses. Must be an integer >= 1.

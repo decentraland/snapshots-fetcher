@@ -1,7 +1,14 @@
+import * as zlib from 'zlib'
 import { Readable } from 'stream'
 import { pipeline as streamPipeline } from 'stream/promises'
-import { DEFAULT_TRANSFER_LIMITS, createTransferLimiter, resolveTransferLimits } from '../src/utils'
-import { tooSlowToContinue } from '../src/utils'
+import {
+  DEFAULT_TRANSFER_LIMITS,
+  createSizeCap,
+  createDownloadTransforms,
+  createTransferRateGuard,
+  resolveTransferLimits,
+  tooSlowToContinue
+} from '../src/utils'
 
 // The guard measures against Date.now(), and the grace period is a minute — far longer than a test
 // should take. Advancing a stubbed clock is what lets the real code paths be exercised in milliseconds.
@@ -79,7 +86,7 @@ describe('tooSlowToContinue', () => {
   })
 })
 
-describe('createTransferLimiter', () => {
+describe('createDownloadTransforms', () => {
   let clock: ReturnType<typeof withClock>
 
   beforeEach(() => {
@@ -92,7 +99,7 @@ describe('createTransferLimiter', () => {
 
   describe('when the source trickles bytes slowly enough to stay under the floor', () => {
     it('should destroy the pipeline rather than let it hold its slot indefinitely', async () => {
-      const limiter = createTransferLimiter(resolveTransferLimits({ maxDownloadedFileSizeInBytes: 1024 * 1024 }))
+      const limiter = createTransferRateGuard(resolveTransferLimits({ maxDownloadedFileSizeInBytes: 1024 * 1024 }))
       // Each chunk arrives well within the 30s inactivity deadline, so only the rate floor can stop it.
       const trickle = Readable.from(
         (async function* () {
@@ -117,7 +124,7 @@ describe('createTransferLimiter', () => {
     })
 
     it('should pass every byte through untouched', async () => {
-      const limiter = createTransferLimiter(resolveTransferLimits({ maxDownloadedFileSizeInBytes: 1024 * 1024 }))
+      const limiter = createTransferRateGuard(resolveTransferLimits({ maxDownloadedFileSizeInBytes: 1024 * 1024 }))
       const payload = Buffer.alloc(64 * 1024, 7)
 
       await streamPipeline(Readable.from([payload]), limiter, async function (source) {
@@ -132,11 +139,124 @@ describe('createTransferLimiter', () => {
 
   describe('when the payload exceeds the size ceiling', () => {
     it('should still report the size failure rather than the rate one', async () => {
-      const limiter = createTransferLimiter(resolveTransferLimits({ maxDownloadedFileSizeInBytes: 10 }))
+      const limiter = createSizeCap(10, 'Downloaded file')
 
       await expect(
         streamPipeline(Readable.from([Buffer.alloc(64)]), limiter, async function* () {})
       ).rejects.toThrow('exceeds the maximum allowed size of 10 bytes')
+    })
+  })
+})
+
+describe('createDownloadTransforms when the response is gzip encoded', () => {
+  let clock: ReturnType<typeof withClock>
+
+  beforeEach(() => {
+    clock = withClock()
+  })
+
+  afterEach(() => {
+    clock.restore()
+  })
+
+  describe('and the peer trickles compressed bytes that decompress to nothing', () => {
+    let error: Error | undefined
+
+    beforeEach(async () => {
+      // Concatenated empty gzip members: every one is valid, gunzip accepts multi-member streams, and the
+      // whole thing decompresses to zero bytes. A rate check placed after gunzip is never invoked even
+      // once, because a Transform only runs when a chunk reaches it — so the guard did not merely allow
+      // this, it never ran, while the raw socket traffic kept the inactivity deadline refreshed.
+      const emptyMember = zlib.gzipSync(Buffer.alloc(0))
+      const trickle = Readable.from(
+        (async function* () {
+          for (let member = 0; member < 200; member++) {
+            clock.advanceBy(1_000)
+            yield emptyMember
+          }
+        })()
+      )
+
+      error = undefined
+      try {
+        await streamPipeline([
+          trickle,
+          ...createDownloadTransforms(true, DEFAULT_TRANSFER_LIMITS),
+          async function* () {}
+        ] as any)
+      } catch (thrown: any) {
+        error = thrown
+      }
+    })
+
+    it('should refuse the transfer instead of holding the slot indefinitely', () => {
+      expect(error).toBeDefined()
+    })
+
+    it('should fail on the rate floor, measured against the raw compressed bytes', () => {
+      expect(error!.message).toContain('below the minimum of 4096 bytes/s')
+    })
+  })
+
+  describe('and the peer sends a real payload promptly', () => {
+    let received: number
+
+    beforeEach(() => {
+      received = 0
+    })
+
+    it('should decompress it and pass every byte through', async () => {
+      const payload = Buffer.alloc(64 * 1024, 7)
+
+      await streamPipeline([
+        Readable.from([zlib.gzipSync(payload)]),
+        ...createDownloadTransforms(true, DEFAULT_TRANSFER_LIMITS),
+        async function (source: AsyncIterable<Buffer>) {
+          for await (const chunk of source) {
+            received += chunk.length
+          }
+        }
+      ] as any)
+
+      expect(received).toEqual(payload.length)
+    })
+  })
+
+  describe('and the compressed stream alone exceeds the size cap', () => {
+    it('should refuse it on the compressed side, naming which side tripped', async () => {
+      // Stays above the rate floor throughout, so only a bound on the compressed bytes can stop it. Without
+      // one, a peer can stream valid gzip forever and never produce a decompressed byte to measure.
+      const emptyMember = zlib.gzipSync(Buffer.alloc(0))
+      const flood = Readable.from(
+        (function* () {
+          for (let member = 0; member < 5000; member++) {
+            yield emptyMember
+          }
+        })()
+      )
+
+      await expect(
+        streamPipeline([
+          flood,
+          ...createDownloadTransforms(true, resolveTransferLimits({ maxDownloadedFileSizeInBytes: 1024 })),
+          async function* () {}
+        ] as any)
+      ).rejects.toThrow('Compressed response exceeds the maximum allowed size of 1024 bytes')
+    })
+  })
+
+  describe('and the decompressed payload exceeds the size cap', () => {
+    it('should still refuse it on the decompressed side, so gzip bombs stay bounded', async () => {
+      // 1 MiB of zeroes compresses to about a kilobyte: the compressed cap below would not catch it.
+      const bomb = zlib.gzipSync(Buffer.alloc(1024 * 1024))
+
+      await expect(
+        streamPipeline([
+          Readable.from([bomb]),
+          ...createDownloadTransforms(true, resolveTransferLimits({ maxDownloadedFileSizeInBytes: 4096 })),
+          async function* () {}
+        ] as any)
+      ).rejects.toThrow('Downloaded file exceeds the maximum allowed size of 4096 bytes')
     })
   })
 })
