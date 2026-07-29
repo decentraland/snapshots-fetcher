@@ -22,6 +22,42 @@ const MAX_JSON_RESPONSE_SIZE_IN_BYTES = 50 * 1024 * 1024 // 50 MiB
 // Applied to the body read when the caller did not ask for a specific timeout.
 const DEFAULT_BODY_READ_TIMEOUT_IN_MS = 30_000
 
+// Minimum sustained rate a transfer must average once it has been running longer than the grace period
+// below. The inactivity deadlines on both transfer paths only ask "did a byte arrive recently?", so a
+// peer that trickles one byte per window answers yes forever while holding its queue slot; the size
+// caps are the only other bound, and at that rate 1 GiB is geological. A rate floor is what makes
+// staying connected cost the peer real bandwidth instead of nothing.
+//
+// Set far below any usable link (4 KiB/s is worse than a 56k modem) rather than near real throughput:
+// this is here to catch transfers that are not really transferring, and a legitimate peer that cannot
+// beat it would exhaust its retry ladder on duration anyway. Downloads are retried, so a false
+// positive costs an attempt rather than the entity.
+const MIN_TRANSFER_RATE_IN_BYTES_PER_SECOND = 4 * 1024
+// Rate is not judged before this. Small responses finish well inside it, and earlier samples are
+// dominated by connection setup and server think-time rather than by throughput.
+const TRANSFER_RATE_GRACE_PERIOD_IN_MS = 60_000
+
+/**
+ * Companion to the per-chunk inactivity deadlines: they check that bytes are still arriving, this
+ * checks that the bytes add up to progress. Returns the error to fail with, or undefined to continue.
+ */
+export function tooSlowToContinue(bytesSoFar: number, startedAt: number): Error | undefined {
+  const elapsed = Date.now() - startedAt
+  if (elapsed <= TRANSFER_RATE_GRACE_PERIOD_IN_MS) {
+    return undefined
+  }
+  const bytesPerSecond = (bytesSoFar * 1000) / elapsed
+  if (bytesPerSecond >= MIN_TRANSFER_RATE_IN_BYTES_PER_SECOND) {
+    return undefined
+  }
+  // The byte total is part of the message because the rate alone rounds a trickle and a dead silence
+  // to the same "0.0 bytes/s", and those are different problems to go looking for.
+  return new Error(
+    `Transfer of ${bytesSoFar} bytes averaged ${bytesPerSecond.toFixed(2)} bytes/s over ` +
+      `${Math.round(elapsed / 1000)}s, below the minimum of ${MIN_TRANSFER_RATE_IN_BYTES_PER_SECOND} bytes/s`
+  )
+}
+
 // Reads a response body while enforcing a maximum size. The native fetcher (unlike node-fetch) has
 // no `size` option, so we cap manually: read the stream with a running byte count and abort —
 // cancelling the stream to free its socket — if it exceeds the limit.
@@ -33,6 +69,7 @@ async function readBodyWithSizeLimit(response: Response, maxBytes: number, timeo
 
   const chunks: Uint8Array[] = []
   let total = 0
+  const startedAt = Date.now()
   // The fetch component's timeout only covers time-to-headers: it clears its abort timer as soon as the
   // response object exists. Without a deadline here a server can send headers, write half a document
   // and then go silent forever — exactly the stall the request timeout was meant to prevent, and a
@@ -64,6 +101,10 @@ async function readBodyWithSizeLimit(response: Response, maxBytes: number, timeo
         total += value.byteLength
         if (total > maxBytes) {
           throw new Error(`Response body exceeds the maximum allowed size of ${maxBytes} bytes`)
+        }
+        const tooSlow = tooSlowToContinue(total, startedAt)
+        if (tooSlow) {
+          throw tooSlow
         }
         chunks.push(value)
       }
@@ -522,16 +563,28 @@ export function createRedirectSafeLookup(allowedHostname: string): LookupFunctio
 
 // Fails the pipeline once more than maxBytes have flowed through it. Placed *after* gunzip so it
 // bounds the decompressed size.
-function createSizeLimiter(maxBytes: number): Transform {
+/**
+ * Enforces both bounds a body stream needs: a ceiling on total bytes, and a floor on the rate those
+ * bytes arrive at. Named for the pair because size alone was never a time bound — see
+ * {@link tooSlowToContinue}. The clock starts when the response headers arrive, which is the right
+ * origin for measuring body throughput.
+ */
+export function createTransferLimiter(maxBytes: number): Transform {
   let total = 0
+  const startedAt = Date.now()
   return new Transform({
     transform(chunk, _encoding, callback) {
       total += chunk.length
       if (total > maxBytes) {
         callback(new Error(`Downloaded file exceeds the maximum allowed size of ${maxBytes} bytes`))
-      } else {
-        callback(null, chunk)
+        return
       }
+      const tooSlow = tooSlowToContinue(total, startedAt)
+      if (tooSlow) {
+        callback(tooSlow)
+        return
+      }
+      callback(null, chunk)
     }
   })
 }
@@ -647,11 +700,11 @@ function downloadFile(
           })
 
           const isGzip = response.headers['content-encoding'] === 'gzip'
-          const sizeLimiter = createSizeLimiter(MAX_DOWNLOADED_FILE_SIZE_IN_BYTES)
+          const transferLimiter = createTransferLimiter(MAX_DOWNLOADED_FILE_SIZE_IN_BYTES)
 
           const pipe = isGzip
-            ? streamPipeline(response, zlib.createGunzip(), sizeLimiter, file)
-            : streamPipeline(response, sizeLimiter, file)
+            ? streamPipeline(response, zlib.createGunzip(), transferLimiter, file)
+            : streamPipeline(response, transferLimiter, file)
 
           pipe
             .then(() => {
