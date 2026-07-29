@@ -240,6 +240,11 @@ export async function* fetchJsonPaginated<T>(
           `Refusing to follow a pagination link that changes the path while fetching ${url}: ${nextUrl.pathname} does not match ${requestUrl.pathname}`
         )
       }
+      // Fragments are never sent to a server, so two links differing only by `#…` address the same
+      // network resource — but as distinct strings they slipped past the visited-URL check, letting a feed
+      // re-fetch one page up to MAX_PAGES_PER_PAGINATED_CALL times. Cleared rather than rejected: a
+      // fragment is meaningless here rather than malformed, and normalising costs nothing.
+      nextUrl.hash = ''
       currentUrl = nextUrl.toString()
     } else {
       break

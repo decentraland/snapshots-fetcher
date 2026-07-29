@@ -374,4 +374,47 @@ test('fetchJsonPaginated when the server returns a malformed or endless feed', (
       expect(elements).toEqual(['only'])
     })
   })
+  describe('and the pagination link differs from the current page only by fragment', () => {
+    let baseUrl: string
+    let pagesServed: number
+
+    beforeEach(async () => {
+      baseUrl = await components.getBaseUrl()
+      pagesServed = 0
+      // Fragments are never sent to a server, so every one of these fetches the same network resource —
+      // but as distinct strings they used to slip past the visited-URL check.
+      components.router.get('/fragment-loop', async (): Promise<any> => {
+        pagesServed++
+        return { body: { deltas: [], pagination: { next: `?page=1#frag${pagesServed}` } } }
+      })
+    })
+
+    it('should detect it as a loop instead of re-fetching the same page', async () => {
+      await expect(
+        drain(
+          fetchJsonPaginated(
+            components,
+            `${baseUrl}/fragment-loop?page=1`,
+            ($) => $.deltas,
+            'dcl_catalysts_pointer_changes_response_time_seconds'
+          )
+        )
+      ).rejects.toThrow('Pagination loop')
+    })
+
+    it('should stop after re-fetching it at most once, not up to the page cap', async () => {
+      await expect(
+        drain(
+          fetchJsonPaginated(
+            components,
+            `${baseUrl}/fragment-loop?page=1`,
+            ($) => $.deltas,
+            'dcl_catalysts_pointer_changes_response_time_seconds'
+          )
+        )
+      ).rejects.toThrow()
+
+      expect(pagesServed).toBeLessThanOrEqual(2)
+    })
+  })
 })
