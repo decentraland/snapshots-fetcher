@@ -1,6 +1,6 @@
 import * as path from 'path'
 import { saveContentFileToDisk } from './client'
-import { SnapshotsFetcherComponents } from './types'
+import { SnapshotsFetcherComponents, TransferLimits } from './types'
 import {
   isValidContentHash,
   isVerifiableContentHash,
@@ -38,7 +38,8 @@ async function downloadJob(
   presentInServers: string[],
   maxRetries: number,
   waitTimeBetweenRetries: number,
-  shouldStop?: () => boolean
+  shouldStop?: () => boolean,
+  transferLimits?: TransferLimits
 ): Promise<void> {
   if (shouldStop?.()) {
     throw new Error(`Not downloading ${hashToDownload}: the caller asked to stop`)
@@ -81,7 +82,7 @@ async function downloadJob(
 
     const serverToUse = pickRandomServer(serversToPickFrom)
     try {
-      await saveContentFileToDisk(components, serverToUse, hashToDownload, finalFileName)
+      await saveContentFileToDisk(components, serverToUse, hashToDownload, finalFileName, transferLimits)
       components.metrics?.observe('dcl_content_download_job_succeed_retries', {}, retries)
 
       return
@@ -126,7 +127,8 @@ export async function downloadFileWithRetries(
   waitTimeBetweenRetries: number,
   /** Consulted before the first attempt and between retries, so a shutdown does not have to wait out
    * the whole retry ladder. */
-  shouldStop?: () => boolean
+  shouldStop?: () => boolean,
+  transferLimits?: TransferLimits
 ): Promise<void> {
   // Reject untrusted hashes that are not plain content addresses before using them to build a
   // filesystem path. Without this, a value like "../../etc/x" would escape targetTempFolder.
@@ -167,7 +169,8 @@ export async function downloadFileWithRetries(
     presentInServers,
     maxRetries,
     waitTimeBetweenRetries,
-    shouldStop
+    shouldStop,
+    transferLimits
   )
   inflightForStorage.set(hashToDownload, downloadWithRetriesJob)
 

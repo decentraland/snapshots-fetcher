@@ -12,56 +12,106 @@ import { pipeline, Readable, Transform } from 'stream'
 import { promisify } from 'util'
 import * as zlib from 'zlib'
 import { ContentServerMetricLabels } from './metrics'
-import { Path, Server, SnapshotsFetcherComponents } from './types'
+import { Path, ResolvedTransferLimits, Server, SnapshotsFetcherComponents, TransferLimits } from './types'
 
 const streamPipeline = promisify(pipeline)
 
 // Bounds buffered JSON responses so a malicious server can't OOM the process via response.json().
 const MAX_JSON_RESPONSE_SIZE_IN_BYTES = 50 * 1024 * 1024 // 50 MiB
 
-// Applied to the body read when the caller did not ask for a specific timeout.
+// Fallback for a fetchJson caller that names no timeout of its own. Distinct from
+// `requestTimeoutInMs` below, which is what this package's own JSON calls pass: collapsing the two would
+// quietly halve this one.
 const DEFAULT_BODY_READ_TIMEOUT_IN_MS = 30_000
 
-// Minimum sustained rate a transfer must average once it has been running longer than the grace period
-// below. The inactivity deadlines on both transfer paths only ask "did a byte arrive recently?", so a
-// peer that trickles one byte per window answers yes forever while holding its queue slot; the size
-// caps are the only other bound, and at that rate 1 GiB is geological. A rate floor is what makes
-// staying connected cost the peer real bandwidth instead of nothing.
+// The values this package used before these became configurable, so an omitted `transferLimits` — or an
+// omitted field within it — behaves exactly as before.
 //
-// Set far below any usable link (4 KiB/s is worse than a 56k modem) rather than near real throughput:
-// this is here to catch transfers that are not really transferring, and a legitimate peer that cannot
-// beat it would exhaust its retry ladder on duration anyway. Downloads are retried, so a false
-// positive costs an attempt rather than the entity.
-const MIN_TRANSFER_RATE_IN_BYTES_PER_SECOND = 4 * 1024
-// Rate is not judged before this. Small responses finish well inside it, and earlier samples are
-// dominated by connection setup and server think-time rather than by throughput.
-const TRANSFER_RATE_GRACE_PERIOD_IN_MS = 60_000
+// requestTimeoutInMs: an *inactivity* deadline refreshed per chunk, not a total one, so a large
+// response can legitimately outlast it while making steady progress.
+//
+// minTransferRateInBytesPerSecond: the companion to that deadline. Refreshing per chunk means the
+// deadline only ever asks "did a byte arrive recently?", which a peer trickling one byte per window
+// answers yes to forever while holding its slot; the size caps are then the only other bound, and at
+// that rate 1 GiB is geological. The floor is what makes staying connected cost real bandwidth. Set far
+// below any usable link (4 KiB/s is worse than a 56k modem) rather than near real throughput: it exists
+// to catch transfers that are not really transferring, and downloads retry, so a false positive costs
+// an attempt rather than the entity.
+//
+// transferRateGracePeriodInMs: small responses finish well inside it, and earlier samples are dominated
+// by connection setup and server think-time rather than by throughput.
+export const DEFAULT_TRANSFER_LIMITS: ResolvedTransferLimits = {
+  requestTimeoutInMs: 15_000,
+  maxDownloadedFileSizeInBytes: 1024 * 1024 * 1024, // 1 GiB
+  minTransferRateInBytesPerSecond: 4 * 1024,
+  transferRateGracePeriodInMs: 60_000
+}
+
+// Zero is meaningful for these two and not for the others: a rate floor of 0 disables the check, and a
+// grace period of 0 judges from the first chunk. A timeout or size cap of 0 would reject every transfer.
+const TRANSFER_LIMIT_MINIMUMS: ResolvedTransferLimits = {
+  requestTimeoutInMs: 1,
+  maxDownloadedFileSizeInBytes: 1,
+  minTransferRateInBytesPerSecond: 0,
+  transferRateGracePeriodInMs: 0
+}
+
+/**
+ * Fills in {@link DEFAULT_TRANSFER_LIMITS} for anything the caller omitted, and rejects values that
+ * would silently disable a bound rather than tune it.
+ *
+ * Validated here rather than at each point of use so a misconfiguration surfaces once, at construction,
+ * instead of as a puzzling per-download failure.
+ */
+export function resolveTransferLimits(limits?: TransferLimits): ResolvedTransferLimits {
+  const resolved = { ...DEFAULT_TRANSFER_LIMITS, ...limits }
+  for (const name of Object.keys(DEFAULT_TRANSFER_LIMITS) as Array<keyof ResolvedTransferLimits>) {
+    const value = resolved[name]
+    const minimum = TRANSFER_LIMIT_MINIMUMS[name]
+    if (!Number.isSafeInteger(value) || value < minimum) {
+      throw new Error(`transferLimits.${name} must be an integer >= ${minimum}, got ${value}`)
+    }
+  }
+  return resolved
+}
 
 /**
  * Companion to the per-chunk inactivity deadlines: they check that bytes are still arriving, this
  * checks that the bytes add up to progress. Returns the error to fail with, or undefined to continue.
  */
-export function tooSlowToContinue(bytesSoFar: number, startedAt: number): Error | undefined {
+export function tooSlowToContinue(
+  bytesSoFar: number,
+  startedAt: number,
+  limits: ResolvedTransferLimits
+): Error | undefined {
+  if (limits.minTransferRateInBytesPerSecond === 0) {
+    return undefined
+  }
   const elapsed = Date.now() - startedAt
-  if (elapsed <= TRANSFER_RATE_GRACE_PERIOD_IN_MS) {
+  if (elapsed <= limits.transferRateGracePeriodInMs) {
     return undefined
   }
   const bytesPerSecond = (bytesSoFar * 1000) / elapsed
-  if (bytesPerSecond >= MIN_TRANSFER_RATE_IN_BYTES_PER_SECOND) {
+  if (bytesPerSecond >= limits.minTransferRateInBytesPerSecond) {
     return undefined
   }
   // The byte total is part of the message because the rate alone rounds a trickle and a dead silence
   // to the same "0.0 bytes/s", and those are different problems to go looking for.
   return new Error(
     `Transfer of ${bytesSoFar} bytes averaged ${bytesPerSecond.toFixed(2)} bytes/s over ` +
-      `${Math.round(elapsed / 1000)}s, below the minimum of ${MIN_TRANSFER_RATE_IN_BYTES_PER_SECOND} bytes/s`
+      `${Math.round(elapsed / 1000)}s, below the minimum of ${limits.minTransferRateInBytesPerSecond} bytes/s`
   )
 }
 
 // Reads a response body while enforcing a maximum size. The native fetcher (unlike node-fetch) has
 // no `size` option, so we cap manually: read the stream with a running byte count and abort —
 // cancelling the stream to free its socket — if it exceeds the limit.
-async function readBodyWithSizeLimit(response: Response, maxBytes: number, timeoutMs: number): Promise<string> {
+async function readBodyWithSizeLimit(
+  response: Response,
+  maxBytes: number,
+  timeoutMs: number,
+  limits: ResolvedTransferLimits
+): Promise<string> {
   const reader = response.body?.getReader()
   if (!reader) {
     return ''
@@ -102,7 +152,7 @@ async function readBodyWithSizeLimit(response: Response, maxBytes: number, timeo
         if (total > maxBytes) {
           throw new Error(`Response body exceeds the maximum allowed size of ${maxBytes} bytes`)
         }
-        const tooSlow = tooSlowToContinue(total, startedAt)
+        const tooSlow = tooSlowToContinue(total, startedAt, limits)
         if (tooSlow) {
           throw tooSlow
         }
@@ -124,8 +174,17 @@ async function readBodyWithSizeLimit(response: Response, maxBytes: number, timeo
   return Buffer.concat(chunks).toString('utf8')
 }
 
-export async function fetchJson(url: string, fetcher: IFetchComponent, init?: RequestOptions): Promise<any> {
-  const bodyReadTimeout = init?.timeout ?? DEFAULT_BODY_READ_TIMEOUT_IN_MS
+export async function fetchJson(
+  url: string,
+  fetcher: IFetchComponent,
+  init?: RequestOptions & {
+    /** Bounds for this request's body read. Resolved from the defaults when omitted. */
+    transferLimits?: TransferLimits
+  }
+): Promise<any> {
+  const { transferLimits, ...requestInit } = init ?? {}
+  const limits = resolveTransferLimits(transferLimits)
+  const bodyReadTimeout = requestInit.timeout ?? DEFAULT_BODY_READ_TIMEOUT_IN_MS
 
   // JSON endpoints do not follow redirects at all.
   //
@@ -143,7 +202,7 @@ export async function fetchJson(url: string, fetcher: IFetchComponent, init?: Re
   //
   // No known catalyst JSON endpoint redirects. If one legitimately must, the fix is a redirect-aware
   // fetch component, not a check here that cannot bind to the request's own resolution.
-  const response = await fetcher.fetch(url, { ...init, redirect: 'manual' })
+  const response = await fetcher.fetch(url, { ...requestInit, redirect: 'manual' })
 
   if (response.status >= 300 && response.status < 400) {
     await response.body?.cancel().catch(() => undefined)
@@ -160,7 +219,7 @@ export async function fetchJson(url: string, fetcher: IFetchComponent, init?: Re
     throw new Error('Error fetching ' + url + '. Status code was: ' + response.status)
   }
 
-  const body = await readBodyWithSizeLimit(response, MAX_JSON_RESPONSE_SIZE_IN_BYTES, bodyReadTimeout)
+  const body = await readBodyWithSizeLimit(response, MAX_JSON_RESPONSE_SIZE_IN_BYTES, bodyReadTimeout, limits)
   if (body === '') {
     throw new Error('Error fetching ' + url + '. The response body was empty.')
   }
@@ -310,8 +369,10 @@ export async function saveContentFileToDisk(
   originalUrlString: string,
   destinationFilename: string,
   hash: string,
-  checkHash: boolean = true
+  checkHash: boolean = true,
+  transferLimits?: TransferLimits
 ): Promise<void> {
+  const limits = resolveTransferLimits(transferLimits)
   const tmpFolder = path.dirname(destinationFilename)
   await ensureFolderExists(tmpFolder)
 
@@ -325,7 +386,7 @@ export async function saveContentFileToDisk(
   }
 
   try {
-    await downloadFile(originalUrlString, metricsLabels, components, tmpFileName)
+    await downloadFile(originalUrlString, metricsLabels, components, tmpFileName, limits)
 
     // make files not executable
     await fs.promises.chmod(tmpFileName, 0o644)
@@ -388,10 +449,6 @@ const REDIRECT_STATUS_CODES = new Set([301, 302, 303, 307, 308])
 // Abort a download after this many milliseconds of socket inactivity. Healthy downloads keep the
 // socket busy, so this only trips on stalled connections (e.g. a server that stops sending bytes).
 const DOWNLOAD_INACTIVITY_TIMEOUT_MS = 30_000
-// Hard cap on the number of bytes written to disk (after decompression). Protects against gzip
-// bombs and otherwise unbounded responses that could exhaust the disk.
-const MAX_DOWNLOADED_FILE_SIZE_IN_BYTES = 1024 * 1024 * 1024 // 1 GiB
-
 function isNonPublicIPv4(address: string): boolean {
   const [first, second] = address.split('.').map(Number)
   if (first === 0) return true // 0.0.0.0/8 "this network"
@@ -569,9 +626,10 @@ export function createRedirectSafeLookup(allowedHostname: string): LookupFunctio
  * {@link tooSlowToContinue}. The clock starts when the response headers arrive, which is the right
  * origin for measuring body throughput.
  */
-export function createTransferLimiter(maxBytes: number): Transform {
+export function createTransferLimiter(limits: ResolvedTransferLimits): Transform {
   let total = 0
   const startedAt = Date.now()
+  const maxBytes = limits.maxDownloadedFileSizeInBytes
   return new Transform({
     transform(chunk, _encoding, callback) {
       total += chunk.length
@@ -579,7 +637,7 @@ export function createTransferLimiter(maxBytes: number): Transform {
         callback(new Error(`Downloaded file exceeds the maximum allowed size of ${maxBytes} bytes`))
         return
       }
-      const tooSlow = tooSlowToContinue(total, startedAt)
+      const tooSlow = tooSlowToContinue(total, startedAt, limits)
       if (tooSlow) {
         callback(tooSlow)
         return
@@ -593,7 +651,8 @@ function downloadFile(
   originalUrlString: string,
   metricsLabels: ContentServerMetricLabels,
   components: { metrics?: SnapshotsFetcherComponents['metrics'] },
-  tmpFileName: string
+  tmpFileName: string,
+  limits: ResolvedTransferLimits
 ) {
   return new Promise<void>((resolve, reject) => {
     // One timer for the whole download instead of one per redirect hop: a hop that redirects never
@@ -700,7 +759,7 @@ function downloadFile(
           })
 
           const isGzip = response.headers['content-encoding'] === 'gzip'
-          const transferLimiter = createTransferLimiter(MAX_DOWNLOADED_FILE_SIZE_IN_BYTES)
+          const transferLimiter = createTransferLimiter(limits)
 
           const pipe = isGzip
             ? streamPipeline(response, zlib.createGunzip(), transferLimiter, file)
@@ -753,7 +812,7 @@ export function contentServerMetricLabels(contentServer: string): ContentServerM
  * @param maxBytes - Optional ceiling. Reject and destroy the stream once more than this many bytes
  *   have arrived, instead of buffering whatever the producer sends. Callers reading content-addressed
  *   files should pass one: the download cap alone allows a single file of
- *   {@link MAX_DOWNLOADED_FILE_SIZE_IN_BYTES}, and nothing stops several from being read at once.
+ *   `transferLimits.maxDownloadedFileSizeInBytes`, and nothing stops several from being read at once.
  */
 export function streamToBuffer(stream: Readable, maxBytes?: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {

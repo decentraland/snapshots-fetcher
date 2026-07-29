@@ -18,7 +18,7 @@ import {
   SynchronizerOptions,
   TimeRange
 } from './types'
-import { contentServerMetricLabels } from './utils'
+import { contentServerMetricLabels, resolveTransferLimits } from './utils'
 
 // Preserved as the defaults these two queues have always used, so omitting `options.concurrency`
 // keeps the previous behaviour exactly.
@@ -50,6 +50,10 @@ export async function createSynchronizer(
   if (!Number.isInteger(options.requestMaxRetries) || options.requestMaxRetries < 1) {
     throw new Error(`options.requestMaxRetries must be an integer >= 1, got ${options.requestMaxRetries}`)
   }
+
+  // Same reasoning as the concurrency options: resolved here so a bad transfer limit is rejected at
+  // construction rather than surfacing as a puzzling failure on some individual download later.
+  resolveTransferLimits(options.transferLimits)
 
   // Resolved up front so a bad value fails here with a clear message instead of inside p-queue's
   // constructor, several stack frames deep in a background sync job.
@@ -187,7 +191,12 @@ export async function createSynchronizer(
     await Promise.all(
       Array.from(serversToSync).map(async (server) => {
         try {
-          const { snapshots, discardedEntries } = await getSnapshots(components, server, options.requestMaxRetries)
+          const { snapshots, discardedEntries } = await getSnapshots(
+            components,
+            server,
+            options.requestMaxRetries,
+            options.transferLimits
+          )
           if (discardedEntries > 0) {
             // The surviving subset is not this server's history. Each discarded entry stood for a time
             // range, so deploying only what parsed and then advancing past the newest of them would skip

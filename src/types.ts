@@ -48,6 +48,58 @@ export type SnapshotsFetcherComponents = {
   snapshotStorage: ISnapshotStorageComponent
 }
 
+/**
+ * Bounds applied to an individual HTTP transfer.
+ *
+ * Supplied per call, on the options bag, rather than once on the components bag: a components container
+ * is a fixed set of members — this package's own test harness proxies it and throws on any name it does
+ * not know — so an optional configuration field read from it is not safe to assume present. Config is
+ * not a component.
+ *
+ * The defaults are the values this package used before they were configurable, so omitting the field, or
+ * any field within it, changes nothing.
+ * @public
+ */
+export type TransferLimits = {
+  /**
+   * Deadline for a JSON request's body read, refreshed on every chunk received — an inactivity
+   * deadline, not a total one. Must be an integer >= 1.
+   * @defaultValue 15000
+   */
+  requestTimeoutInMs?: number
+  /**
+   * Hard ceiling on the bytes written to disk for a single content file, after decompression. Guards
+   * against gzip bombs and otherwise unbounded responses. Must be an integer >= 1.
+   * @defaultValue 1073741824
+   */
+  maxDownloadedFileSizeInBytes?: number
+  /**
+   * Minimum rate a transfer must average, once it has been running longer than
+   * `transferRateGracePeriodInMs`, to be allowed to continue. This is what stops a peer trickling bytes
+   * to hold a slot indefinitely: the inactivity deadline above only asks whether bytes are still
+   * arriving, this asks whether they add up to progress.
+   *
+   * Lower it on a constrained link. Must be an integer >= 0; **0 disables the check**, which restores
+   * the pre-3.0.0 behaviour of allowing an arbitrarily slow transfer to continue as long as it keeps
+   * sending something.
+   * @defaultValue 4096
+   */
+  minTransferRateInBytesPerSecond?: number
+  /**
+   * How long a transfer runs before its rate is judged at all. Small responses finish well inside this,
+   * and earlier samples are dominated by connection setup rather than throughput. Raise it alongside
+   * lowering the floor if your peers are slow to get going. Must be an integer >= 0.
+   * @defaultValue 60000
+   */
+  transferRateGracePeriodInMs?: number
+}
+
+/**
+ * {@link TransferLimits} with every default filled in.
+ * @public
+ */
+export type ResolvedTransferLimits = Required<TransferLimits>
+
 export type DeployableEntity = SyncDeployment & {
   markAsDeployed?: () => Promise<void>
   snapshotHash?: string
@@ -222,6 +274,11 @@ export type PointerChangesDeployedEntityStreamOptions = DeployedEntityStreamComm
  */
 export type DeployedEntityStreamCommonOptions = {
   fromTimestamp?: number
+  /**
+   * Bounds on the individual HTTP transfers this stream performs. Omit it, or any of its fields, to keep
+   * the defaults. See {@link TransferLimits}.
+   */
+  transferLimits?: TransferLimits
 }
 
 /**

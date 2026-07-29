@@ -1,12 +1,13 @@
 import { PointerChangesSyncDeployment } from '@dcl/schemas'
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import { metricsDefinitions } from './metrics'
-import { SnapshotMetadata, SnapshotsFetcherComponents } from './types'
+import { SnapshotMetadata, SnapshotsFetcherComponents, TransferLimits } from './types'
 import {
   contentServerMetricLabels,
   fetchJson,
   isUsableTimestamp,
   isValidContentHash,
+  resolveTransferLimits,
   truncateForLog,
   saveContentFileToDisk as saveContentFile
 } from './utils'
@@ -19,11 +20,11 @@ const MAX_INVALID_SNAPSHOT_LOGS = 100
 // MAX_PAGES_PER_PAGINATED_CALL is 10,000.
 const MAX_REJECTED_DELTA_LOGS = 100
 
-// Every request this module makes must be bounded. The fetch component applies no default timeout,
-// so without an explicit one a server that accepts the connection and then stops responding leaves
-// the promise pending forever — and a pending promise never reaches the exponential-falloff retry
-// that is supposed to reconnect, so the whole sync stream for that server stalls silently.
-const REQUEST_TIMEOUT_IN_MS = 15_000
+// Every request this module makes must be bounded. The fetch component applies no default timeout, so
+// without an explicit one a server that accepts the connection and then stops responding leaves the
+// promise pending forever — and a pending promise never reaches the exponential-falloff retry that is
+// supposed to reconnect, so the whole sync stream for that server stalls silently. The bound itself is
+// `transferLimits.requestTimeoutInMs`, defaulting to the 15s this module always used.
 
 // Backstop on how many pages a single paginated call will follow. A server that keeps advertising a
 // `next` link makes the loop run forever (measured: ~670 requests/second), which silently pins the
@@ -84,12 +85,18 @@ export type SnapshotsFromServer = {
 export async function getSnapshots(
   components: SnapshotsFetcherComponents,
   server: string,
-  retries: number
+  retries: number,
+  transferLimits?: TransferLimits
 ): Promise<SnapshotsFromServer> {
   const logger = components.logs.getLogger('getSnapshots')
+  const limits = resolveTransferLimits(transferLimits)
   const incrementalSnapshotsUrl = new URL(`${server}/snapshots`).toString()
   const response = await components.downloadQueue.scheduleJobWithRetries(
-    () => fetchJson(incrementalSnapshotsUrl, components.fetcher, { timeout: REQUEST_TIMEOUT_IN_MS }),
+    () =>
+      fetchJson(incrementalSnapshotsUrl, components.fetcher, {
+        timeout: limits.requestTimeoutInMs,
+        transferLimits
+      }),
     retries
   )
 
@@ -130,7 +137,8 @@ export async function* fetchJsonPaginated<T>(
   components: Pick<SnapshotsFetcherComponents, 'fetcher'> & { metrics?: SnapshotsFetcherComponents['metrics'] },
   url: string,
   selector: (responseBody: any) => T[],
-  responseTimeMetric: keyof typeof metricsDefinitions
+  responseTimeMetric: keyof typeof metricsDefinitions,
+  transferLimits?: TransferLimits
 ): AsyncIterable<T> {
   // Perform the different queries
   let currentUrl = url
@@ -151,6 +159,7 @@ export async function* fetchJsonPaginated<T>(
   // already served would otherwise cycle forever; this catches that immediately instead of waiting
   // for the page cap.
   const visitedUrls = new Set<string>()
+  const limits = resolveTransferLimits(transferLimits)
 
   while (currentUrl) {
     if (visitedUrls.has(currentUrl)) {
@@ -165,7 +174,10 @@ export async function* fetchJsonPaginated<T>(
     const { end: stopTimer } = components.metrics?.startTimer(responseTimeMetric) || { end: () => {} }
     let partialHistory: any
     try {
-      partialHistory = await fetchJson(currentUrl, components.fetcher, { timeout: REQUEST_TIMEOUT_IN_MS })
+      partialHistory = await fetchJson(currentUrl, components.fetcher, {
+        timeout: limits.requestTimeoutInMs,
+        transferLimits
+      })
     } finally {
       // Stop the timer even when the request fails, so a failed page can't leak a running timer.
       stopTimer({ ...metricLabels })
@@ -266,7 +278,8 @@ export async function* fetchPointerChanges(
   components: Pick<SnapshotsFetcherComponents, 'fetcher'> & { metrics?: SnapshotsFetcherComponents['metrics'] },
   server: string,
   fromTimestamp: number,
-  logger: ILoggerComponent.ILogger
+  logger: ILoggerComponent.ILogger,
+  transferLimits?: TransferLimits
 ): AsyncIterable<PointerChangesSyncDeployment> {
   const url = new URL(
     `${server}/pointer-changes?sortingOrder=ASC&sortingField=local_timestamp&from=${encodeURIComponent(fromTimestamp)}`
@@ -293,7 +306,8 @@ export async function* fetchPointerChanges(
     components,
     url,
     ($) => $.deltas,
-    'dcl_catalysts_pointer_changes_response_time_seconds'
+    'dcl_catalysts_pointer_changes_response_time_seconds',
+    transferLimits
   )) {
     if (!PointerChangesSyncDeployment.validate(deployment)) {
       reportRejectedDelta('ERROR: Invalid entity deployment from /pointer-changes', () => ({
@@ -327,9 +341,10 @@ export async function saveContentFileToDisk(
   components: Pick<SnapshotsFetcherComponents, 'storage'> & { metrics?: SnapshotsFetcherComponents['metrics'] },
   server: string,
   hash: string,
-  destinationFilename: string
+  destinationFilename: string,
+  transferLimits?: TransferLimits
 ) {
   const url = new URL(`${server}/contents/${hash}`).toString()
 
-  return saveContentFile(components, url, destinationFilename, hash)
+  return saveContentFile(components, url, destinationFilename, hash, true, transferLimits)
 }

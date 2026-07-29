@@ -43,7 +43,8 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
       new Map(),
       options.requestMaxRetries,
       options.requestRetryWaitTime,
-      shouldStop
+      shouldStop,
+      options.transferLimits
     )
 
     // 2. open the snapshot file and process line by line
@@ -115,7 +116,13 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
     }
 
     // 1. download pointer changes and yield
-    const pointerChanges = fetchPointerChanges(components, contentServer, greatestLocalTimestampProcessed, logs)
+    const pointerChanges = fetchPointerChanges(
+      components,
+      contentServer,
+      greatestLocalTimestampProcessed,
+      logs,
+      options.transferLimits
+    )
     for await (const deployment of pointerChanges) {
       if (shouldStop()) {
         logs.debug('Stopping the Pointer-Changes stream.', { contentServer })

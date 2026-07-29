@@ -196,3 +196,54 @@ test('createSynchronizer concurrency validation', ({ components }) => {
     })
   })
 })
+
+test('createSynchronizer transferLimits validation', ({ components }) => {
+  function create(transferLimits: SynchronizerOptions['transferLimits']) {
+    const { fetcher, downloadQueue, logs, storage, metrics, processedSnapshotStorage, snapshotStorage } = components
+    return createSynchronizer(
+      {
+        fetcher,
+        downloadQueue,
+        logs,
+        storage,
+        metrics,
+        processedSnapshotStorage,
+        snapshotStorage,
+        deployer: {
+          scheduleEntityDeployment: jest.fn(),
+          onIdle: jest.fn(),
+          prepareForDeploymentsIn: jest.fn()
+        }
+      },
+      { ...baseOptions(), transferLimits }
+    )
+  }
+
+  describe('when a transfer limit is below the minimum it accepts', () => {
+    it('should reject at construction rather than on some later download', async () => {
+      await expect(create({ maxDownloadedFileSizeInBytes: 0 })).rejects.toThrow(
+        'transferLimits.maxDownloadedFileSizeInBytes must be an integer >= 1, got 0'
+      )
+    })
+  })
+
+  describe('when a transfer limit is not an integer', () => {
+    it('should reject naming the offending option', async () => {
+      await expect(create({ requestTimeoutInMs: 1.5 })).rejects.toThrow(
+        'transferLimits.requestTimeoutInMs must be an integer >= 1, got 1.5'
+      )
+    })
+  })
+
+  describe('when the rate floor is zero', () => {
+    it('should be accepted, since zero is how the check is disabled', async () => {
+      await expect(create({ minTransferRateInBytesPerSecond: 0 })).resolves.toBeDefined()
+    })
+  })
+
+  describe('when transferLimits is omitted entirely', () => {
+    it('should build the synchronizer with the defaults', async () => {
+      await expect(create(undefined)).resolves.toBeDefined()
+    })
+  })
+})

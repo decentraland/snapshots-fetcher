@@ -63,6 +63,39 @@ Both must be integers `>= 1`; `createSynchronizer` rejects otherwise. The number
 fetched in parallel *per entity* is a separate argument to `downloadEntityAndContentFiles`
 (`contentFilesConcurrency`, default 10), since that call belongs to your deployer.
 
+### Tuning transfer limits
+
+Bounds on individual HTTP transfers. Omit `transferLimits`, or any field within it, to keep the values
+this package used before they were configurable — the defaults below are exactly those:
+
+```ts
+await createSynchronizer(components, {
+  // …
+  transferLimits: {
+    requestTimeoutInMs: 15_000, // inactivity deadline on a JSON body read, refreshed per chunk
+    maxDownloadedFileSizeInBytes: 1024 * 1024 * 1024, // 1 GiB ceiling per content file, after gunzip
+    minTransferRateInBytesPerSecond: 4096, // floor a transfer must average to continue
+    transferRateGracePeriodInMs: 60_000 // how long before the rate is judged at all
+  }
+})
+```
+
+`minTransferRateInBytesPerSecond` is what stops a peer holding a slot by trickling bytes: the timeout
+above is an *inactivity* deadline refreshed on every chunk, so it only asks whether bytes are still
+arriving, never whether they add up to progress. Lower it on a constrained link, and raise
+`transferRateGracePeriodInMs` alongside it if your peers are slow to get going. **Setting it to `0`
+disables the check**, restoring the pre-`3.0.0` behaviour where an arbitrarily slow transfer continued
+as long as it kept sending something.
+
+`createSynchronizer` validates these up front, so a bad value is rejected at construction rather than
+surfacing as a puzzling failure on one download later. Every field must be an integer; the two rate
+fields accept `0`, the timeout and size cap require `>= 1`.
+
+The same object is accepted by `getDeployedEntitiesStreamFromSnapshot`,
+`getDeployedEntitiesStreamFromPointerChanges` (on their options) and `downloadEntityAndContentFiles` (as
+its last argument). `DEFAULT_TRANSFER_LIMITS` and `resolveTransferLimits` are exported if you want to
+read or derive from the defaults.
+
 The `deployer` implements `IDeployerComponent`. Its `scheduleEntityDeployment` may return before the
 entity is actually deployed; calling the entity's `markAsDeployed()` once it is, is what allows the
 snapshot it came from to be recorded as processed.

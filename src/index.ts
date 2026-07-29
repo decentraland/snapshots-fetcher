@@ -2,7 +2,7 @@ import { hashV0, hashV1 } from '@dcl/hashing'
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import PQueue from 'p-queue'
 import { downloadFileWithRetries } from './downloader'
-import { ContentMapping, EntityHash, Server, SnapshotsFetcherComponents } from './types'
+import { ContentMapping, EntityHash, Server, SnapshotsFetcherComponents, TransferLimits } from './types'
 import { isValidContentHash, streamToBuffer, truncateForLog } from './utils'
 
 // Guard the runtime before anything else in the package is evaluated. The name is inlined rather than
@@ -22,6 +22,7 @@ export { getDeployedEntitiesStreamFromSnapshot, getDeployedEntitiesStreamFromPoi
 // has to be reachable from the package root. Without this, callers had to deep-import
 // '@dcl/snapshots-fetcher/dist/job-queue-port' or reimplement IJobQueue themselves.
 export { createJobQueue, IJobQueue } from './job-queue-port'
+export { DEFAULT_TRANSFER_LIMITS, resolveTransferLimits } from './utils'
 // Tagged @public but previously reachable only through a deep import into dist/.
 export {
   decideSnapshotDeploymentFromProcessedSet,
@@ -38,6 +39,8 @@ export {
   ISnapshotStorageComponent,
   Path,
   PointerChangesDeployedEntityStreamOptions,
+  ResolvedTransferLimits,
+  TransferLimits,
   ReconnectionOptions,
   Server,
   SnapshotDeployedEntityStreamOptions,
@@ -259,6 +262,7 @@ async function downloadProfileAvatars(
   maxRetries: number,
   waitTimeBetweenRetries: number,
   concurrency: number,
+  transferLimits: TransferLimits | undefined,
   entityId: EntityHash,
   entityMetadata: {
     type: string
@@ -294,7 +298,9 @@ async function downloadProfileAvatars(
           presentInServers,
           _serverMapLRU,
           maxRetries,
-          waitTimeBetweenRetries
+          waitTimeBetweenRetries,
+          undefined,
+          transferLimits
         ).catch(() =>
           // Truncated: the value comes from remote profile metadata, and this path is reached precisely
           // when it was unusable, so its length is the manifest's choice.
@@ -327,7 +333,8 @@ export async function downloadEntityAndContentFiles(
   targetFolder: string,
   maxRetries: number,
   waitTimeBetweenRetries: number,
-  contentFilesConcurrency: number = DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY
+  contentFilesConcurrency: number = DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY,
+  transferLimits?: TransferLimits
 ): Promise<unknown> {
   const logger = components.logs.getLogger(`downloadEntityAndContentFiles)`)
 
@@ -339,7 +346,9 @@ export async function downloadEntityAndContentFiles(
     presentInServers,
     _serverMapLRU,
     maxRetries,
-    waitTimeBetweenRetries
+    waitTimeBetweenRetries,
+    undefined,
+    transferLimits
   )
 
   const content = await components.storage.retrieve(entityId)
@@ -434,6 +443,7 @@ export async function downloadEntityAndContentFiles(
       maxRetries,
       waitTimeBetweenRetries,
       contentFilesConcurrency,
+      transferLimits,
       entityId,
       entityMetadata
     )
@@ -451,7 +461,9 @@ export async function downloadEntityAndContentFiles(
             presentInServers,
             _serverMapLRU,
             maxRetries,
-            waitTimeBetweenRetries
+            waitTimeBetweenRetries,
+            undefined,
+            transferLimits
           )
         )
       )

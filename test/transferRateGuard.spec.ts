@@ -1,6 +1,7 @@
 import { Readable } from 'stream'
 import { pipeline as streamPipeline } from 'stream/promises'
-import { createTransferLimiter, tooSlowToContinue } from '../src/utils'
+import { DEFAULT_TRANSFER_LIMITS, createTransferLimiter, resolveTransferLimits } from '../src/utils'
+import { tooSlowToContinue } from '../src/utils'
 
 // The guard measures against Date.now(), and the grace period is a minute — far longer than a test
 // should take. Advancing a stubbed clock is what lets the real code paths be exercised in milliseconds.
@@ -37,7 +38,7 @@ describe('tooSlowToContinue', () => {
     })
 
     it('should allow a transfer that has sent almost nothing, since setup dominates early samples', () => {
-      expect(tooSlowToContinue(1, startedAt)).toBeUndefined()
+      expect(tooSlowToContinue(1, startedAt, DEFAULT_TRANSFER_LIMITS)).toBeUndefined()
     })
   })
 
@@ -48,7 +49,7 @@ describe('tooSlowToContinue', () => {
       // Three windows of 30s: every one refreshes the inactivity deadline, so this peer looks alive to
       // every check that existed before the rate floor.
       clock.advanceBy(90_000)
-      error = tooSlowToContinue(3, startedAt)
+      error = tooSlowToContinue(3, startedAt, DEFAULT_TRANSFER_LIMITS)
     })
 
     it('should refuse to continue', () => {
@@ -69,11 +70,11 @@ describe('tooSlowToContinue', () => {
 
     it('should allow a rate above the floor', () => {
       // 120s at ~8 KiB/s: half the speed of a dial-up modem is still allowed through.
-      expect(tooSlowToContinue(8 * 1024 * 120, startedAt)).toBeUndefined()
+      expect(tooSlowToContinue(8 * 1024 * 120, startedAt, DEFAULT_TRANSFER_LIMITS)).toBeUndefined()
     })
 
     it('should allow a rate sitting exactly on the floor', () => {
-      expect(tooSlowToContinue(4 * 1024 * 120, startedAt)).toBeUndefined()
+      expect(tooSlowToContinue(4 * 1024 * 120, startedAt, DEFAULT_TRANSFER_LIMITS)).toBeUndefined()
     })
   })
 })
@@ -91,7 +92,7 @@ describe('createTransferLimiter', () => {
 
   describe('when the source trickles bytes slowly enough to stay under the floor', () => {
     it('should destroy the pipeline rather than let it hold its slot indefinitely', async () => {
-      const limiter = createTransferLimiter(1024 * 1024)
+      const limiter = createTransferLimiter(resolveTransferLimits({ maxDownloadedFileSizeInBytes: 1024 * 1024 }))
       // Each chunk arrives well within the 30s inactivity deadline, so only the rate floor can stop it.
       const trickle = Readable.from(
         (async function* () {
@@ -116,7 +117,7 @@ describe('createTransferLimiter', () => {
     })
 
     it('should pass every byte through untouched', async () => {
-      const limiter = createTransferLimiter(1024 * 1024)
+      const limiter = createTransferLimiter(resolveTransferLimits({ maxDownloadedFileSizeInBytes: 1024 * 1024 }))
       const payload = Buffer.alloc(64 * 1024, 7)
 
       await streamPipeline(Readable.from([payload]), limiter, async function (source) {
@@ -131,7 +132,7 @@ describe('createTransferLimiter', () => {
 
   describe('when the payload exceeds the size ceiling', () => {
     it('should still report the size failure rather than the rate one', async () => {
-      const limiter = createTransferLimiter(10)
+      const limiter = createTransferLimiter(resolveTransferLimits({ maxDownloadedFileSizeInBytes: 10 }))
 
       await expect(
         streamPipeline(Readable.from([Buffer.alloc(64)]), limiter, async function* () {})
