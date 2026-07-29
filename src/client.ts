@@ -177,7 +177,18 @@ export async function* fetchJsonPaginated<T>(
 
     if (partialHistory.pagination) {
       const nextRelative: unknown = partialHistory.pagination.next
-      if (!nextRelative || typeof nextRelative !== 'string') break
+      // Absent, null or empty means "no next page", which is how a feed legitimately ends.
+      if (nextRelative === undefined || nextRelative === null || nextRelative === '') {
+        break
+      }
+      // Anything else that is not a string is a malformed response, not an ending. Treating it as an
+      // ending made a truncated feed indistinguishable from a complete one, and it was the only
+      // malformed shape here that did not fail: too long, unparseable, cross-origin and path-changing
+      // links all throw. A server that says "there is more" in a way we cannot read should not have that
+      // read as "there is no more".
+      if (typeof nextRelative !== 'string') {
+        throw new Error(`Invalid pagination link while fetching ${url}: expected a string, got ${typeof nextRelative}`)
+      }
       // `next` is remote text: an unparseable value would otherwise surface as an opaque TypeError
       // from the URL constructor, and an enormous one would be retained in visitedUrls for the rest of
       // the call.

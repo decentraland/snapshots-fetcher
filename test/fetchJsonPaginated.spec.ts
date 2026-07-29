@@ -262,4 +262,62 @@ test('fetchJsonPaginated when the server returns a malformed or endless feed', (
       expect(elements).toEqual(['first', 'second'])
     })
   })
+  describe.each([
+    ['a number', 123],
+    ['an object', { href: '/next' }],
+    ['a boolean', true]
+  ])('and the pagination link is %s instead of a string', (_label: string, next: unknown) => {
+    let baseUrl: string
+
+    beforeEach(async () => {
+      baseUrl = await components.getBaseUrl()
+      components.router.get('/wrong-typed-next', async (): Promise<any> => ({
+        body: { deltas: ['only'], pagination: { next } }
+      }))
+    })
+
+    it('should reject rather than read it as the end of the feed', async () => {
+      // Every other malformed link here already fails — too long, unparseable, cross-origin,
+      // path-changing. Treating a wrong type as an ending made a truncated feed indistinguishable from a
+      // complete one.
+      await expect(
+        drain(
+          fetchJsonPaginated(
+            components,
+            `${baseUrl}/wrong-typed-next`,
+            ($) => $.deltas,
+            'dcl_catalysts_pointer_changes_response_time_seconds'
+          )
+        )
+      ).rejects.toThrow('expected a string')
+    })
+  })
+
+  describe.each([
+    ['absent', undefined],
+    ['null', null],
+    ['an empty string', '']
+  ])('and the pagination link is %s', (_label: string, next: unknown) => {
+    let baseUrl: string
+
+    beforeEach(async () => {
+      baseUrl = await components.getBaseUrl()
+      components.router.get('/no-next', async (): Promise<any> => ({
+        body: { deltas: ['only'], pagination: { next } }
+      }))
+    })
+
+    it('should treat it as the end of the feed', async () => {
+      const elements = await drain(
+        fetchJsonPaginated(
+          components,
+          `${baseUrl}/no-next`,
+          ($) => $.deltas,
+          'dcl_catalysts_pointer_changes_response_time_seconds'
+        )
+      )
+
+      expect(elements).toEqual(['only'])
+    })
+  })
 })
