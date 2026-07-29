@@ -336,6 +336,13 @@ export async function downloadEntityAndContentFiles(
   contentFilesConcurrency: number = DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY,
   transferLimits?: TransferLimits
 ): Promise<unknown> {
+  // Checked before any work, not where the queue is built: p-queue rejects a bad concurrency with its own
+  // TypeError, and by then the entity file and the profile-avatar fallbacks have already been downloaded.
+  // A caller passing 0 deserves to be told in this package's terms, before spending requests.
+  if (!Number.isInteger(contentFilesConcurrency) || contentFilesConcurrency < 1) {
+    throw new Error(`contentFilesConcurrency must be an integer >= 1, got ${contentFilesConcurrency}`)
+  }
+
   const logger = components.logs.getLogger(`downloadEntityAndContentFiles)`)
 
   // download entity file

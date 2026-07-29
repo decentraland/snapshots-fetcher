@@ -51,6 +51,18 @@ export type IJobQueue = {
 }
 
 export function createJobQueue(options: createJobQueue.Options): IJobQueue & IBaseComponent {
+  // Validated here rather than left to p-queue, whose TypeError names its own option and not this
+  // package's. `concurrency` is required in the type because it was already required in fact: p-queue only
+  // falls back to unbounded concurrency when the key is absent, and this factory always passes it, so
+  // omitting it threw `Expected \`concurrency\` to be a number from 1 and up, got \`undefined\`` — an
+  // optional-looking field that could not actually be omitted.
+  if (!Number.isInteger(options.concurrency) || options.concurrency < 1) {
+    throw new Error(`concurrency must be an integer >= 1, got ${options.concurrency}`)
+  }
+  if (options.timeout !== undefined && (!Number.isInteger(options.timeout) || options.timeout < 1)) {
+    throw new Error(`timeout must be an integer >= 1, got ${options.timeout}`)
+  }
+
   const realQueue = new PQueue({
     concurrency: options.concurrency,
     autoStart: options.autoStart ?? true,
@@ -208,8 +220,21 @@ export function createJobQueue(options: createJobQueue.Options): IJobQueue & IBa
 
 export namespace createJobQueue {
   export type Options = {
+    /**
+     * Start processing as soon as jobs are scheduled. Defaults to true. When false, the queue holds its
+     * jobs until `stop()` drains them — see the lifecycle note on {@link IJobQueue}.
+     */
     autoStart?: boolean
-    concurrency?: number
+    /**
+     * Maximum jobs running at once. Required: an unbounded download or deployment queue is never what a
+     * consumer wants, and p-queue's absent-key default is exactly that. Must be an integer >= 1.
+     */
+    concurrency: number
+    /**
+     * Milliseconds after which a job counts as failed. A timed-out attempt is retried by
+     * `scheduleJobWithRetries`, and **keeps running** — nothing can cancel a promise — so scheduled
+     * functions must be idempotent. Must be an integer >= 1 when given; omit for no timeout.
+     */
     timeout?: number
   }
 }

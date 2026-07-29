@@ -59,7 +59,10 @@ await createSynchronizer(components, {
 })
 ```
 
-Both must be integers `>= 1`; `createSynchronizer` rejects otherwise. The number of content files
+Both must be integers `>= 1`; `createSynchronizer` rejects otherwise. So does
+`downloadEntityAndContentFiles` for its `contentFilesConcurrency` argument, before it spends any request,
+and `createJobQueue` for its `concurrency` (**required**) and `timeout`. An unknown key in
+`transferLimits` is rejected too, rather than falling back to the default for the limit you meant. The number of content files
 fetched in parallel *per entity* is a separate argument to `downloadEntityAndContentFiles`
 (`contentFilesConcurrency`, default 10), since that call belongs to your deployer.
 

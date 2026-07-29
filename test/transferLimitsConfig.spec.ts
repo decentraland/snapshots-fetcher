@@ -89,6 +89,22 @@ describe('resolveTransferLimits', () => {
     })
   })
 
+  describe('when a limit name is misspelled', () => {
+    // The failure mode this closes is specifically undetectable: the caller asked for a stricter bound,
+    // silently got the permissive default, and nothing in the logs or the result said so.
+    it('should reject rather than silently use the default for the limit they meant', () => {
+      expect(() => resolveTransferLimits({ minTransferRateInBytesPerSec: 512 } as any)).toThrow(
+        'transferLimits.minTransferRateInBytesPerSec is not a known limit'
+      )
+    })
+
+    it('should list the names it does accept', () => {
+      expect(() => resolveTransferLimits({ nonsense: 1 } as any)).toThrow(
+        'Valid names: downloadInactivityTimeoutInMs, maxDownloadedFileSizeInBytes, maxPagesPerPaginatedCall, minTransferRateInBytesPerSecond, requestTimeoutInMs, transferRateGracePeriodInMs'
+      )
+    })
+  })
+
   describe('when the rate floor is set to zero', () => {
     it('should disable the check, so an arbitrarily slow transfer continues', () => {
       const limits = resolveTransferLimits({ minTransferRateInBytesPerSecond: 0 })

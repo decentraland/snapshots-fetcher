@@ -356,5 +356,32 @@ describe('createJobQueue', () => {
         await expect(job).resolves.toBe('done')
       })
     })
+    describe('when the queue is built with an invalid concurrency', () => {
+      describe.each([
+        ['zero', 0],
+        ['a negative', -1],
+        ['a fraction', 1.5],
+        // Required in the type because it was already required in fact: p-queue only falls back to
+        // unbounded concurrency when the key is absent, and the factory always passes it, so omitting it
+        // used to throw p-queue's own TypeError about its own option name.
+        ['omitted', undefined]
+      ])('and it is %s', (_label: string, concurrency: number | undefined) => {
+        it('should throw naming this package\'s option and the range it accepts', () => {
+          expect(() => createJobQueue({ concurrency } as any)).toThrow(
+            `concurrency must be an integer >= 1, got ${concurrency}`
+          )
+        })
+      })
+    })
+
+    describe('when the queue is built with an invalid timeout', () => {
+      it('should throw rather than let p-queue interpret it', () => {
+        expect(() => createJobQueue({ concurrency: 1, timeout: 0 })).toThrow('timeout must be an integer >= 1, got 0')
+      })
+
+      it('should still accept an omitted timeout, which means no timeout', () => {
+        expect(() => createJobQueue({ concurrency: 1 })).not.toThrow()
+      })
+    })
   })
 })

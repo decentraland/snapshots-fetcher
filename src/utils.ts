@@ -72,6 +72,17 @@ export function resolveTransferLimits(limits?: TransferLimits): ResolvedTransfer
   // undefined rather than a missing key.
   const resolved = { ...DEFAULT_TRANSFER_LIMITS }
   for (const [name, value] of Object.entries(limits ?? {})) {
+    // Rejected rather than ignored. These are safety bounds, so a typo silently falling back to the
+    // default is the one outcome a caller cannot detect: they asked for a stricter limit, got the
+    // permissive one, and nothing said so. TypeScript catches this for a literal, but not for config
+    // assembled from env vars or spread from a wider object, which is how these tend to be built.
+    if (!(name in DEFAULT_TRANSFER_LIMITS)) {
+      throw new Error(
+        `transferLimits.${name} is not a known limit. Valid names: ${Object.keys(DEFAULT_TRANSFER_LIMITS)
+          .sort()
+          .join(', ')}`
+      )
+    }
     if (value !== undefined) {
       resolved[name as keyof ResolvedTransferLimits] = value as number
     }
