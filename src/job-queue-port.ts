@@ -2,7 +2,13 @@ import { IBaseComponent } from '@well-known-components/interfaces'
 import PQueue from 'p-queue'
 
 /**
- * Abstract job queue
+ * Abstract job queue.
+ *
+ * Lifecycle: `stop()` is terminal. It waits for everything already scheduled to finish, and from the
+ * moment it is called the queue refuses new work — `scheduleJob`, `scheduleJobWithPriority` and
+ * `scheduleJobWithRetries` throw, and a retry ladder already in flight stops re-enqueueing itself. A
+ * stopped queue cannot be restarted; build another. Use `onIdle()` if what you want is "wait for the
+ * current work to drain" without ending the queue.
  * @public
  */
 export type IJobQueue = {
@@ -69,6 +75,12 @@ export function createJobQueue(options: createJobQueue.Options): IJobQueue & IBa
     }
   }
 
+  // Terminal once stop() begins. The queue is exported from the package root, and a stop() that leaves
+  // the queue accepting work means a consumer that called it can still have jobs start afterwards — the
+  // exact "stop() does not stop" shape this package has been correcting elsewhere. Refusing new work also
+  // makes stop() converge instead of chasing retries that keep re-enqueueing themselves.
+  let stopped = false
+
   // Every scheduled function that has actually started and not yet settled.
   //
   // p-queue cannot cancel a function it has timed out: with `throwOnTimeout` the queue promise rejects
@@ -90,6 +102,12 @@ export function createJobQueue(options: createJobQueue.Options): IJobQueue & IBa
     }
   }
 
+  function assertNotStopped() {
+    if (stopped) {
+      throw new Error('The job queue was stopped and no longer accepts jobs')
+    }
+  }
+
   async function waitUntilQuiescent(): Promise<void> {
     // Looped because draining either side can feed the other: a retry can be queued while we await the
     // executions, and an execution can outlive the queue's own idea of idle.
@@ -104,6 +122,7 @@ export function createJobQueue(options: createJobQueue.Options): IJobQueue & IBa
       return waitUntilQuiescent()
     },
     scheduleJob<T>(fn: () => Promise<T>): Promise<T> {
+      assertNotStopped()
       return realQueue.add(tracked(fn))
     },
     async onSizeLessThan(limit: number): Promise<void> {
@@ -127,6 +146,7 @@ export function createJobQueue(options: createJobQueue.Options): IJobQueue & IBa
       })
     },
     scheduleJobWithPriority<T>(fn: () => Promise<T>, priority: number): Promise<T> {
+      assertNotStopped()
       return realQueue.add(tracked(fn), {
         priority
       })
@@ -140,8 +160,15 @@ export function createJobQueue(options: createJobQueue.Options): IJobQueue & IBa
       if (!Number.isInteger(retries) || retries < 1) {
         throw new Error(`retries must be an integer >= 1, got ${retries}`)
       }
+      assertNotStopped()
       return new Promise<T>((resolve, reject) => {
         function schedule(remainingRetries: number) {
+          // Checked per attempt, not only on entry: a ladder already in flight when stop() lands must
+          // not keep re-enqueueing itself, or stop() would wait for work it is trying to end.
+          if (stopped) {
+            reject(new Error('The job queue was stopped before this job could be retried'))
+            return
+          }
           // The job is added as-is so the queue owns its outcome. Settling inside the queued function
           // instead hid every queue-level rejection — a timeout in particular — from the retry logic,
           // because the function's own try/catch never sees it.
@@ -161,6 +188,7 @@ export function createJobQueue(options: createJobQueue.Options): IJobQueue & IBa
       })
     },
     async stop() {
+      stopped = true
       // wait until the jobs are finished at stop()
       await waitUntilQuiescent()
     }

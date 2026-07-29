@@ -277,5 +277,49 @@ describe('createJobQueue', () => {
         await expect(queue.onSizeLessThan(limit)).rejects.toThrow(`limit must be an integer >= 1, got ${limit}`)
       })
     })
+    describe('when the queue has been stopped', () => {
+      let stoppedQueue: ReturnType<typeof createJobQueue>
+
+      beforeEach(async () => {
+        stoppedQueue = createJobQueue({ concurrency: 1 })
+        await stoppedQueue.stop!()
+      })
+
+      it('should refuse a new job rather than running it after the caller stopped the queue', () => {
+        expect(() => stoppedQueue.scheduleJob(async () => 'unused')).toThrow('no longer accepts jobs')
+      })
+
+      it('should refuse a new prioritised job too', () => {
+        expect(() => stoppedQueue.scheduleJobWithPriority(async () => 'unused', 1)).toThrow('no longer accepts jobs')
+      })
+
+      it('should refuse a new job with retries too', () => {
+        expect(() => stoppedQueue.scheduleJobWithRetries(async () => 'unused', 2)).toThrow('no longer accepts jobs')
+      })
+    })
+
+    describe('when a retry ladder is in flight as the queue is stopped', () => {
+      it('should stop re-enqueueing rather than making stop() chase its own retries', async () => {
+        const retryingQueue = createJobQueue({ concurrency: 1 })
+        let attempts = 0
+        const job = retryingQueue.scheduleJobWithRetries(async () => {
+          attempts++
+          // Each attempt takes a moment, so the ladder is genuinely still in flight when stop() lands.
+          // With an instant failure all 50 retries burn through before stop() is even called.
+          await sleep(15)
+          throw new Error('always fails')
+        }, 50)
+
+        // Let the ladder get going, then stop underneath it.
+        await sleep(40)
+        const attemptsAtStop = attempts
+        await retryingQueue.stop!()
+
+        await expect(job).rejects.toThrow()
+        // A ladder that kept re-enqueueing would have burned through all 50 attempts.
+        expect(attempts).toBeLessThan(50)
+        expect(attempts).toBeGreaterThanOrEqual(attemptsAtStop)
+      })
+    })
   })
 })
