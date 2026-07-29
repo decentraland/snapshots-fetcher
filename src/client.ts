@@ -8,6 +8,7 @@ import {
   isUsableTimestamp,
   isValidContentHash,
   resolveTransferLimits,
+  sanitizeUrlForLog,
   truncateForLog,
   saveContentFileToDisk as saveContentFile
 } from './utils'
@@ -163,10 +164,14 @@ export async function* fetchJsonPaginated<T>(
 
   while (currentUrl) {
     if (visitedUrls.has(currentUrl)) {
-      throw new Error(`Pagination loop while fetching ${url}: ${currentUrl} was already fetched`)
+      throw new Error(
+        `Pagination loop while fetching ${sanitizeUrlForLog(url)}: ${sanitizeUrlForLog(currentUrl)} was already fetched`
+      )
     }
     if (visitedUrls.size >= MAX_PAGES_PER_PAGINATED_CALL) {
-      throw new Error(`Too many pages while fetching ${url}: stopped after ${MAX_PAGES_PER_PAGINATED_CALL}`)
+      throw new Error(
+        `Too many pages while fetching ${sanitizeUrlForLog(url)}: stopped after ${MAX_PAGES_PER_PAGINATED_CALL}`
+      )
     }
     visitedUrls.add(currentUrl)
 
@@ -223,7 +228,11 @@ export async function* fetchJsonPaginated<T>(
       // links all throw. A server that says "there is more" in a way we cannot read should not have that
       // read as "there is no more".
       if (typeof nextRelative !== 'string') {
-        throw new Error(`Invalid pagination link while fetching ${url}: expected a string, got ${typeof nextRelative}`)
+        throw new Error(
+          `Invalid pagination link while fetching ${sanitizeUrlForLog(
+            url
+          )}: expected a string, got ${typeof nextRelative}`
+        )
       }
       // `next` is remote text: an unparseable value would otherwise surface as an opaque TypeError
       // from the URL constructor, and an enormous one would be retained in visitedUrls for the rest of
@@ -237,7 +246,11 @@ export async function* fetchJsonPaginated<T>(
       try {
         nextUrl = new URL(nextRelative, currentUrl)
       } catch {
-        throw new Error(`Invalid pagination link while fetching ${url}: ${JSON.stringify(nextRelative)}`)
+        throw new Error(
+          `Invalid pagination link while fetching ${sanitizeUrlForLog(url)}: ${truncateForLog(
+            JSON.stringify(nextRelative)
+          )}`
+        )
       }
       // `next` is chosen by the remote server, and this process is the client that would follow it, so
       // it is pinned to the endpoint the call started from and may vary only the query string — which
@@ -254,12 +267,14 @@ export async function* fetchJsonPaginated<T>(
       // were going to request anyway.
       if (nextUrl.origin !== requestUrl.origin) {
         throw new Error(
-          `Refusing to follow a cross-origin pagination link while fetching ${url}: ${nextUrl.origin} does not match ${requestUrl.origin}`
+          `Refusing to follow a cross-origin pagination link while fetching ${sanitizeUrlForLog(url)}: ` +
+            `${nextUrl.origin} does not match ${requestUrl.origin}`
         )
       }
       if (nextUrl.pathname !== requestUrl.pathname) {
         throw new Error(
-          `Refusing to follow a pagination link that changes the path while fetching ${url}: ${nextUrl.pathname} does not match ${requestUrl.pathname}`
+          `Refusing to follow a pagination link that changes the path while fetching ${sanitizeUrlForLog(url)}: ` +
+            `${truncateForLog(nextUrl.pathname)} does not match ${requestUrl.pathname}`
         )
       }
       // Fragments are never sent to a server, so two links differing only by `#…` address the same

@@ -216,21 +216,21 @@ export async function fetchJson(
   if (response.status >= 300 && response.status < 400) {
     await response.body?.cancel().catch(() => undefined)
     throw new Error(
-      `Refusing to follow a redirect while fetching ${url}: got status ${response.status} to ${JSON.stringify(
-        response.headers.get('location')
-      )}`
+      `Refusing to follow a redirect while fetching ${sanitizeUrlForLog(url)}: got status ${
+        response.status
+      } to ${truncateForLog(JSON.stringify(response.headers.get('location')))}`
     )
   }
 
   if (!response.ok) {
     // Drain the body so undici releases the socket back to the pool before throwing.
     await response.body?.cancel().catch(() => undefined)
-    throw new Error('Error fetching ' + url + '. Status code was: ' + response.status)
+    throw new Error('Error fetching ' + sanitizeUrlForLog(url) + '. Status code was: ' + response.status)
   }
 
   const body = await readBodyWithSizeLimit(response, MAX_JSON_RESPONSE_SIZE_IN_BYTES, bodyReadTimeout, limits)
   if (body === '') {
-    throw new Error('Error fetching ' + url + '. The response body was empty.')
+    throw new Error('Error fetching ' + sanitizeUrlForLog(url) + '. The response body was empty.')
   }
 
   return JSON.parse(body)

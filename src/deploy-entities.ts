@@ -215,6 +215,38 @@ export async function deployEntitiesFromSnapshot(
  * of the replaced ones.
  * @public
  */
+// Hashes per processed-snapshots lookup. The aggregate list is not bounded by anything this package
+// controls: individual entries cap their replacedSnapshotHashes, but a /snapshots response can carry as
+// many entries as fits the 50 MiB body limit — roughly 845,000 hashes — and the synchronizer batches
+// every server's entries into one list before looking them up. One oversized `IN` clause is worse than
+// slow: Postgres refuses a statement with more than 65,535 bind parameters, so a single server
+// advertising enough hashes could make the lookup throw for the whole decision pass, and with it the
+// sync from every well-behaved server in the same pass.
+//
+// 1000 is far under any such limit while keeping the number of round trips small for realistic
+// responses, where the whole list fits in one chunk.
+const PROCESSED_SNAPSHOT_LOOKUP_CHUNK_SIZE = 1000
+
+/**
+ * Looks up processed snapshots in bounded batches, merging the results.
+ *
+ * Serial rather than concurrent on purpose: the point is to bound the load a single pass puts on the
+ * consumer's storage, and issuing every chunk at once would keep the peak it is meant to remove.
+ */
+export async function filterProcessedSnapshotsInChunks(
+  components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage'>,
+  hashes: string[]
+): Promise<Set<string>> {
+  const processed = new Set<string>()
+  for (let start = 0; start < hashes.length; start += PROCESSED_SNAPSHOT_LOOKUP_CHUNK_SIZE) {
+    const chunk = hashes.slice(start, start + PROCESSED_SNAPSHOT_LOOKUP_CHUNK_SIZE)
+    for (const hash of await components.processedSnapshotStorage.filterProcessedSnapshotsFrom(chunk)) {
+      processed.add(hash)
+    }
+  }
+  return processed
+}
+
 export async function shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(
   components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage' | 'snapshotStorage'>,
   genesisTimestamp: number,
@@ -222,7 +254,7 @@ export async function shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded
   greatestEndTimestamp: number,
   replacedSnapshotHashes: string[][]
 ): Promise<boolean> {
-  const processedSnapshots = await components.processedSnapshotStorage.filterProcessedSnapshotsFrom([
+  const processedSnapshots = await filterProcessedSnapshotsInChunks(components, [
     snapshotHash,
     ...replacedSnapshotHashes.flat()
   ])
@@ -240,7 +272,8 @@ export async function shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded
 /**
  * Same decision as shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded, but operating on an
  * already-fetched set of processed snapshot hashes. This lets a caller batch the (potentially
- * expensive) filterProcessedSnapshotsFrom lookup for many snapshots into a single storage call.
+ * expensive) processed-snapshots lookup for many snapshots into as few storage calls as
+ * {@link filterProcessedSnapshotsInChunks} needs, rather than one per decision.
  *
  * @param processedSnapshots - Hashes already known to be processed. **Mutated**: when this call marks
  *   `snapshotHash` as processed, it is added here so the set keeps describing storage. A caller reusing

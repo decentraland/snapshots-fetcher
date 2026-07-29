@@ -5,6 +5,7 @@ import {
   decideSnapshotDeploymentFromProcessedSet,
   deployEntitiesFromPointerChanges,
   deployEntitiesFromSnapshot,
+  filterProcessedSnapshotsInChunks,
   PointerChangesDeploymentReport
 } from './deploy-entities'
 import { createExponentialFallofRetry } from './exponential-fallof-retry'
@@ -242,7 +243,7 @@ export async function createSynchronizer(
     }
     const processedSnapshots =
       allSnapshotHashesToCheck.size > 0
-        ? await components.processedSnapshotStorage.filterProcessedSnapshotsFrom(Array.from(allSnapshotHashesToCheck))
+        ? await filterProcessedSnapshotsInChunks(components, Array.from(allSnapshotHashesToCheck))
         : new Set<string>()
 
     const timeRangesOfEntitiesToDeploy: TimeRange[] = []
@@ -345,7 +346,8 @@ export async function createSynchronizer(
     // Without re-reading it, a deployer that quietly dropped an entity would still let the servers
     // advertising that snapshot advance past it.
     if (serversBySnapshotDeployed.size > 0) {
-      const processedAfterDeploying = await components.processedSnapshotStorage.filterProcessedSnapshotsFrom(
+      const processedAfterDeploying = await filterProcessedSnapshotsInChunks(
+        components,
         Array.from(serversBySnapshotDeployed.keys())
       )
       for (const [snapshotHash, servers] of serversBySnapshotDeployed) {
