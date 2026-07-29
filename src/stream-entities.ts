@@ -1,3 +1,4 @@
+import { AuthLink, PointerChangesSyncDeployment } from '@dcl/schemas'
 import { fetchPointerChanges } from './client'
 import { downloadFileWithRetries } from './downloader'
 import { processDeploymentsInFile, SnapshotStreamReport } from './file-processor'
@@ -84,6 +85,36 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
  *   no deployments at all.
  * @public
  */
+// Bounds the boundary state. Beyond this many distinct rows at a single timestamp the stream stops
+// recording them, which can only cause a re-delivery on the next poll — the deployer is idempotent, so a
+// re-yield costs work rather than correctness, whereas failing to yield a row loses it. Erring towards
+// re-delivery is what makes exceeding this safe.
+const MAX_BOUNDARY_ROWS_TRACKED = 10_000
+
+/**
+ * Identity of a boundary *row*, not of its entity.
+ *
+ * `entityId` is the hash of the entity file and does not cover the authChain, so two rows can legitimately
+ * share an id while being distinct deployments. A budget keyed by id alone therefore cannot tell a replayed
+ * row from a new one — and nothing guarantees a server replays rows in the order it first sent them. If a
+ * new row arrives before the replay of the one already delivered, an id-keyed budget spends the allowance
+ * on the new row, suppresses it, and then yields the replay: the new pointer-change is silently lost.
+ *
+ * Fingerprinting every field the schema carries removes that guesswork. Counts are still kept alongside,
+ * because two rows identical in all of these fields are genuinely indistinguishable.
+ */
+function boundaryRowFingerprint(deployment: PointerChangesSyncDeployment): string {
+  return JSON.stringify([
+    deployment.entityType,
+    deployment.entityId,
+    deployment.entityTimestamp,
+    deployment.localTimestamp,
+    // Sorted so a server listing an equivalent pointer set in another order does not read as a new row.
+    [...deployment.pointers].sort(),
+    deployment.authChain.map((link: AuthLink) => [link.type, link.payload, link.signature ?? ''])
+  ])
+}
+
 export async function* getDeployedEntitiesStreamFromPointerChanges(
   components: Pick<SnapshotsFetcherComponents, 'logs' | 'fetcher'> & {
     metrics?: SnapshotsFetcherComponents['metrics']
@@ -103,20 +134,16 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
   const genesisTimestamp = options.fromTimestamp || 0
   let greatestLocalTimestampProcessed = genesisTimestamp
   // `from` is inclusive, so every poll re-returns the deployments sitting exactly at the high-water
-  // timestamp. This records how many rows *per entity id* earlier polls already delivered at that
-  // timestamp — the only re-yields there are to suppress.
+  // timestamp. This records how many rows earlier polls already delivered there, keyed by
+  // {@link boundaryRowFingerprint} — the only re-yields there are to suppress.
   //
-  // Counts rather than a Set, and read frozen for the duration of a poll rather than consulted as it
-  // grows. Both details exist to avoid resting on the same unverifiable assumption, that one entity id
-  // appears at most once per timestamp:
+  // Three properties, each removing a dependency on the server behaving well:
   //
-  //   - growing during a poll collapses two rows for the same entity in one response, because the first
-  //     yield makes the second look like a re-yield;
-  //   - a Set collapses the case where a later poll shows one row already delivered *plus* a new one, since
-  //     membership cannot tell "seen once" from "seen twice".
-  //
-  // Consuming one allowance per matching row suppresses exactly what was delivered and lets any extra
-  // through. Nothing here needs the remote server to be well-behaved about identifiers.
+  //   - keyed by full-row fingerprint, so a new row cannot spend the allowance belonging to a replayed one
+  //     when the server returns them in a different order than it first did;
+  //   - counted rather than a membership test, so "delivered once" is distinguishable from "delivered
+  //     twice" when a later poll shows a replay plus a new identical row;
+  //   - read frozen for the duration of a poll, so a poll's own rows never suppress each other.
   let rowsDeliveredAtPreviousBoundary = new Map<string, number>()
   logs.debug('Starting to stream entities from Pointer-Changes.', {
     contentServer,
@@ -135,6 +162,7 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
     // Seeded from the previous boundary because the stream is still standing at that timestamp: if this
     // poll never advances past it, the next one must still skip what was already sent there.
     let rowsDeliveredAtGreatestTimestamp = new Map(rowsDeliveredAtPreviousBoundary)
+    let boundaryTrackingCapReported = false
 
     // 1. download pointer changes and yield
     const pointerChanges = fetchPointerChanges(
@@ -158,12 +186,18 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
         rowsDeliveredAtGreatestTimestamp = new Map<string, number>()
       }
 
+      // Computed only where it is needed — to test a boundary row, or to record one at the high-water
+      // timestamp — rather than for every row of every page.
+      const isBoundaryRow = localTimestamp === boundaryTimestamp
+      const isAtGreatestTimestamp = localTimestamp === greatestLocalTimestampProcessed
+      const fingerprint = isBoundaryRow || isAtGreatestTimestamp ? boundaryRowFingerprint(deployment) : undefined
+
       // Spends one allowance per matching row, so a row beyond what was delivered is not suppressed.
       let alreadyDeliveredBeforeThisPoll = false
-      if (localTimestamp === boundaryTimestamp) {
-        const remaining = remainingBoundarySuppressions.get(deployment.entityId) ?? 0
+      if (isBoundaryRow && fingerprint !== undefined) {
+        const remaining = remainingBoundarySuppressions.get(fingerprint) ?? 0
         if (remaining > 0) {
-          remainingBoundarySuppressions.set(deployment.entityId, remaining - 1)
+          remainingBoundarySuppressions.set(fingerprint, remaining - 1)
           alreadyDeliveredBeforeThisPoll = true
         }
       }
@@ -175,11 +209,21 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
           source: 'pointer-changes'
         })
         yield deployment
-        if (localTimestamp === greatestLocalTimestampProcessed) {
-          rowsDeliveredAtGreatestTimestamp.set(
-            deployment.entityId,
-            (rowsDeliveredAtGreatestTimestamp.get(deployment.entityId) ?? 0) + 1
-          )
+        if (localTimestamp === greatestLocalTimestampProcessed && fingerprint !== undefined) {
+          const alreadyTracked = rowsDeliveredAtGreatestTimestamp.has(fingerprint)
+          if (alreadyTracked || rowsDeliveredAtGreatestTimestamp.size < MAX_BOUNDARY_ROWS_TRACKED) {
+            rowsDeliveredAtGreatestTimestamp.set(
+              fingerprint,
+              (rowsDeliveredAtGreatestTimestamp.get(fingerprint) ?? 0) + 1
+            )
+          } else if (!boundaryTrackingCapReported) {
+            boundaryTrackingCapReported = true
+            logs.warn('Too many distinct deployments at one timestamp to track; some may be re-delivered.', {
+              contentServer,
+              localTimestamp,
+              limit: String(MAX_BOUNDARY_ROWS_TRACKED)
+            })
+          }
         }
       }
     }

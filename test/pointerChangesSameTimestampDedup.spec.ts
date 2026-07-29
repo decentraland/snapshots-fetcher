@@ -22,6 +22,15 @@ function delta(suffix: string, localTimestamp: number): PointerChangesSyncDeploy
   }
 }
 
+// Same entity id and timestamp, different signer. entityId is the hash of the entity file and does not
+// cover the authChain, so these are two distinct rows that no id-based key can tell apart.
+function deltaSignedBy(suffix: string, localTimestamp: number, signer: string): PointerChangesSyncDeployment {
+  return {
+    ...delta(suffix, localTimestamp),
+    authChain: [{ type: AuthLinkType.SIGNER, payload: signer, signature: '' }]
+  }
+}
+
 type PointerChangesPage = {
   deltas: PointerChangesSyncDeployment[]
   pagination: { next?: string }
@@ -100,6 +109,32 @@ test('getDeployedEntitiesStreamFromPointerChanges when rows repeat an entity at 
 
     it('should yield nothing the second time, spending one allowance per delivered row', async () => {
       await expect(streamUntil(3)).resolves.toEqual([idOf('1'), idOf('1')])
+    })
+  })
+
+  describe('and the later poll returns a new same-entity row before replaying the delivered one', () => {
+    beforeEach(() => {
+      // Poll 1 delivers the row signed by 0xA. Poll 2 returns the *new* row (0xB) first and the replay of
+      // 0xA second — nothing guarantees a server replays rows in the order it first sent them. Keyed by
+      // entity id, the new row spends 0xA's allowance and is suppressed, and the replay is then yielded:
+      // the stream keeps its high-water timestamp and silently loses a legitimate pointer-change.
+      served = [[deltaSignedBy('1', 1000, '0xA')], [deltaSignedBy('1', 1000, '0xB'), deltaSignedBy('1', 1000, '0xA')]]
+    })
+
+    it('should yield the new row rather than the replayed one', async () => {
+      const signers: string[] = []
+      for await (const deployment of getDeployedEntitiesStreamFromPointerChanges(
+        components,
+        { pointerChangesWaitTime: 1, fromTimestamp: 0 },
+        await components.getBaseUrl(),
+        () => pollsServed >= 3
+      )) {
+        signers.push(deployment.authChain[0].payload)
+      }
+
+      // Asserted on the signer, not the entity id: both rows share an id, so an id-only assertion cannot
+      // tell the new row from the replay and would pass either way.
+      expect(signers).toEqual(['0xA', '0xB'])
     })
   })
 })

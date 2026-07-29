@@ -304,7 +304,22 @@ export async function createSynchronizer(
       deploymentsProcessorsQueue
         .add(async () => {
           try {
-            await deployEntitiesFromSnapshot(components, options, snapshotHash, servers, () => isStopped)
+            // Stops when the shutdown flag is set, or when no server that advertised this snapshot is
+            // wanted any more — matching how a pointer-changes job stops as soon as its server is dropped.
+            // Checked across all of them rather than one: a snapshot advertised by several servers is still
+            // worth deploying while any of them is desired, since its entities serve all of them.
+            //
+            // An early stop leaves the snapshot unmarked, so the marker re-check after the deployer drains
+            // attributes it back to those servers as unfinished and they do not advance. That is the
+            // correct outcome — the work really did not complete — and it costs nothing for a server that
+            // is no longer desired.
+            await deployEntitiesFromSnapshot(
+              components,
+              options,
+              snapshotHash,
+              servers,
+              () => isStopped || !Array.from(servers).some((server) => desiredServers.has(server))
+            )
           } catch (err: any) {
             // Recorded inside the job (not in a .catch on the add() promise) so the set is
             // guaranteed to be populated before onIdle() resolves and it gets read below.
