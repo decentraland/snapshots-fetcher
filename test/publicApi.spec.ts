@@ -21,8 +21,36 @@ import {
   SynchronizerComponent,
   SynchronizerOptions
 } from '../src'
+import * as packageRoot from '../src'
 
 describe('the package root export', () => {
+  describe('when enumerating what the package publishes', () => {
+    // The API guard for this repo. `make build` used to invoke api-extractor, but it was never declared or
+    // installed and no config or report file ever existed, so that step always failed — the check never ran
+    // on any branch, and removing it fixed a broken target rather than dropping a safeguard. Reinstating it
+    // properly is not straightforward either: CI delegates to a shared reusable workflow this repository
+    // cannot add steps to, so the enforceable place for an API check is the suite CI already runs.
+    //
+    // Only value exports appear here — types are erased at runtime, so a type-level surface change still
+    // needs review. Adding or removing a runtime export should be a deliberate edit to this list.
+    const published = [
+      'DEFAULT_TRANSFER_LIMITS',
+      'createJobQueue',
+      'createSynchronizer',
+      'decideSnapshotDeploymentFromProcessedSet',
+      'downloadEntityAndContentFiles',
+      'getDeployedEntitiesStreamFromPointerChanges',
+      'getDeployedEntitiesStreamFromSnapshot',
+      'metricsDefinitions',
+      'resolveTransferLimits',
+      'shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded'
+    ]
+
+    it('should export exactly the documented set of values, no more and no less', () => {
+      expect(Object.keys(packageRoot).sort()).toEqual(published)
+    })
+  })
+
   describe('when a consumer assembles the components createSynchronizer requires', () => {
     let components: SnapshotsFetcherComponents & { deployer: IDeployerComponent }
     let options: SynchronizerOptions

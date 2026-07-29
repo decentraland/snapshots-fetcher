@@ -102,9 +102,16 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
   // fetch the /pointer-changes of the remote server using the last timestamp from the previous step with a grace period of 20 min
   const genesisTimestamp = options.fromTimestamp || 0
   let greatestLocalTimestampProcessed = genesisTimestamp
-  // `from` is inclusive, so each poll re-returns the deployments at the high-water timestamp. Track
-  // the entityIds already yielded at that timestamp to skip those re-yields (never a distinct one).
-  let entityIdsYieldedAtGreatestTimestamp = new Set<string>()
+  // `from` is inclusive, so every poll re-returns the deployments sitting exactly at the high-water
+  // timestamp. This holds the ids that *earlier* polls already yielded at that timestamp — the only
+  // re-yields there are to suppress.
+  //
+  // Read frozen for the duration of a poll rather than consulted as it grows: two distinct deltas for the
+  // same entity at the same localTimestamp inside one response are both legitimate rows, and a set that
+  // accumulated during the poll would treat the second as a re-yield and drop it. Suppression now rests
+  // only on "this was already delivered before this poll began", so it does not depend on entityId being
+  // unique per timestamp — an invariant this package cannot enforce on a remote server.
+  let entityIdsYieldedAtPreviousBoundary = new Set<string>()
   logs.debug('Starting to stream entities from Pointer-Changes.', {
     contentServer,
     timestamp: new Date(genesisTimestamp).toISOString()
@@ -114,6 +121,14 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
       logs.debug('Stopping the Pointer-Changes stream.', { contentServer })
       return
     }
+
+    // Captured before the poll so the suppression test below compares against a fixed boundary and a
+    // fixed id set, neither of which this poll's own rows can alter.
+    const boundaryTimestamp = greatestLocalTimestampProcessed
+    const idsDeliveredAtBoundary = entityIdsYieldedAtPreviousBoundary
+    // Seeded from the previous boundary because the stream is still standing at that timestamp: if this
+    // poll never advances past it, the next one must still skip everything already delivered there.
+    let entityIdsYieldedAtGreatestTimestamp = new Set<string>(idsDeliveredAtBoundary)
 
     // 1. download pointer changes and yield
     const pointerChanges = fetchPointerChanges(
@@ -137,12 +152,11 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
         entityIdsYieldedAtGreatestTimestamp = new Set<string>()
       }
 
-      const alreadyYielded =
-        localTimestamp === greatestLocalTimestampProcessed &&
-        entityIdsYieldedAtGreatestTimestamp.has(deployment.entityId)
+      const alreadyDeliveredBeforeThisPoll =
+        localTimestamp === boundaryTimestamp && idsDeliveredAtBoundary.has(deployment.entityId)
 
-      // selectively ignore deployments by localTimestamp, and skip ones already yielded this run
-      if (localTimestamp >= genesisTimestamp && !alreadyYielded) {
+      // selectively ignore deployments by localTimestamp, and skip only what an earlier poll delivered
+      if (localTimestamp >= genesisTimestamp && !alreadyDeliveredBeforeThisPoll) {
         components.metrics?.increment('dcl_entities_deployments_streamed_total', {
           ...pointerChangesMetricLabels,
           source: 'pointer-changes'
@@ -153,6 +167,10 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
         }
       }
     }
+
+    // Whatever ended up at the high-water timestamp is what the next poll's inclusive `from` will hand
+    // back, so it becomes that poll's suppression set.
+    entityIdsYieldedAtPreviousBoundary = entityIdsYieldedAtGreatestTimestamp
 
     // The end of a poll: everything this poll had to offer has been yielded, and nothing more will be
     // until the next one. That makes it the only point in a stream designed never to end where a
