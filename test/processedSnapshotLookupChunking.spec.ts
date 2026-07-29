@@ -87,4 +87,45 @@ describe('filterProcessedSnapshotsInChunks', () => {
       )
     })
   })
+  describe('when the input is a Set rather than an array', () => {
+    it('should consume it directly, so a caller need not copy it first', async () => {
+      processed.add('h2')
+
+      await expect(filterProcessedSnapshotsInChunks(components, new Set(['h1', 'h2']))).resolves.toEqual(
+        new Set(['h2'])
+      )
+    })
+  })
+
+  describe('when the input is a lazy generator', () => {
+    let yielded: number
+    let hashes: () => Generator<string>
+
+    beforeEach(() => {
+      yielded = 0
+      processed.add('h1500')
+      hashes = function* () {
+        for (let index = 0; index < 2500; index++) {
+          yielded++
+          yield `h${index}`
+        }
+      }
+    })
+
+    it('should chunk it without the caller materialising the whole sequence', async () => {
+      await expect(filterProcessedSnapshotsInChunks(components, hashes())).resolves.toEqual(new Set(['h1500']))
+    })
+
+    it('should still bound every batch to one chunk', async () => {
+      await filterProcessedSnapshotsInChunks(components, hashes())
+
+      expect(requestedChunkSizes).toEqual([CHUNK_SIZE, CHUNK_SIZE, 500])
+    })
+
+    it('should have pulled every element exactly once', async () => {
+      await filterProcessedSnapshotsInChunks(components, hashes())
+
+      expect(yielded).toEqual(2500)
+    })
+  })
 })

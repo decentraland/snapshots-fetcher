@@ -18,7 +18,7 @@ import {
 const MAX_INVALID_SNAPSHOT_LOGS = 100
 
 // The same bound for deltas we refuse from /pointer-changes. A server can put one on every page, and
-// MAX_PAGES_PER_PAGINATED_CALL is 10,000.
+// the page cap (transferLimits.maxPagesPerPaginatedCall) is 10,000 by default.
 const MAX_REJECTED_DELTA_LOGS = 100
 
 // Every request this module makes must be bounded. The fetch component applies no default timeout, so
@@ -29,11 +29,10 @@ const MAX_REJECTED_DELTA_LOGS = 100
 
 // Backstop on how many pages a single paginated call will follow. A server that keeps advertising a
 // `next` link makes the loop run forever (measured: ~670 requests/second), which silently pins the
-// sync stream on one server. Set far above any legitimate page count so it only ever trips on a
-// server that is broken or hostile.
-// Still far above any legitimate page count (at ~1000 entries per page this is 10M deployments in one
-// poll) but low enough that the visited-URL set stays small even against deliberately long links.
-const MAX_PAGES_PER_PAGINATED_CALL = 10_000
+// sync stream on one server. The bound is `transferLimits.maxPagesPerPaginatedCall`, defaulting to the
+// 10,000 this module always used: far above any legitimate page count (at ~1000 entries per page that is
+// 10M deployments in one poll) but low enough that the visited-URL set stays small even against
+// deliberately long links. Lower it to cap the amplification one poll can produce more tightly.
 // Conventional URL length ceiling. Bounds what a server can make us retain per page.
 const MAX_PAGINATION_LINK_LENGTH = 2048
 
@@ -168,9 +167,9 @@ export async function* fetchJsonPaginated<T>(
         `Pagination loop while fetching ${sanitizeUrlForLog(url)}: ${sanitizeUrlForLog(currentUrl)} was already fetched`
       )
     }
-    if (visitedUrls.size >= MAX_PAGES_PER_PAGINATED_CALL) {
+    if (visitedUrls.size >= limits.maxPagesPerPaginatedCall) {
       throw new Error(
-        `Too many pages while fetching ${sanitizeUrlForLog(url)}: stopped after ${MAX_PAGES_PER_PAGINATED_CALL}`
+        `Too many pages while fetching ${sanitizeUrlForLog(url)}: stopped after ${limits.maxPagesPerPaginatedCall}`
       )
     }
     visitedUrls.add(currentUrl)
@@ -191,11 +190,11 @@ export async function* fetchJsonPaginated<T>(
     // The body is remote and untrusted: a bare `null` document, or a page whose element list is not an
     // array, would otherwise surface as an opaque TypeError from the destructuring below.
     if (!partialHistory || typeof partialHistory !== 'object') {
-      throw new Error(`Invalid paginated response from ${currentUrl}: expected a JSON object`)
+      throw new Error(`Invalid paginated response from ${sanitizeUrlForLog(currentUrl)}: expected a JSON object`)
     }
     const elements = selector(partialHistory)
     if (!Array.isArray(elements)) {
-      throw new Error(`Invalid paginated response from ${currentUrl}: expected an array of elements`)
+      throw new Error(`Invalid paginated response from ${sanitizeUrlForLog(currentUrl)}: expected an array of elements`)
     }
 
     for (const elem of elements) {
@@ -212,7 +211,7 @@ export async function* fetchJsonPaginated<T>(
       // either, despite being typeof 'object'.
       if (typeof pagination !== 'object' || Array.isArray(pagination)) {
         throw new Error(
-          `Invalid pagination while fetching ${url}: expected an object, got ${
+          `Invalid pagination while fetching ${sanitizeUrlForLog(url)}: expected an object, got ${
             Array.isArray(pagination) ? 'an array' : typeof pagination
           }`
         )
@@ -239,7 +238,9 @@ export async function* fetchJsonPaginated<T>(
       // the call.
       if (nextRelative.length > MAX_PAGINATION_LINK_LENGTH) {
         throw new Error(
-          `Invalid pagination link while fetching ${url}: longer than ${MAX_PAGINATION_LINK_LENGTH} characters`
+          `Invalid pagination link while fetching ${sanitizeUrlForLog(
+            url
+          )}: longer than ${MAX_PAGINATION_LINK_LENGTH} characters`
         )
       }
       let nextUrl: URL
@@ -279,7 +280,7 @@ export async function* fetchJsonPaginated<T>(
       }
       // Fragments are never sent to a server, so two links differing only by `#…` address the same
       // network resource — but as distinct strings they slipped past the visited-URL check, letting a feed
-      // re-fetch one page up to MAX_PAGES_PER_PAGINATED_CALL times. Cleared rather than rejected: a
+      // re-fetch one page up to the page cap. Cleared rather than rejected: a
       // fragment is meaningless here rather than malformed, and normalising costs nothing.
       nextUrl.hash = ''
       currentUrl = nextUrl.toString()

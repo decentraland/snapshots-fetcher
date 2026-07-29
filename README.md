@@ -76,7 +76,8 @@ await createSynchronizer(components, {
     downloadInactivityTimeoutInMs: 30_000, // the same, for a content-file download
     maxDownloadedFileSizeInBytes: 1024 * 1024 * 1024, // 1 GiB ceiling per content file
     minTransferRateInBytesPerSecond: 4096, // floor a transfer must average to continue
-    transferRateGracePeriodInMs: 60_000 // how long before the rate is judged at all
+    transferRateGracePeriodInMs: 60_000, // how long before the rate is judged at all
+    maxPagesPerPaginatedCall: 10_000 // pages one /pointer-changes poll will follow
   }
 })
 ```
@@ -99,6 +100,13 @@ peer can stream valid gzip indefinitely while producing no decompressed output a
 empty gzip members are legal — so a bound only on the decompressed side never gets a byte to measure. For
 real content the compressed bound never binds: gzip exceeds its input only for incompressible data, and
 then by about 0.03%.
+
+`maxPagesPerPaginatedCall` bounds the amplification one poll can produce: a server that keeps advertising
+a `next` link makes every page another request to the same path. The default sits far above any legitimate
+page count, so lower it if you would rather cap that tightly than tolerate an unusually deep backlog in a
+single poll. There is deliberately no wall-clock budget for a paginated call — pagination progress is not
+committed until the poll completes, so aborting a long walk discards it and resumes from the last
+confirmed timestamp, which would leave a genuinely deep backlog restarting the same walk forever.
 
 `createSynchronizer` validates these up front, so a bad value is rejected at construction rather than
 surfacing as a puzzling failure on one download later. Every field must be an integer; the two rate

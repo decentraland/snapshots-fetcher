@@ -102,6 +102,23 @@ export type TransferLimits = {
    */
   minTransferRateInBytesPerSecond?: number
   /**
+   * Ceiling on how many pages a single paginated call (`/pointer-changes`) will follow before giving up.
+   *
+   * A hostile or broken server can keep advertising a `next` link, and each page is another request to the
+   * same path, so this bounds the amplification one poll can produce. The default is far above any
+   * legitimate page count — at ~1000 entries per page it allows 10M deployments in one poll — so lower it
+   * if you would rather cap the amplification tightly than tolerate an unusually deep backlog in a single
+   * poll.
+   *
+   * There is deliberately no wall-clock budget for a paginated call. Pagination progress is not committed
+   * until the poll completes, so aborting a long one throws the poll's work away and resumes from the last
+   * confirmed timestamp — a node with a genuinely deep backlog would restart the same walk forever rather
+   * than catch up. A page count degrades the same way, which is why the default is set where no real
+   * backlog reaches it. Must be an integer >= 1.
+   * @defaultValue 10000
+   */
+  maxPagesPerPaginatedCall?: number
+  /**
    * How long a transfer runs before its rate is judged at all. Small responses finish well inside this,
    * and earlier samples are dominated by connection setup rather than throughput. Raise it alongside
    * lowering the floor if your peers are slow to get going. Must be an integer >= 0.

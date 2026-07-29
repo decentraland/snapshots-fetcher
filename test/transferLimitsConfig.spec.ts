@@ -19,7 +19,8 @@ describe('resolveTransferLimits', () => {
         downloadInactivityTimeoutInMs: 30_000,
         maxDownloadedFileSizeInBytes: 1024 * 1024 * 1024,
         minTransferRateInBytesPerSecond: 4096,
-        transferRateGracePeriodInMs: 60_000
+        transferRateGracePeriodInMs: 60_000,
+        maxPagesPerPaginatedCall: 10_000
       })
     })
   })
@@ -38,7 +39,8 @@ describe('resolveTransferLimits', () => {
     ['requestTimeoutInMs', -1, 1],
     ['maxDownloadedFileSizeInBytes', 0, 1],
     ['minTransferRateInBytesPerSecond', -1, 0],
-    ['transferRateGracePeriodInMs', -1, 0]
+    ['transferRateGracePeriodInMs', -1, 0],
+    ['maxPagesPerPaginatedCall', 0, 1]
   ])('when %s is given %s', (field: string, value: number, minimum: number) => {
     it('should throw naming the field and the minimum it accepts', () => {
       expect(() => resolveTransferLimits({ [field]: value } as any)).toThrow(
@@ -80,7 +82,8 @@ describe('resolveTransferLimits', () => {
           downloadInactivityTimeoutInMs: undefined,
           maxDownloadedFileSizeInBytes: undefined,
           minTransferRateInBytesPerSecond: undefined,
-          transferRateGracePeriodInMs: undefined
+          transferRateGracePeriodInMs: undefined,
+          maxPagesPerPaginatedCall: undefined
         })
       ).toEqual(DEFAULT_TRANSFER_LIMITS)
     })

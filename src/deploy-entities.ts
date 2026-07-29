@@ -232,19 +232,49 @@ const PROCESSED_SNAPSHOT_LOOKUP_CHUNK_SIZE = 1000
  *
  * Serial rather than concurrent on purpose: the point is to bound the load a single pass puts on the
  * consumer's storage, and issuing every chunk at once would keep the peak it is meant to remove.
+ *
+ * @param hashes - Any iterable. Taking an iterable rather than an array is what lets a caller avoid
+ *   materialising its whole input first: a Set can be passed as-is, and nested groups can be walked by a
+ *   generator, so the largest allocation is one chunk. Note that it is consumed lazily *across* the
+ *   awaits below, so pass something that will not be mutated while the lookup runs.
+ *
+ *   Duplicates are not filtered — they only cost slots in a batch, never correctness, and the `Set` of
+ *   everything seen that de-duplication would need is exactly the allocation this signature avoids.
  */
 export async function filterProcessedSnapshotsInChunks(
   components: Pick<SnapshotsFetcherComponents, 'processedSnapshotStorage'>,
-  hashes: string[]
+  hashes: Iterable<string>
 ): Promise<Set<string>> {
   const processed = new Set<string>()
-  for (let start = 0; start < hashes.length; start += PROCESSED_SNAPSHOT_LOOKUP_CHUNK_SIZE) {
-    const chunk = hashes.slice(start, start + PROCESSED_SNAPSHOT_LOOKUP_CHUNK_SIZE)
+  let chunk: string[] = []
+
+  async function lookUpChunk() {
     for (const hash of await components.processedSnapshotStorage.filterProcessedSnapshotsFrom(chunk)) {
       processed.add(hash)
     }
+    chunk = []
+  }
+
+  for (const hash of hashes) {
+    chunk.push(hash)
+    if (chunk.length === PROCESSED_SNAPSHOT_LOOKUP_CHUNK_SIZE) {
+      await lookUpChunk()
+    }
+  }
+  if (chunk.length > 0) {
+    await lookUpChunk()
   }
   return processed
+}
+
+/** Walks a snapshot and its replaced groups without building the flattened array. */
+function* snapshotWithReplacedHashes(snapshotHash: string, replacedSnapshotHashes: string[][]): Generator<string> {
+  yield snapshotHash
+  for (const group of replacedSnapshotHashes) {
+    for (const replacedHash of group) {
+      yield replacedHash
+    }
+  }
 }
 
 export async function shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded(
@@ -254,10 +284,13 @@ export async function shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded
   greatestEndTimestamp: number,
   replacedSnapshotHashes: string[][]
 ): Promise<boolean> {
-  const processedSnapshots = await filterProcessedSnapshotsInChunks(components, [
-    snapshotHash,
-    ...replacedSnapshotHashes.flat()
-  ])
+  // Walked by a generator rather than flattened into one array first: this helper is exported, so a
+  // direct caller can hand it groups far larger than anything a /snapshots response could produce, and
+  // `.flat()` would pay the whole memory and copy cost before any chunking began.
+  const processedSnapshots = await filterProcessedSnapshotsInChunks(
+    components,
+    snapshotWithReplacedHashes(snapshotHash, replacedSnapshotHashes)
+  )
 
   return decideSnapshotDeploymentFromProcessedSet(
     components,

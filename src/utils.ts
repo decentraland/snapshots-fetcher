@@ -43,7 +43,8 @@ export const DEFAULT_TRANSFER_LIMITS: ResolvedTransferLimits = {
   downloadInactivityTimeoutInMs: 30_000,
   maxDownloadedFileSizeInBytes: 1024 * 1024 * 1024, // 1 GiB
   minTransferRateInBytesPerSecond: 4 * 1024,
-  transferRateGracePeriodInMs: 60_000
+  transferRateGracePeriodInMs: 60_000,
+  maxPagesPerPaginatedCall: 10_000
 }
 
 // Zero is meaningful for these two and not for the others: a rate floor of 0 disables the check, and a
@@ -53,7 +54,8 @@ const TRANSFER_LIMIT_MINIMUMS: ResolvedTransferLimits = {
   downloadInactivityTimeoutInMs: 1,
   maxDownloadedFileSizeInBytes: 1,
   minTransferRateInBytesPerSecond: 0,
-  transferRateGracePeriodInMs: 0
+  transferRateGracePeriodInMs: 0,
+  maxPagesPerPaginatedCall: 1
 }
 
 /**

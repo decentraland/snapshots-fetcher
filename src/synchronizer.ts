@@ -243,7 +243,7 @@ export async function createSynchronizer(
     }
     const processedSnapshots =
       allSnapshotHashesToCheck.size > 0
-        ? await filterProcessedSnapshotsInChunks(components, Array.from(allSnapshotHashesToCheck))
+        ? await filterProcessedSnapshotsInChunks(components, allSnapshotHashesToCheck)
         : new Set<string>()
 
     const timeRangesOfEntitiesToDeploy: TimeRange[] = []
@@ -348,7 +348,7 @@ export async function createSynchronizer(
     if (serversBySnapshotDeployed.size > 0) {
       const processedAfterDeploying = await filterProcessedSnapshotsInChunks(
         components,
-        Array.from(serversBySnapshotDeployed.keys())
+        serversBySnapshotDeployed.keys()
       )
       for (const [snapshotHash, servers] of serversBySnapshotDeployed) {
         if (processedAfterDeploying.has(snapshotHash)) {
