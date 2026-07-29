@@ -311,4 +311,59 @@ describe('processDeploymentsInStream', () => {
       expect(yielded).toEqual(1)
     })
   })
+  describe.each([
+    [
+      'an oversized line and its newline arrive in the same chunk',
+      [Buffer.concat([Buffer.alloc(12 * 1024 * 1024, 0x61), Buffer.from('\ntail\n')])]
+    ],
+    [
+      'an oversized line is followed by a shorter one in the same chunk',
+      [
+        Buffer.concat([
+          Buffer.alloc(12 * 1024 * 1024, 0x61),
+          Buffer.from('\n'),
+          Buffer.alloc(100, 0x62),
+          Buffer.from('\n')
+        ])
+      ]
+    ],
+    [
+      'a line spans chunks and its newline arrives with more data',
+      [Buffer.alloc(6 * 1024 * 1024, 0x61), Buffer.concat([Buffer.alloc(6 * 1024 * 1024, 0x61), Buffer.from('\nshort\n')])]
+    ]
+  ])('when %s', (_label: string, chunks: Buffer[]) => {
+    let thrownError: Error | undefined
+
+    beforeEach(async () => {
+      thrownError = undefined
+      // Each of these hides the oversized line *behind* a newline, which is what an earlier limiter that
+      // only measured bytes after the last newline in a chunk failed to catch.
+      try {
+        await collect(Readable.from(chunks), logger)
+      } catch (error: any) {
+        thrownError = error
+      }
+    })
+
+    it('should still fail the snapshot rather than forwarding the oversized line', () => {
+      expect(thrownError?.message).toEqual('Snapshot line exceeds the maximum allowed length of 10485760 bytes')
+    })
+  })
+
+  describe('when a line is exactly at the maximum allowed length', () => {
+    let thrownError: Error | undefined
+
+    beforeEach(async () => {
+      thrownError = undefined
+      try {
+        await collect(Readable.from([Buffer.concat([Buffer.alloc(10 * 1024 * 1024, 0x61), Buffer.from('\n')])]), logger)
+      } catch (error: any) {
+        thrownError = error
+      }
+    })
+
+    it('should accept it, so the cap is a maximum rather than an exclusive bound', () => {
+      expect(thrownError).toBeUndefined()
+    })
+  })
 })

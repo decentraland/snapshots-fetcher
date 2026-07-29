@@ -28,15 +28,40 @@ export type SnapshotStreamReport = {
 const MAX_SNAPSHOT_LINE_LENGTH_IN_BYTES = 10 * 1024 * 1024 // 10 MiB
 
 /**
- * Fails the pipeline once more than maxBytes have flowed through it without a newline.
+ * Fails the pipeline once any single line exceeds maxBytes.
+ *
+ * Every line is measured, including ones that begin and end inside one chunk. An earlier version tracked
+ * only the bytes after the LAST newline in each chunk, which measured the trailing partial line and
+ * nothing else: a chunk holding a 12 MiB line followed by a newline reset the counter to the short tail
+ * and forwarded the oversized line untouched. The same blind spot swallowed a line made of carried-over
+ * bytes plus the start of a chunk that happened to contain a later newline.
  */
 function createLineLengthLimiter(maxBytes: number): Transform {
+  // Bytes of the current line seen so far, carried across chunks until its newline arrives.
   let bytesSinceNewline = 0
   return new Transform({
     transform(chunk, _encoding, callback) {
       const buffer: Buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk))
-      const lastNewline = buffer.lastIndexOf(LINE_FEED)
-      bytesSinceNewline = lastNewline === -1 ? bytesSinceNewline + buffer.length : buffer.length - lastNewline - 1
+      let searchFrom = 0
+      for (;;) {
+        const newlineAt = buffer.indexOf(LINE_FEED, searchFrom)
+        if (newlineAt === -1) {
+          // No more newlines: the rest of the chunk continues the current line into the next one.
+          bytesSinceNewline += buffer.length - searchFrom
+          break
+        }
+        // A line ends here, so its full length is knowable: whatever carried over plus the bytes up to
+        // this newline.
+        if (bytesSinceNewline + (newlineAt - searchFrom) > maxBytes) {
+          callback(new Error(`Snapshot line exceeds the maximum allowed length of ${maxBytes} bytes`))
+          return
+        }
+        bytesSinceNewline = 0
+        searchFrom = newlineAt + 1
+      }
+      // The trailing partial line is checked too, so a single endless line fails without waiting for a
+      // newline that may never come. Each indexOf resumes where the last stopped, so a chunk is still
+      // scanned once in total.
       if (bytesSinceNewline > maxBytes) {
         callback(new Error(`Snapshot line exceeds the maximum allowed length of ${maxBytes} bytes`))
         return
