@@ -1,8 +1,9 @@
-import { AuthLink, PointerChangesSyncDeployment } from '@dcl/schemas'
+import { PointerChangesSyncDeployment } from '@dcl/schemas'
 import { createHash } from 'crypto'
 import { fetchPointerChanges } from './client'
 import { downloadFileWithRetries } from './downloader'
 import { processDeploymentsInFile, SnapshotStreamReport } from './file-processor'
+import { assertPointerChangesDeploymentWithinStructuralLimits } from './pointer-changes-limits'
 import {
   PointerChangesDeployedEntityStreamOptions,
   SnapshotDeployedEntityStreamOptions,
@@ -101,26 +102,50 @@ const MAX_BOUNDARY_ROWS_TRACKED = 10_000
  * new row arrives before the replay of the one already delivered, an id-keyed budget spends the allowance
  * on the new row, suppresses it, and then yields the replay: the new pointer-change is silently lost.
  *
- * Fingerprinting every field the schema carries removes that guesswork. The canonical row is reduced to a
- * fixed-size digest before it becomes a retained map key: remote pointer and auth-chain strings are bounded
- * only by the per-page response cap, and retaining their serialized values across many pages would let one
- * timestamp grow this state far beyond that cap. Counts are still kept alongside the digest, because two
- * rows identical in all of these fields are genuinely indistinguishable.
+ * Fingerprinting every field the schema carries removes that guesswork. Each field is streamed into a
+ * fixed-size digest rather than first serializing the whole row: remote pointer and auth-chain strings are
+ * bounded only by the per-page response cap, so retaining or transiently duplicating their canonical form
+ * would let one timestamp consume far more memory than its fixed-size keys require. Length prefixes keep
+ * adjacent variable-length fields unambiguous. Counts are still kept alongside the digest, because two rows
+ * identical in all of these fields are genuinely indistinguishable.
  *
  * @internal
  */
 export function boundaryRowFingerprint(deployment: PointerChangesSyncDeployment): string {
-  const canonicalRow = JSON.stringify([
-    deployment.entityType,
-    deployment.entityId,
-    deployment.entityTimestamp,
-    deployment.localTimestamp,
-    // Sorted so a server listing an equivalent pointer set in another order does not read as a new row.
-    [...deployment.pointers].sort(),
-    deployment.authChain.map((link: AuthLink) => [link.type, link.payload, link.signature ?? ''])
-  ])
+  // Defensive for direct/deep callers. The normal stream path has already applied this before yielding
+  // the deployment, but this function remains a runtime export even when stripInternal removes it from
+  // declarations.
+  assertPointerChangesDeploymentWithinStructuralLimits(deployment)
+  const hash = createHash('sha256')
+  const updateField = (value: string | number): void => {
+    const encoded = String(value)
+    hash.update(String(Buffer.byteLength(encoded, 'utf8')))
+    hash.update(':')
+    hash.update(encoded, 'utf8')
+  }
 
-  return createHash('sha256').update(canonicalRow).digest('base64url')
+  // Domain/version first, so changing the canonical field sequence later cannot silently reuse keys.
+  updateField('pointer-change-boundary-row-v1')
+  updateField(deployment.entityType)
+  updateField(deployment.entityId)
+  updateField(deployment.entityTimestamp)
+  updateField(deployment.localTimestamp)
+
+  // Sorted so a server listing an equivalent pointer set in another order does not read as a new row.
+  const sortedPointers = [...deployment.pointers].sort()
+  updateField(sortedPointers.length)
+  for (const pointer of sortedPointers) {
+    updateField(pointer)
+  }
+
+  updateField(deployment.authChain.length)
+  for (const link of deployment.authChain) {
+    updateField(link.type)
+    updateField(link.payload)
+    updateField(link.signature ?? '')
+  }
+
+  return hash.digest('base64url')
 }
 
 export async function* getDeployedEntitiesStreamFromPointerChanges(
@@ -170,8 +195,6 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
     // Seeded from the previous boundary because the stream is still standing at that timestamp: if this
     // poll never advances past it, the next one must still skip what was already sent there.
     let rowsDeliveredAtGreatestTimestamp = new Map(rowsDeliveredAtPreviousBoundary)
-    let boundaryTrackingCapReported = false
-
     // 1. download pointer changes and yield
     const pointerChanges = fetchPointerChanges(
       components,
@@ -212,6 +235,20 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
 
       // selectively ignore deployments by localTimestamp, and skip only what an earlier poll delivered
       if (localTimestamp >= genesisTimestamp && !alreadyDeliveredBeforeThisPoll) {
+        if (
+          localTimestamp === greatestLocalTimestampProcessed &&
+          fingerprint !== undefined &&
+          !rowsDeliveredAtGreatestTimestamp.has(fingerprint) &&
+          rowsDeliveredAtGreatestTimestamp.size >= MAX_BOUNDARY_ROWS_TRACKED
+        ) {
+          // Failing before yielding the untrackable row means no work from this poll is committed by the
+          // synchronizer's onPollEnd checkpoint. Its retry component then backs off instead of deploying
+          // the overflow rows on every inclusive poll forever.
+          throw new Error(
+            `Too many distinct deployments at local timestamp ${localTimestamp} from ${contentServer}; ` +
+              `the maximum boundary rows tracked per poll is ${MAX_BOUNDARY_ROWS_TRACKED}`
+          )
+        }
         components.metrics?.increment('dcl_entities_deployments_streamed_total', {
           ...pointerChangesMetricLabels,
           source: 'pointer-changes'
@@ -224,13 +261,6 @@ export async function* getDeployedEntitiesStreamFromPointerChanges(
               fingerprint,
               (rowsDeliveredAtGreatestTimestamp.get(fingerprint) ?? 0) + 1
             )
-          } else if (!boundaryTrackingCapReported) {
-            boundaryTrackingCapReported = true
-            logs.warn('Too many distinct deployments at one timestamp to track; some may be re-delivered.', {
-              contentServer,
-              localTimestamp,
-              limit: String(MAX_BOUNDARY_ROWS_TRACKED)
-            })
           }
         }
       }

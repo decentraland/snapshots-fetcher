@@ -379,6 +379,66 @@ describe('createExponentialFallofRetry', () => {
     })
   })
 
+  describe.each([
+    ['zero', 0],
+    ['negative', -1],
+    ['not a number', Number.NaN],
+    ['infinite', Number.POSITIVE_INFINITY]
+  ])('when retryTimeExponent is %s', (_description: string, retryTimeExponent: number) => {
+    let logger: any
+
+    beforeEach(async () => {
+      const config = createConfigComponent({})
+      const logs = await createLogComponent({ config })
+      logger = logs.getLogger('logger')
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should reject it before it can collapse the retry delay into a busy loop', () => {
+      expect(() =>
+        createExponentialFallofRetry(logger, {
+          async action() {},
+          retryTime: 10,
+          retryTimeExponent
+        })
+      ).toThrow('options.retryTimeExponent must be a finite number >= 1')
+    })
+  })
+
+  describe.each([
+    ['retryTime', Number.NaN],
+    ['retryTime', Number.POSITIVE_INFINITY],
+    ['maxInterval', Number.NaN],
+    ['maxInterval', Number.POSITIVE_INFINITY],
+    ['healthyRunTime', Number.NaN],
+    ['healthyRunTime', Number.POSITIVE_INFINITY]
+  ])('when %s is non-finite', (field: string, value: number) => {
+    let logger: any
+
+    beforeEach(async () => {
+      const config = createConfigComponent({})
+      const logs = await createLogComponent({ config })
+      logger = logs.getLogger('logger')
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should reject it instead of passing it to a timer', () => {
+      expect(() =>
+        createExponentialFallofRetry(logger, {
+          async action() {},
+          retryTime: 10,
+          [field]: value
+        })
+      ).toThrow(`options.${field} must be a finite number`)
+    })
+  })
+
   describe('when start() is called while the component is already running', () => {
     let logger: any
     let attempts: number

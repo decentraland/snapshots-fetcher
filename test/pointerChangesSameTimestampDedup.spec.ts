@@ -137,15 +137,64 @@ test('getDeployedEntitiesStreamFromPointerChanges when rows repeat an entity at 
       expect(signers).toEqual(['0xA', '0xB'])
     })
   })
+
+  describe('and one timestamp contains more distinct rows than the boundary tracker can retain', () => {
+    let fetchSpy: jest.SpyInstance
+
+    beforeEach(() => {
+      served = [Array.from({ length: 10_001 }, (_, index) => delta(String(index), 1000))]
+      fetchSpy = jest.spyOn(components.fetcher, 'fetch').mockImplementation(async () => {
+        const body: PointerChangesPage = { deltas: served[pollsServed] ?? [], pagination: {} }
+        pollsServed++
+        return new Response(JSON.stringify(body))
+      })
+    })
+
+    afterEach(() => {
+      fetchSpy.mockRestore()
+    })
+
+    it('should fail the poll before yielding an untrackable row', async () => {
+      await expect(streamUntil(2)).rejects.toThrow('maximum boundary rows tracked per poll is 10000')
+    })
+  })
+
+  describe('and a schema-valid row has a pointer larger than the local structural limit', () => {
+    let fetchSpy: jest.SpyInstance
+
+    beforeEach(() => {
+      served = [
+        [
+          {
+            ...delta('1', 1000),
+            pointers: ['x'.repeat(256 * 1024 + 1)]
+          }
+        ]
+      ]
+      fetchSpy = jest.spyOn(components.fetcher, 'fetch').mockImplementation(async () => {
+        const body: PointerChangesPage = { deltas: served[pollsServed] ?? [], pagination: {} }
+        pollsServed++
+        return new Response(JSON.stringify(body))
+      })
+    })
+
+    afterEach(() => {
+      fetchSpy.mockRestore()
+    })
+
+    it('should fail the poll instead of sorting and hashing the attacker-sized field', async () => {
+      await expect(streamUntil(2)).rejects.toThrow('pointer is 262145 bytes')
+    })
+  })
 })
 
 test('boundaryRowFingerprint', () => {
-  describe('when a row contains large remote-controlled pointer and auth-chain fields', () => {
-    let fingerprint: string
+  describe('when a row exceeds the local fingerprint-material limit', () => {
+    let deployment: PointerChangesSyncDeployment
 
     beforeEach(() => {
       const largeRemoteValue = 'x'.repeat(1024 * 1024)
-      const deployment: PointerChangesSyncDeployment = {
+      deployment = {
         ...deltaSignedBy('1', 1000, largeRemoteValue),
         pointers: [largeRemoteValue],
         authChain: [
@@ -156,7 +205,22 @@ test('boundaryRowFingerprint', () => {
           }
         ]
       }
-      fingerprint = boundaryRowFingerprint(deployment)
+    })
+
+    afterEach(() => {
+      deployment = undefined as any
+    })
+
+    it('should reject it before cloning or sorting its pointers', () => {
+      expect(() => boundaryRowFingerprint(deployment)).toThrow('above the maximum')
+    })
+  })
+
+  describe('when a row stays within every structural limit', () => {
+    let fingerprint: string
+
+    beforeEach(() => {
+      fingerprint = boundaryRowFingerprint(deltaSignedBy('1', 1000, 'x'.repeat(128 * 1024)))
     })
 
     afterEach(() => {

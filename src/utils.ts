@@ -487,17 +487,42 @@ const MAX_REDIRECTS = 10
 // download from such a peer burn its whole retry ladder. All of these are followed with GET, which is
 // what 303 mandates and what 307/308 preserve, since this client only ever issues GET.
 const REDIRECT_STATUS_CODES = new Set([301, 302, 303, 307, 308])
+
+function ipv4ToInteger(address: string): number {
+  const [first, second, third, fourth] = address.split('.').map(Number)
+  return (((first << 24) >>> 0) + (second << 16) + (third << 8) + fourth) >>> 0
+}
+
+function ipv4MatchesPrefix(address: string, network: string, prefixLength: number): boolean {
+  const mask = prefixLength === 0 ? 0 : (0xffffffff << (32 - prefixLength)) >>> 0
+  return (ipv4ToInteger(address) & mask) === (ipv4ToInteger(network) & mask)
+}
+
+const NON_PUBLIC_IPV4_PREFIXES: ReadonlyArray<readonly [string, number]> = [
+  ['0.0.0.0', 8],
+  ['10.0.0.0', 8],
+  ['100.64.0.0', 10],
+  ['127.0.0.0', 8],
+  ['169.254.0.0', 16],
+  ['172.16.0.0', 12],
+  ['192.0.0.0', 24],
+  ['192.0.2.0', 24],
+  ['192.88.99.0', 24],
+  ['192.168.0.0', 16],
+  ['198.18.0.0', 15],
+  ['198.51.100.0', 24],
+  ['203.0.113.0', 24],
+  ['224.0.0.0', 3]
+]
+
 function isNonPublicIPv4(address: string): boolean {
-  const [first, second] = address.split('.').map(Number)
-  if (first === 0) return true // 0.0.0.0/8 "this network"
-  if (first === 10) return true // 10.0.0.0/8 private
-  if (first === 127) return true // loopback
-  if (first === 169 && second === 254) return true // link-local, incl. cloud metadata
-  if (first === 172 && second >= 16 && second <= 31) return true // 172.16.0.0/12 private
-  if (first === 192 && second === 168) return true // 192.168.0.0/16 private
-  if (first === 100 && second >= 64 && second <= 127) return true // 100.64.0.0/10 CGNAT
-  if (first >= 224) return true // multicast and reserved
-  return false
+  // These two anycast addresses are the only globally-reachable allocations inside 192.0.0.0/24.
+  if (address === '192.0.0.9' || address === '192.0.0.10') return false
+
+  // IANA IPv4 Special-Purpose Address Registry entries that are not globally reachable, plus
+  // multicast. Keeping the registry-shaped list explicit makes the security decision reviewable and
+  // avoids broad rules such as "all of 192/8" that would reject legitimate public servers.
+  return NON_PUBLIC_IPV4_PREFIXES.some(([network, prefixLength]) => ipv4MatchesPrefix(address, network, prefixLength))
 }
 
 /**
@@ -547,10 +572,46 @@ function parseIPv6ToBytes(address: string): Uint8Array | undefined {
   return bytes
 }
 
+function ipv6MatchesPrefix(address: Uint8Array, network: string, prefixLength: number): boolean {
+  const networkBytes = parseIPv6ToBytes(network)
+  if (!networkBytes) {
+    throw new Error(`Invalid internal IPv6 network literal: ${network}`)
+  }
+  const wholeBytes = Math.floor(prefixLength / 8)
+  for (let index = 0; index < wholeBytes; index++) {
+    if (address[index] !== networkBytes[index]) return false
+  }
+  const remainingBits = prefixLength % 8
+  if (remainingBits === 0) return true
+  const mask = (0xff << (8 - remainingBits)) & 0xff
+  return (address[wholeBytes] & mask) === (networkBytes[wholeBytes] & mask)
+}
+
+const PUBLIC_IETF_IPV6_EXCEPTIONS: ReadonlyArray<readonly [string, number]> = [
+  ['2001:1::1', 128],
+  ['2001:1::2', 128],
+  ['2001:1::3', 128],
+  ['2001:3::', 32],
+  ['2001:4:112::', 48],
+  ['2001:20::', 28],
+  ['2001:30::', 28]
+]
+
+const NON_PUBLIC_IPV6_PREFIXES: ReadonlyArray<readonly [string, number]> = [
+  ['64:ff9b:1::', 48],
+  ['100::', 64],
+  ['100:0:0:1::', 64],
+  ['2001::', 23],
+  ['2001:db8::', 32],
+  ['2002::', 16],
+  ['3fff::', 20],
+  ['5f00::', 16]
+]
+
 /**
- * True for addresses that are only reachable from inside our own network: RFC1918 private ranges,
- * loopback, link-local (which covers the cloud metadata endpoints at 169.254.169.254), carrier-grade
- * NAT, "this network", multicast/reserved space, and their IPv6 equivalents.
+ * True for addresses that are not globally reachable according to the IANA special-purpose address
+ * registries: private, loopback, link-local (including cloud metadata), documentation, benchmarking,
+ * discard-only, multicast/reserved space, and their IPv6 equivalents.
  *
  * Anything that is not a recognisable IP literal is reported as non-public: callers only ever pass
  * resolved addresses, so an unparseable value means something unexpected happened and refusing is the
@@ -575,7 +636,15 @@ export function isNonPublicAddress(address: string): boolean {
     if (bytes[0] === 0xfe && (bytes[1] & 0xc0) === 0x80) return true // fe80::/10 link-local
     if ((bytes[0] & 0xfe) === 0xfc) return true // fc00::/7 unique local
     if (bytes[0] === 0xff) return true // ff00::/8 multicast
-    return false
+
+    // More-specific globally-reachable allocations inside IETF's otherwise non-global 2001::/23.
+    if (
+      PUBLIC_IETF_IPV6_EXCEPTIONS.some(([network, prefixLength]) => ipv6MatchesPrefix(bytes, network, prefixLength))
+    ) {
+      return false
+    }
+
+    return NON_PUBLIC_IPV6_PREFIXES.some(([network, prefixLength]) => ipv6MatchesPrefix(bytes, network, prefixLength))
   }
 
   return true

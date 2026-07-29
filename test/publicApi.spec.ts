@@ -130,5 +130,39 @@ describe('the package root export', () => {
         )
       })
     })
+
+    describe.each([
+      ['bootstrapReconnection', 'reconnectTime', Number.NaN, 'finite number >= 0'],
+      ['bootstrapReconnection', 'reconnectRetryTimeExponent', 0, 'finite number >= 1'],
+      ['bootstrapReconnection', 'maxReconnectionTime', Number.POSITIVE_INFINITY, 'finite number >= 0'],
+      ['syncingReconnection', 'reconnectTime', -1, 'finite number >= 0'],
+      ['syncingReconnection', 'reconnectRetryTimeExponent', Number.NaN, 'finite number >= 1'],
+      ['syncingReconnection', 'maxReconnectionTime', -1, 'finite number >= 0']
+    ])(
+      'and %s.%s is invalid',
+      (group: string, field: string, value: number, expectedRequirement: string) => {
+        let invalidOptions: SynchronizerOptions
+
+        beforeEach(() => {
+          invalidOptions = {
+            ...options,
+            [group]: {
+              ...(options as any)[group],
+              [field]: value
+            }
+          } as SynchronizerOptions
+        })
+
+        afterEach(() => {
+          invalidOptions = undefined as any
+        })
+
+        it('should reject it during construction instead of starting a broken retry job later', async () => {
+          await expect(createSynchronizer(components, invalidOptions)).rejects.toThrow(
+            `options.${group}.${field} must be a ${expectedRequirement}`
+          )
+        })
+      }
+    )
   })
 })

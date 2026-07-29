@@ -53,12 +53,27 @@ export function createExponentialFallofRetry(
   // Terminal once stop() is called, so the component can never be restarted into an unstoppable loop.
   let stopped: boolean = false
 
+  if (options.maxInterval !== undefined && !Number.isFinite(options.maxInterval)) {
+    throw new Error('options.maxInterval must be a finite number')
+  }
   if (options.maxInterval && options.maxInterval < 0) throw new Error('options.maxInterval must be >= 0')
   // A negative retryTime passes the `!options.retryTime` guard below and then makes every retry sleep
   // resolve immediately, turning the loop into a busy spin. Zero is allowed: it means "do not retry".
+  if (!Number.isFinite(options.retryTime)) throw new Error('options.retryTime must be a finite number')
   if (options.retryTime < 0) throw new Error('options.retryTime must be >= 0')
-  if (options.healthyRunTime !== undefined && options.healthyRunTime < 0) {
-    throw new Error('options.healthyRunTime must be >= 0')
+  if (
+    options.retryTimeExponent !== undefined &&
+    (!Number.isFinite(options.retryTimeExponent) || options.retryTimeExponent < 1)
+  ) {
+    throw new Error('options.retryTimeExponent must be a finite number >= 1')
+  }
+  if (options.healthyRunTime !== undefined) {
+    if (!Number.isFinite(options.healthyRunTime)) {
+      throw new Error('options.healthyRunTime must be a finite number')
+    }
+    if (options.healthyRunTime < 0) {
+      throw new Error('options.healthyRunTime must be >= 0')
+    }
   }
 
   const exitOnSuccess = options.exitOnSuccess || false

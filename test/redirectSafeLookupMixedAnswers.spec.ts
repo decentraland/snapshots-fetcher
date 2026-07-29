@@ -37,7 +37,7 @@ describe('createRedirectSafeLookup', () => {
     beforeEach(async () => {
       withAnswers([
         [
-          { address: '203.0.113.10', family: 4 },
+          { address: '8.8.8.8', family: 4 },
           { address: '127.0.0.1', family: 4 }
         ]
       ])
@@ -58,7 +58,7 @@ describe('createRedirectSafeLookup', () => {
     beforeEach(async () => {
       withAnswers([
         [
-          { address: '203.0.113.10', family: 4 },
+          { address: '8.8.8.8', family: 4 },
           { address: '127.0.0.1', family: 4 }
         ]
       ])
@@ -78,7 +78,7 @@ describe('createRedirectSafeLookup', () => {
     let errors: Array<Error | null>
 
     beforeEach(async () => {
-      withAnswers([[{ address: '203.0.113.10', family: 4 }], [{ address: '203.0.113.11', family: 4 }]])
+      withAnswers([[{ address: '8.8.8.8', family: 4 }], [{ address: '1.1.1.1', family: 4 }]])
       const lookup = createRedirectSafeLookup('public.example')
       errors = [await resolveOnce(lookup, 'public.example'), await resolveOnce(lookup, 'public.example')]
     })
@@ -106,7 +106,7 @@ describe('createRedirectSafeLookup', () => {
     let redirectError: Error | null
 
     beforeEach(async () => {
-      withAnswers([[{ address: '203.0.113.10', family: 4 }], [{ address: '127.0.0.1', family: 4 }]])
+      withAnswers([[{ address: '8.8.8.8', family: 4 }], [{ address: '127.0.0.1', family: 4 }]])
       const lookup = createRedirectSafeLookup('rebinding.example')
       await resolveOnce(lookup, 'rebinding.example')
       redirectError = await resolveOnce(lookup, 'rebinding.example')
@@ -121,7 +121,7 @@ describe('createRedirectSafeLookup', () => {
     let redirectError: Error | null
 
     beforeEach(async () => {
-      withAnswers([[{ address: '203.0.113.10', family: 4 }], [{ address: '169.254.169.254', family: 4 }]])
+      withAnswers([[{ address: '8.8.8.8', family: 4 }], [{ address: '169.254.169.254', family: 4 }]])
       const lookup = createRedirectSafeLookup('allowed.example')
       await resolveOnce(lookup, 'allowed.example')
       redirectError = await resolveOnce(lookup, 'metadata.example')

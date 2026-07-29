@@ -36,6 +36,28 @@ function resolveConcurrency(name: string, value: number | undefined, fallback: n
   return value
 }
 
+function validateReconnectionOptions(name: string, options: SynchronizerOptions['bootstrapReconnection']): void {
+  if (!Number.isFinite(options.reconnectTime) || options.reconnectTime < 0) {
+    throw new Error(`options.${name}.reconnectTime must be a finite number >= 0, got ${options.reconnectTime}`)
+  }
+  if (
+    options.reconnectRetryTimeExponent !== undefined &&
+    (!Number.isFinite(options.reconnectRetryTimeExponent) || options.reconnectRetryTimeExponent < 1)
+  ) {
+    throw new Error(
+      `options.${name}.reconnectRetryTimeExponent must be a finite number >= 1, got ${options.reconnectRetryTimeExponent}`
+    )
+  }
+  if (
+    options.maxReconnectionTime !== undefined &&
+    (!Number.isFinite(options.maxReconnectionTime) || options.maxReconnectionTime < 0)
+  ) {
+    throw new Error(
+      `options.${name}.maxReconnectionTime must be a finite number >= 0, got ${options.maxReconnectionTime}`
+    )
+  }
+}
+
 /**
  * @public
  */
@@ -51,6 +73,9 @@ export async function createSynchronizer(
   if (!Number.isInteger(options.requestMaxRetries) || options.requestMaxRetries < 1) {
     throw new Error(`options.requestMaxRetries must be an integer >= 1, got ${options.requestMaxRetries}`)
   }
+
+  validateReconnectionOptions('bootstrapReconnection', options.bootstrapReconnection)
+  validateReconnectionOptions('syncingReconnection', options.syncingReconnection)
 
   // Same reasoning as the concurrency options: resolved here so a bad transfer limit is rejected at
   // construction rather than surfacing as a puzzling failure on some individual download later.

@@ -15,6 +15,12 @@ describe('isNonPublicAddress', () => {
       ['169.254.169.254', 'link-local cloud metadata'],
       ['0.0.0.0', 'this network'],
       ['100.64.0.1', 'carrier-grade NAT'],
+      ['192.0.0.1', 'IETF protocol assignments'],
+      ['192.0.2.1', 'IPv4 documentation TEST-NET-1'],
+      ['192.88.99.1', 'deprecated 6to4 relay anycast'],
+      ['198.18.0.1', 'IPv4 benchmarking'],
+      ['198.51.100.1', 'IPv4 documentation TEST-NET-2'],
+      ['203.0.113.1', 'IPv4 documentation TEST-NET-3'],
       ['224.0.0.1', 'multicast'],
       ['::1', 'IPv6 loopback'],
       ['::', 'IPv6 unspecified'],
@@ -23,6 +29,14 @@ describe('isNonPublicAddress', () => {
       ['fc00::1', 'IPv6 unique local'],
       ['fd00::1', 'IPv6 unique local'],
       ['ff02::1', 'IPv6 multicast'],
+      ['64:ff9b:1::1', 'IPv6 local translation'],
+      ['100::1', 'IPv6 discard-only'],
+      ['100:0:0:1::1', 'IPv6 dummy prefix'],
+      ['2001:2::1', 'IPv6 benchmarking'],
+      ['2001:db8::1', 'IPv6 documentation'],
+      ['2002::1', 'IPv6 6to4'],
+      ['3fff::1', 'IPv6 documentation'],
+      ['5f00::1', 'IPv6 segment-routing SIDs'],
       ['::ffff:10.0.0.1', 'IPv4-mapped private address, dotted form'],
       // WHATWG URL rewrites every IPv4-mapped literal into compressed hex, so these are the forms
       // that actually reach the guard. Asserting only the dotted form above is what let a bypass
@@ -39,7 +53,23 @@ describe('isNonPublicAddress', () => {
   })
 
   describe('when the address is publicly routable', () => {
-    it.each([['8.8.8.8'], ['1.1.1.1'], ['172.15.0.1'], ['172.32.0.1'], ['192.167.0.1'], ['99.99.99.99'], ['2606:4700::1']])(
+    it.each([
+      ['8.8.8.8'],
+      ['1.1.1.1'],
+      ['172.15.0.1'],
+      ['172.32.0.1'],
+      ['192.0.0.9'],
+      ['192.0.0.10'],
+      ['192.167.0.1'],
+      ['99.99.99.99'],
+      ['64:ff9b::808:808'],
+      ['2001:1::1'],
+      ['2001:3::1'],
+      ['2001:4:112::1'],
+      ['2001:20::1'],
+      ['2001:30::1'],
+      ['2606:4700::1']
+    ])(
       'should return false for %s',
       (address) => {
         expect(isNonPublicAddress(address)).toBe(false)

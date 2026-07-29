@@ -1,6 +1,7 @@
 import { PointerChangesSyncDeployment } from '@dcl/schemas'
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import { metricsDefinitions } from './metrics'
+import { assertPointerChangesDeploymentWithinStructuralLimits } from './pointer-changes-limits'
 import { SnapshotMetadata, SnapshotsFetcherComponents, TransferLimits } from './types'
 import {
   contentServerMetricLabels,
@@ -332,6 +333,11 @@ export async function* fetchPointerChanges(
       }))
       continue
     }
+    // The schema has minItems but no maximum counts or string lengths. These fields are later sorted
+    // and hashed for inclusive-boundary de-duplication, so one schema-valid row must not be allowed to
+    // size that work up to the whole paginated-response cap. Throwing fails the poll before its
+    // high-water mark is committed; skipping would silently advance past the rejected deployment.
+    assertPointerChangesDeploymentWithinStructuralLimits(deployment)
     // The schema is not enough. It rejects Infinity and negatives but bounds nothing above, so a
     // far-future, 1e308, above-2^53 or fractional localTimestamp is schema-valid — and localTimestamp is
     // exactly what markAsDeployed feeds to increaseLastTimestamp. One such delta permanently pins the
