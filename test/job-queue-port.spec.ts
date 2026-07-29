@@ -321,5 +321,40 @@ describe('createJobQueue', () => {
         expect(attempts).toBeGreaterThanOrEqual(attemptsAtStop)
       })
     })
+    describe('when the queue was built paused and has queued work at shutdown', () => {
+      let pausedQueue: ReturnType<typeof createJobQueue>
+      let job: Promise<string>
+      let ran: boolean
+      let stopOutcome: string
+
+      beforeEach(async () => {
+        ran = false
+        pausedQueue = createJobQueue({ concurrency: 1, autoStart: false })
+        job = pausedQueue.scheduleJob(async () => {
+          ran = true
+          return 'done'
+        })
+        // onIdle resolves on `pending === 0 && size === 0`, and a paused queue holds its jobs in `size`
+        // without starting them — so stop() used to wait on work that could never begin, and IJobQueue
+        // exposes no way to start it. The race is what keeps that failure a test failure instead of a
+        // suite that hangs until the jest timeout.
+        stopOutcome = await Promise.race([
+          pausedQueue.stop!().then(() => 'stopped'),
+          sleep(1500).then(() => 'hung')
+        ])
+      })
+
+      it('should not hang, having started the queue so its queued work can drain', () => {
+        expect(stopOutcome).toEqual('stopped')
+      })
+
+      it('should have run the queued job rather than abandoning it', () => {
+        expect(ran).toBe(true)
+      })
+
+      it('should settle the scheduled promise', async () => {
+        await expect(job).resolves.toBe('done')
+      })
+    })
   })
 })

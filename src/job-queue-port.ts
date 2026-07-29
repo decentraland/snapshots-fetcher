@@ -7,8 +7,13 @@ import PQueue from 'p-queue'
  * Lifecycle: `stop()` is terminal. It waits for everything already scheduled to finish, and from the
  * moment it is called the queue refuses new work — `scheduleJob`, `scheduleJobWithPriority` and
  * `scheduleJobWithRetries` throw, and a retry ladder already in flight stops re-enqueueing itself. A
- * stopped queue cannot be restarted; build another. Use `onIdle()` if what you want is "wait for the
- * current work to drain" without ending the queue.
+ * stopped queue cannot be restarted; build another.
+ *
+ * A queue built with `autoStart: false` is started by `stop()` so its queued work can drain — otherwise
+ * shutdown would wait on jobs that never begin. `onIdle()` deliberately does not do this: it is a query
+ * about the current work, not a lifecycle action, so awaiting it on a queue that was never started waits
+ * for something that will not happen. Use `onIdle()` when you want "wait for the current work to drain"
+ * without ending the queue.
  * @public
  */
 export type IJobQueue = {
@@ -189,7 +194,13 @@ export function createJobQueue(options: createJobQueue.Options): IJobQueue & IBa
     },
     async stop() {
       stopped = true
-      // wait until the jobs are finished at stop()
+      // Started before draining, or a paused queue never drains at all: onIdle() resolves on
+      // `pending === 0 && size === 0`, and an autoStart:false queue holds its jobs in `size` without ever
+      // starting them — so stop() waited forever and every scheduled promise stayed pending. IJobQueue
+      // exposes no way to start a paused queue, so a consumer had no way out of that either. Starting it
+      // here is what makes the documented "waits for everything already scheduled to finish" true
+      // regardless of how the queue was constructed, rather than only for an auto-starting one.
+      realQueue.start()
       await waitUntilQuiescent()
     }
   }
