@@ -70,10 +70,20 @@ export async function deployEntitiesFromPointerChanges(
     if (report) {
       report.scheduled++
     }
+    // Idempotent per scheduled deployment. The counts are what decide whether progress is safe to
+    // record, so they have to count *entities acknowledged*, not calls: a deployer that invoked this
+    // twice for one entity would otherwise have the second call cover for an entity that was never
+    // acknowledged at all, making acknowledged === scheduled with a hole in the middle. It would also
+    // double-count the processed metric.
+    let alreadyAcknowledged = false
     await components.deployer.scheduleEntityDeployment(
       {
         ...deployment,
         markAsDeployed: async function () {
+          if (alreadyAcknowledged) {
+            return
+          }
+          alreadyAcknowledged = true
           components.metrics.increment('dcl_entities_deployments_processed_total', {
             ...metricsLabels,
             source: 'pointer-changes'
@@ -128,8 +138,12 @@ export async function deployEntitiesFromSnapshot(
   let numberOfProcessedEntities = 0
   let snapshotWasMarkedAsProcessed = false
   async function saveIfStreamEndedAndAllEntitiesWereProcessed() {
-    // >= (not ===) so an extra markAsDeployed call can't leave the snapshot unmarked forever; the
-    // flag (set synchronously before any await) ensures we still mark only once.
+    // markAsDeployed is idempotent per entity (below), so numberOfProcessedEntities counts entities
+    // acknowledged rather than calls received and can never run ahead of numberOfStreamedEntities. That
+    // is what makes this comparison mean "all of them": it previously used >= to tolerate a duplicate
+    // call, which is precisely how a duplicate could cover for an entity that never deployed and get the
+    // snapshot marked processed with a hole in it. >= is kept only as a belt-and-braces guard against
+    // ever being left unmarked; the flag (set synchronously before any await) still marks only once.
     if (
       !snapshotWasMarkedAsProcessed &&
       snapshotWasCompletelyStreamed &&
@@ -150,10 +164,18 @@ export async function deployEntitiesFromSnapshot(
     // schedule the deployment in the deployer. the await DOES NOT mean that the entity was deployed entirely
     // if the deployer is not synchronous. For example, the batchDeployer used in the catalyst just add it in a queue.
     // Once the entity is truly deployed, it should call the method 'markAsDeployed'
+    // Idempotent per scheduled entity, for the same reason as the pointer-changes path: the count is
+    // what decides whether the snapshot is complete, so a second call for one entity must not stand in
+    // for an entity that was never acknowledged.
+    let alreadyAcknowledged = false
     await components.deployer.scheduleEntityDeployment(
       {
         ...entity,
         markAsDeployed: async function () {
+          if (alreadyAcknowledged) {
+            return
+          }
+          alreadyAcknowledged = true
           // Empty remote_server, matching the streamed counter: a snapshot has no single origin.
           components.metrics.increment('dcl_entities_deployments_processed_total', {
             remote_server: '',

@@ -494,3 +494,77 @@ test('synchronizer when a syncing-phase deployment is dropped and the stream the
     await synchronizer.stop!()
   })
 })
+
+test('synchronizer when a deployer acknowledges one delta twice and drops an earlier one', ({ components }) => {
+  let synchronizer: SynchronizerComponent
+  let requestedFrom: string[]
+  let scheduled: number
+
+  const droppedLocalTimestamp = 50 * 60_000
+  const acknowledgedLocalTimestamp = 100 * 60_000
+
+  function delta(entityId: string, localTimestamp: number, entityTimestamp: number) {
+    return {
+      entityId,
+      entityType: 'profile',
+      pointers: ['0x1'],
+      entityTimestamp,
+      localTimestamp,
+      authChain: [{ type: 'SIGNER', payload: '0x1', signature: '' }]
+    }
+  }
+
+  it('prepares the endpoints', () => {
+    requestedFrom = []
+    scheduled = 0
+    components.router.get('/snapshots', async () => ({ body: [] }))
+    components.router.get('/pointer-changes', async (ctx: any) => {
+      requestedFrom.push(new URL(ctx.url.toString()).searchParams.get('from') ?? '')
+      if (requestedFrom.length === 1) {
+        return {
+          body: {
+            deltas: [
+              delta('ba000000000000000000000000000000000000000000000000000000001', droppedLocalTimestamp, 1),
+              delta('ba000000000000000000000000000000000000000000000000000000002', acknowledgedLocalTimestamp, 2)
+            ],
+            pagination: {}
+          }
+        }
+      }
+      return { body: { deltas: [], pagination: {} } }
+    })
+  })
+
+  it('attempts the bootstrap', async () => {
+    synchronizer = await buildSynchronizer(
+      components,
+      {
+        async scheduleEntityDeployment(entity: DeployableEntity) {
+          scheduled++
+          // The first entity is dropped. The second is acknowledged TWICE — enough to make a
+          // call-counting guard see acknowledged === scheduled and believe nothing was missed.
+          if (scheduled === 2 && entity.markAsDeployed) {
+            await entity.markAsDeployed()
+            await entity.markAsDeployed()
+          }
+        },
+        onIdle: jest.fn(),
+        prepareForDeploymentsIn: jest.fn()
+      },
+      50
+    )
+
+    await synchronizer.syncWithServers(new Set([await components.getBaseUrl()]))
+    await waitUntil(() => scheduled >= 2 && requestedFrom.length >= 2, 'the bootstrap has been retried')
+  })
+
+  it('should not let the duplicate acknowledgement cover for the dropped delta', () => {
+    const resumedPastTheDrop = requestedFrom.filter((from) => Number(from) > droppedLocalTimestamp)
+
+    expect(resumedPastTheDrop).toEqual([])
+  })
+
+  afterAll(async () => {
+    await synchronizer.stop!()
+  })
+})

@@ -94,6 +94,43 @@ describe('deployEntitiesFromSnapshot', () => {
     })
   })
 
+  test('when the deployer acknowledges one entity twice and never acknowledges another', ({ components }) => {
+    it('does not mark the snapshot as processed on the strength of the duplicate', async () => {
+      const entity1: any = {
+        entityId: 'id1', entityType: 't1', pointers: ['p1'], entityTimestamp: 0, authChain: [], snapshotHash, servers
+      }
+      const entity2: any = {
+        entityId: 'id2', entityType: 't2', pointers: ['p2'], entityTimestamp: 1, authChain: [], snapshotHash, servers
+      }
+      let scheduled = 0
+      const deployerAcknowledgingTwice: IDeployerComponent = {
+        scheduleEntityDeployment: async (scheduledEntity: DeployableEntity) => {
+          scheduled++
+          // The first entity never reports. The second reports twice, which is enough to make a
+          // call-counting guard see processed >= streamed and retire the snapshot with a hole in it.
+          if (scheduled === 2) {
+            await scheduledEntity.markAsDeployed!()
+            await scheduledEntity.markAsDeployed!()
+          }
+        },
+        onIdle: jest.fn(),
+        prepareForDeploymentsIn: jest.fn()
+      }
+      mockDeployedEntitiesStreamReporting([entity1, entity2], 0)
+      const markSnapshotAsProcessedSpy = jest.spyOn(components.processedSnapshotStorage, 'markSnapshotAsProcessed')
+
+      await deployEntitiesFromSnapshot(
+        componentsWithDeployer(components, deployerAcknowledgingTwice),
+        streamOptions,
+        snapshotHash,
+        new Set(servers),
+        () => false
+      )
+
+      expect(markSnapshotAsProcessedSpy).not.toBeCalled()
+    })
+  })
+
   test('when the snapshot is not empty', ({ components }) => {
     it('streams and deployes its entities', async () => {
       const entity1 = { entityId: 'id1', entityType: 't1', pointers: ['p1'], entityTimestamp: 0, authChain: [], snapshotHash, servers }
