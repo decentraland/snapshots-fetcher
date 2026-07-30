@@ -91,6 +91,13 @@ export const metricsDefinitions = validateMetricsDeclaration({
     labelNames: ['from'] // from='snapshots'|'pointer-changes'
   },
 
+  dcl_bootstrap_phase_duration_seconds: {
+    help: 'Wall-clock duration of each bootstrap pipeline phase',
+    type: 'histogram',
+    buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 300, 900, 3600],
+    labelNames: ['phase']
+  },
+
   dcl_syncing_servers: {
     help: 'Servers that are in bootstrapping state',
     type: 'gauge'

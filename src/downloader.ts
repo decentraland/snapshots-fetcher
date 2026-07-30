@@ -1,12 +1,13 @@
 import * as path from 'path'
-import { saveContentFileToDisk } from './client'
+import { downloadContentFileToTemporaryFile, saveContentFileToDisk } from './client'
 import { SnapshotsFetcherComponents, TransferLimits } from './types'
 import {
   isValidContentHash,
   isVerifiableContentHash,
   pickRandomServer,
   sleepUnlessStopped,
-  truncateForLog
+  truncateForLog,
+  VerifiedTemporaryFile
 } from './utils'
 
 // In-flight downloads, per storage component and then per content hash.
@@ -195,6 +196,65 @@ export async function downloadFileWithRetries(
     // un-deduplicate it and let the next caller start a second transfer of the same file.
     if (inflightForStorage.get(hashToDownload) === downloadWithRetriesJob) {
       inflightForStorage.delete(hashToDownload)
+    }
+  }
+}
+
+/**
+ * Downloads a verified file without copying it into persistent content storage. The caller owns the
+ * returned temporary file and must invoke cleanup().
+ */
+export async function downloadFileToTemporaryFileWithRetries(
+  components: { metrics?: SnapshotsFetcherComponents['metrics'] },
+  hashToDownload: string,
+  targetTempFolder: string,
+  presentInServers: string[],
+  maxRetries: number,
+  waitTimeBetweenRetries: number,
+  shouldStop?: () => boolean,
+  transferLimits?: TransferLimits
+): Promise<VerifiedTemporaryFile> {
+  if (!isValidContentHash(hashToDownload)) {
+    throw new Error(`Invalid content hash: ${truncateForLog(String(JSON.stringify(hashToDownload)))}`)
+  }
+  if (!isVerifiableContentHash(hashToDownload)) {
+    throw new Error(
+      `Refusing to download ${JSON.stringify(hashToDownload)}: unknown hashing algorithm, so its bytes could ` +
+        `never be verified against it`
+    )
+  }
+  if (shouldStop?.()) {
+    throw new Error(`Not downloading ${hashToDownload}: the caller asked to stop`)
+  }
+
+  components.metrics?.observe('dcl_available_servers_histogram', {}, presentInServers.length)
+  const destinationFilename = path.resolve(targetTempFolder, hashToDownload)
+  let retries = 0
+  let serversToPickFrom = presentInServers
+
+  for (;;) {
+    retries++
+    const serverToUse = pickRandomServer(serversToPickFrom)
+    try {
+      const file = await downloadContentFileToTemporaryFile(
+        components,
+        serverToUse,
+        hashToDownload,
+        destinationFilename,
+        transferLimits
+      )
+      components.metrics?.observe('dcl_content_download_job_succeed_retries', {}, retries)
+      return file
+    } catch (error) {
+      if (shouldStop?.() || retries >= maxRetries) {
+        throw error
+      }
+      serversToPickFrom =
+        serversToPickFrom.length > 1 ? serversToPickFrom.filter((server) => server !== serverToUse) : serversToPickFrom
+      await sleepUnlessStopped(waitTimeBetweenRetries, shouldStop)
+      if (shouldStop?.()) {
+        throw error
+      }
     }
   }
 }

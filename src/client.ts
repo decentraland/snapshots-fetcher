@@ -11,6 +11,7 @@ import {
   resolveTransferLimits,
   sanitizeUrlForLog,
   truncateForLog,
+  downloadContentFileToTemporaryFile as downloadContentToTemporaryFile,
   saveContentFileToDisk as saveContentFile
 } from './utils'
 
@@ -369,4 +370,15 @@ export async function saveContentFileToDisk(
   const url = new URL(`${server}/contents/${hash}`).toString()
 
   return saveContentFile(components, url, destinationFilename, hash, true, transferLimits)
+}
+
+export async function downloadContentFileToTemporaryFile(
+  components: { metrics?: SnapshotsFetcherComponents['metrics'] },
+  server: string,
+  hash: string,
+  destinationFilename: string,
+  transferLimits?: TransferLimits
+) {
+  const url = new URL(`${server}/contents/${hash}`).toString()
+  return downloadContentToTemporaryFile(components, url, destinationFilename, hash, true, transferLimits)
 }

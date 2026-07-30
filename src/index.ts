@@ -57,6 +57,32 @@ export {
 // sockets / file descriptors. Overridable via downloadEntityAndContentFiles's last argument.
 const DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY = 10
 
+/**
+ * Minimal scheduler contract for putting content transfers behind one caller-owned global limit.
+ * The queue returned by {@link createJobQueue} satisfies it.
+ * @public
+ */
+export type ContentDownloadScheduler = {
+  scheduleJob<T>(fn: () => Promise<T>): Promise<T>
+}
+
+/**
+ * A downloaded entity together with the verified bytes already read from storage.
+ * @public
+ */
+export type DownloadedEntity = {
+  entity: unknown
+  entityFile: Buffer
+}
+
+function scheduleContentDownload<T>(
+  scheduler: ContentDownloadScheduler | undefined,
+  localQueue: PQueue,
+  fn: () => Promise<T>
+): Promise<T> {
+  return scheduler ? scheduler.scheduleJob(fn) : localQueue.add(fn)
+}
+
 // Ceiling on the avatar snapshots a single profile can ask us to fetch. Far above any real profile
 // (a handful per avatar), so it only bounds hostile or corrupt metadata.
 const MAX_AVATAR_SNAPSHOTS_PER_ENTITY = 1000
@@ -268,7 +294,9 @@ async function downloadProfileAvatars(
     type: string
     metadata?: any
     content?: ContentMapping[] | undefined
-  }
+  },
+  downloadQueue: PQueue,
+  scheduler?: ContentDownloadScheduler
 ) {
   const { hashes: snapshots, truncated } = avatarSnapshotHashesFrom(entityMetadata)
   if (truncated) {
@@ -287,10 +315,9 @@ async function downloadProfileAvatars(
     entityId,
     snapshots: truncateForLog(snapshots.join(','))
   })
-  const downloadQueue = new PQueue({ concurrency })
   await Promise.all(
     snapshots.map((snapshot) =>
-      downloadQueue.add(() =>
+      scheduleContentDownload(scheduler, downloadQueue, () =>
         downloadFileWithRetries(
           components,
           snapshot,
@@ -311,37 +338,25 @@ async function downloadProfileAvatars(
   )
 }
 
-/**
- * Downloads an entity and its dependency files to a folder in the disk.
- *
- * Returns the parsed JSON file of the deployed entityHash
- *
- * @remarks When the locally stored entity file fails content-hash verification (a truncated or
- * partial local write), the corrupt copy is evicted from storage and the call throws — recovery
- * relies on the caller retrying, which re-downloads and hash-verifies a clean copy. One-shot
- * callers that never retry should be aware the first such call only heals the cache, it does not
- * return the entity.
- * @param contentFilesConcurrency - Maximum number of content files to download in parallel for this
- *   entity. Defaults to {@link DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY} (10).
- * @public
- */
-export async function downloadEntityAndContentFiles(
+async function downloadEntityAndContentFilesWithResult(
   components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'logs' | 'metrics' | 'storage'>,
   entityId: EntityHash,
   presentInServers: string[],
-  _serverMapLRU: Map<Server, number>,
+  serverMapLRU: Map<Server, number>,
   targetFolder: string,
   maxRetries: number,
   waitTimeBetweenRetries: number,
-  contentFilesConcurrency: number = DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY,
-  transferLimits?: TransferLimits
-): Promise<unknown> {
+  contentFilesConcurrency: number,
+  transferLimits?: TransferLimits,
+  scheduler?: ContentDownloadScheduler
+): Promise<DownloadedEntity> {
   // Checked before any work, not where the queue is built: p-queue rejects a bad concurrency with its own
   // TypeError, and by then the entity file and the profile-avatar fallbacks have already been downloaded.
   // A caller passing 0 deserves to be told in this package's terms, before spending requests.
   if (!Number.isInteger(contentFilesConcurrency) || contentFilesConcurrency < 1) {
     throw new Error(`contentFilesConcurrency must be an integer >= 1, got ${contentFilesConcurrency}`)
   }
+  const downloadQueue = new PQueue({ concurrency: contentFilesConcurrency })
 
   const logger = components.logs.getLogger(`downloadEntityAndContentFiles)`)
 
@@ -351,7 +366,7 @@ export async function downloadEntityAndContentFiles(
     entityId,
     targetFolder,
     presentInServers,
-    _serverMapLRU,
+    serverMapLRU,
     maxRetries,
     waitTimeBetweenRetries,
     undefined,
@@ -445,28 +460,29 @@ export async function downloadEntityAndContentFiles(
       components,
       logger,
       presentInServers,
-      _serverMapLRU,
+      serverMapLRU,
       targetFolder,
       maxRetries,
       waitTimeBetweenRetries,
       contentFilesConcurrency,
       transferLimits,
       entityId,
-      entityMetadata
+      entityMetadata,
+      downloadQueue,
+      scheduler
     )
   }
 
   if (hashesToDownload.length > 0) {
-    const downloadQueue = new PQueue({ concurrency: contentFilesConcurrency })
     await Promise.all(
       hashesToDownload.map((hash) =>
-        downloadQueue.add(() =>
+        scheduleContentDownload(scheduler, downloadQueue, () =>
           downloadFileWithRetries(
             components,
             hash,
             targetFolder,
             presentInServers,
-            _serverMapLRU,
+            serverMapLRU,
             maxRetries,
             waitTimeBetweenRetries,
             undefined,
@@ -477,5 +493,73 @@ export async function downloadEntityAndContentFiles(
     )
   }
 
-  return entityMetadata
+  return { entity: entityMetadata, entityFile: buffer }
+}
+
+/**
+ * Downloads an entity and its dependency files to storage and returns its parsed JSON document.
+ *
+ * @remarks When the locally stored entity file fails content-hash verification, the corrupt copy is
+ * evicted and the call throws so a retry can download a clean copy.
+ * @param contentFilesConcurrency - Per-entity limit used when no global scheduler is supplied.
+ * @param scheduler - Optional caller-owned scheduler that globally bounds content transfers.
+ * @public
+ */
+export async function downloadEntityAndContentFiles(
+  components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'logs' | 'metrics' | 'storage'>,
+  entityId: EntityHash,
+  presentInServers: string[],
+  serverMapLRU: Map<Server, number>,
+  targetFolder: string,
+  maxRetries: number,
+  waitTimeBetweenRetries: number,
+  contentFilesConcurrency: number = DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY,
+  transferLimits?: TransferLimits,
+  scheduler?: ContentDownloadScheduler
+): Promise<unknown> {
+  return (
+    await downloadEntityAndContentFilesWithResult(
+      components,
+      entityId,
+      presentInServers,
+      serverMapLRU,
+      targetFolder,
+      maxRetries,
+      waitTimeBetweenRetries,
+      contentFilesConcurrency,
+      transferLimits,
+      scheduler
+    )
+  ).entity
+}
+
+/**
+ * Downloads an entity and its content while returning the verified entity bytes so an immediate
+ * deploy does not retrieve and read the same storage item again.
+ * @public
+ */
+export async function downloadEntityAndContentFilesWithBuffer(
+  components: Pick<SnapshotsFetcherComponents, 'fetcher' | 'logs' | 'metrics' | 'storage'>,
+  entityId: EntityHash,
+  presentInServers: string[],
+  serverMapLRU: Map<Server, number>,
+  targetFolder: string,
+  maxRetries: number,
+  waitTimeBetweenRetries: number,
+  contentFilesConcurrency: number = DEFAULT_ENTITY_FILE_DOWNLOAD_CONCURRENCY,
+  transferLimits?: TransferLimits,
+  scheduler?: ContentDownloadScheduler
+): Promise<DownloadedEntity> {
+  return downloadEntityAndContentFilesWithResult(
+    components,
+    entityId,
+    presentInServers,
+    serverMapLRU,
+    targetFolder,
+    maxRetries,
+    waitTimeBetweenRetries,
+    contentFilesConcurrency,
+    transferLimits,
+    scheduler
+  )
 }

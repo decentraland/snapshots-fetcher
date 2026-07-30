@@ -2,7 +2,7 @@ import { createInMemoryStorage } from '@dcl/catalyst-storage'
 import { createReadStream } from 'fs'
 import { resolve } from 'path'
 import { Readable } from 'stream'
-import { downloadEntityAndContentFiles } from '../src'
+import { createJobQueue, downloadEntityAndContentFiles } from '../src'
 import { sleep } from '../src/utils'
 import { test } from './components'
 
@@ -56,6 +56,51 @@ test('downloadEntityAndContentFiles content download concurrency', ({ components
       for (const hash of contentHashes) {
         expect(await storage.exist(hash)).toBe(true)
       }
+    })
+  })
+
+  describe('when a caller-owned global scheduler is configured', () => {
+    let storage: ReturnType<typeof createInMemoryStorage>
+    let scheduler: ReturnType<typeof createJobQueue>
+    let entityIds: string[]
+    let server: string
+
+    beforeEach(async () => {
+      inFlight = 0
+      maxInFlight = 0
+      storage = createInMemoryStorage()
+      scheduler = createJobQueue({ autoStart: true, concurrency: 1 })
+      entityIds = ['sceneentitydownloadglobalqueueone', 'sceneentitydownloadglobalqueuetwo']
+      server = await components.getBaseUrl()
+      for (const [entityIndex, concurrentEntityId] of entityIds.entries()) {
+        const hashes = contentHashes.slice(entityIndex * 2, entityIndex * 2 + 2)
+        const entity = {
+          type: 'scene',
+          content: hashes.map((hash, index) => ({ file: `entity-${entityIndex}-file-${index}`, hash }))
+        }
+        await storage.storeStream(concurrentEntityId, Readable.from([Buffer.from(JSON.stringify(entity))]))
+      }
+    })
+
+    it('should enforce one bound across concurrent entities', async () => {
+      await Promise.all(
+        entityIds.map((concurrentEntityId) =>
+          downloadEntityAndContentFiles(
+            { fetcher: components.fetcher, logs: components.logs, metrics: components.metrics, storage },
+            concurrentEntityId,
+            [server],
+            new Map(),
+            contentFolder,
+            10,
+            0,
+            4,
+            undefined,
+            scheduler
+          )
+        )
+      )
+
+      expect(maxInFlight).toEqual(1)
     })
   })
 })
