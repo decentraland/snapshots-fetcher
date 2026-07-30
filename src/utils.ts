@@ -451,8 +451,6 @@ export async function downloadContentFileToTemporaryFile(
       checkHash && verifyDuringDownload ? hash : undefined
     )
 
-    // make files not executable
-    await fs.promises.chmod(tmpFileName, 0o644)
     if (checkHash && !verifyDuringDownload) {
       try {
         await assertHash(tmpFileName, hash)
@@ -837,6 +835,23 @@ export function createDownloadTransforms(isGzip: boolean, limits: ResolvedTransf
   return transforms
 }
 
+/**
+ * Opens a download target without following or replacing an existing filesystem entry.
+ *
+ * @internal
+ */
+export function createPrivateDownloadWriteStream(filename: string): fs.WriteStream {
+  return fs.createWriteStream(filename, {
+    emitClose: true,
+    // The random suffix already makes a collision impractical; O_EXCL turns that assumption into an
+    // enforced filesystem invariant.
+    flags: 'wx',
+    // Temporary bytes are only consumed by this process. Keep them owner-only from the first write
+    // instead of creating them with umask-dependent permissions and tightening them later.
+    mode: 0o600
+  })
+}
+
 class DownloadHashVerificationError extends Error {}
 
 /**
@@ -1050,9 +1065,7 @@ function downloadFile(
             return
           }
 
-          const file = fs.createWriteStream(tmpFileName, {
-            emitClose: true
-          })
+          const file = createPrivateDownloadWriteStream(tmpFileName)
 
           const transforms = createDownloadTransforms(isGzip, limits)
           if (expectedHash) {
