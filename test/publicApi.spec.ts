@@ -9,6 +9,7 @@ import {
   createSynchronizer,
   decideSnapshotDeploymentFromProcessedSet,
   downloadEntityAndContentFiles,
+  downloadEntityAndContentFilesWithBuffer,
   shouldDeployEntitiesFromSnapshotAndMarkAsProcessedIfNeeded,
   getDeployedEntitiesStreamFromPointerChanges,
   getDeployedEntitiesStreamFromSnapshot,
@@ -39,6 +40,7 @@ describe('the package root export', () => {
       'createSynchronizer',
       'decideSnapshotDeploymentFromProcessedSet',
       'downloadEntityAndContentFiles',
+      'downloadEntityAndContentFilesWithBuffer',
       'getDeployedEntitiesStreamFromPointerChanges',
       'getDeployedEntitiesStreamFromSnapshot',
       'metricsDefinitions',
@@ -104,9 +106,10 @@ describe('the package root export', () => {
     it('should expose the entity and stream helpers', () => {
       expect([
         downloadEntityAndContentFiles,
+        downloadEntityAndContentFilesWithBuffer,
         getDeployedEntitiesStreamFromSnapshot,
         getDeployedEntitiesStreamFromPointerChanges
-      ]).toEqual([expect.any(Function), expect.any(Function), expect.any(Function)])
+      ]).toEqual([expect.any(Function), expect.any(Function), expect.any(Function), expect.any(Function)])
     })
 
     it('should expose the snapshot-deployment decision helpers', () => {

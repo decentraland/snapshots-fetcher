@@ -115,7 +115,8 @@ export async function deployEntitiesFromSnapshot(
   options: SnapshotDeployedEntityStreamOptions,
   snapshotHash: string,
   servers: Set<string>,
-  shouldStopStream: () => boolean
+  shouldStopStream: () => boolean,
+  beforeStreaming?: Promise<void>
 ) {
   const logger = components.logs.getLogger('deployEntitiesFromSnapshot')
   // Passed down so the snapshot download abandons its retry ladder on shutdown rather than making
@@ -131,7 +132,8 @@ export async function deployEntitiesFromSnapshot(
     snapshotHash,
     servers,
     shouldStopStream,
-    streamReport
+    streamReport,
+    beforeStreaming
   )
   let snapshotWasCompletelyStreamed = false
   let numberOfStreamedEntities = 0

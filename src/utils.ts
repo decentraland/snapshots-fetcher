@@ -8,7 +8,7 @@ import * as https from 'https'
 import * as net from 'net'
 import { LookupFunction } from 'net'
 import * as path from 'path'
-import { Readable, Transform } from 'stream'
+import { PassThrough, Readable, Transform } from 'stream'
 import { pipeline as streamPipeline } from 'stream/promises'
 import * as zlib from 'zlib'
 import { ContentServerMetricLabels } from './metrics'
@@ -405,6 +405,73 @@ export async function assertHash(filename: string, hash: string) {
   }
 }
 
+export type VerifiedTemporaryFile = {
+  filename: string
+  cleanup(): Promise<void>
+}
+
+/**
+ * Downloads and hash-verifies a content-addressed file, leaving the verified temporary file under
+ * caller ownership. This is used for one-shot snapshot parsing so the bytes do not need to be copied
+ * into persistent content storage and immediately read and deleted again.
+ */
+export async function downloadContentFileToTemporaryFile(
+  components: { metrics?: SnapshotsFetcherComponents['metrics'] },
+  originalUrlString: string,
+  destinationFilename: string,
+  hash: string,
+  checkHash: boolean = true,
+  transferLimits?: TransferLimits,
+  verifyDuringDownload: boolean = true
+): Promise<VerifiedTemporaryFile> {
+  const limits = resolveTransferLimits(transferLimits)
+  const tmpFolder = path.dirname(destinationFilename)
+  await ensureFolderExists(tmpFolder)
+  if (checkHash && !isVerifiableContentHash(hash)) {
+    throw new Error(`Unknown hashing algorithm for hash: ${hash}`)
+  }
+
+  // A 128-bit random suffix on a content-addressed path gives concurrent callers independent files;
+  // colliding requires the same hash and random suffix. Not worth an existence check on every download.
+  const tmpFileName = destinationFilename + crypto.randomBytes(16).toString('hex')
+
+  const metricsLabels: ContentServerMetricLabels = {
+    remote_server: ''
+  }
+
+  try {
+    // Hash verification is part of the network-to-disk pipeline, so the completed file does not need
+    // to be opened and read a second time before the caller can use it.
+    await downloadFile(
+      originalUrlString,
+      metricsLabels,
+      components,
+      tmpFileName,
+      limits,
+      checkHash && verifyDuringDownload ? hash : undefined
+    )
+
+    if (checkHash && !verifyDuringDownload) {
+      try {
+        await assertHash(tmpFileName, hash)
+      } catch (error) {
+        components.metrics?.increment('dcl_content_download_hash_errors_total', metricsLabels)
+        throw error
+      }
+    }
+
+    return {
+      filename: tmpFileName,
+      cleanup: async () => await deleteFileIfPresent(tmpFileName)
+    }
+  } catch (e) {
+    // The folder may have been removed from under us; forget it so a retry recreates it.
+    ensuredFolders.delete(tmpFolder)
+    await deleteFileIfPresent(tmpFileName)
+    throw e
+  }
+}
+
 export async function saveContentFileToDisk(
   components: Pick<SnapshotsFetcherComponents, 'storage'> & { metrics?: SnapshotsFetcherComponents['metrics'] },
   originalUrlString: string,
@@ -413,51 +480,26 @@ export async function saveContentFileToDisk(
   checkHash: boolean = true,
   transferLimits?: TransferLimits
 ): Promise<void> {
-  const limits = resolveTransferLimits(transferLimits)
-  const tmpFolder = path.dirname(destinationFilename)
-  await ensureFolderExists(tmpFolder)
-
-  // A 128-bit random suffix on a content-addressed path: a collision needs the same hash *and* the
-  // same suffix, and concurrent downloads of one hash already share a single job. Not worth an
-  // existence check (a syscall) on every downloaded file.
-  const tmpFileName = destinationFilename + crypto.randomBytes(16).toString('hex')
-
-  const metricsLabels: ContentServerMetricLabels = {
-    remote_server: ''
-  }
-
+  const temporaryFile = await downloadContentFileToTemporaryFile(
+    components,
+    originalUrlString,
+    destinationFilename,
+    hash,
+    checkHash,
+    transferLimits,
+    // Persistent content is usually small and may be downloaded in very large batches. Keep its
+    // lightweight existing verification path; one-shot snapshots opt into the streaming verifier,
+    // where avoiding another full read of a large file materially improves bootstrap I/O.
+    false
+  )
   try {
-    await downloadFile(originalUrlString, metricsLabels, components, tmpFileName, limits)
-
-    // make files not executable
-    await fs.promises.chmod(tmpFileName, 0o644)
-
-    // check hash if present. delete file and fail in case of mismatch
-    if (checkHash) {
-      try {
-        await assertHash(tmpFileName, hash)
-      } catch (e) {
-        components.metrics?.increment('dcl_content_download_hash_errors_total', metricsLabels)
-        // delete the downloaded file if failed
-        await deleteFileIfPresent(tmpFileName)
-        throw e
-      }
-    }
-
-    // move downloaded file to target folder
-    const storedStream = fs.createReadStream(tmpFileName)
+    const storedStream = fs.createReadStream(temporaryFile.filename)
     // storage is supplied by the consumer. A component that resolves storeStream without consuming the
-    // stream leaves it to open the temp file after the finally below has removed it, and an unhandled
-    // 'error' event takes the whole process down. Absorb it here: a real read failure still reaches the
-    // storage component through its own consumption of the stream.
+    // stream leaves it to open the temp file after cleanup and would otherwise emit an unhandled error.
     storedStream.on('error', () => undefined)
     await components.storage.storeStream(hash, storedStream)
-  } catch (e) {
-    // The folder may have been removed from under us; forget it so a retry recreates it.
-    ensuredFolders.delete(tmpFolder)
-    throw e
   } finally {
-    await deleteFileIfPresent(tmpFileName)
+    await temporaryFile.cleanup()
   }
 }
 
@@ -793,12 +835,94 @@ export function createDownloadTransforms(isGzip: boolean, limits: ResolvedTransf
   return transforms
 }
 
+/**
+ * Opens a download target without following or replacing an existing filesystem entry.
+ *
+ * @internal
+ */
+export function createPrivateDownloadWriteStream(filename: string): fs.WriteStream {
+  return fs.createWriteStream(filename, {
+    emitClose: true,
+    // The random suffix already makes a collision impractical; O_EXCL turns that assumption into an
+    // enforced filesystem invariant.
+    flags: 'wx',
+    // Temporary bytes are only consumed by this process. Keep them owner-only from the first write
+    // instead of creating them with umask-dependent permissions and tightening them later.
+    mode: 0o600
+  })
+}
+
+class DownloadHashVerificationError extends Error {}
+
+/**
+ * Tees every decoded download chunk into the package's CID hasher while forwarding the same chunk to
+ * disk. Hashing therefore shares the network-to-disk pass instead of opening and reading the finished
+ * file again. The side stream is backpressured so hashing cannot lag behind and grow memory without bound.
+ */
+function createDownloadHashVerifier(expectedHash: string, filename: string): Transform {
+  const hashInput = new PassThrough()
+  const calculatedHash = expectedHash.startsWith('Qm')
+    ? hashV0(hashInput as any)
+    : expectedHash.startsWith('ba')
+    ? hashV1(hashInput as any)
+    : undefined
+
+  if (!calculatedHash) {
+    throw new DownloadHashVerificationError(`Unknown hashing algorithm for hash: ${expectedHash}`)
+  }
+
+  const verification = calculatedHash
+    .then((calculated) => {
+      if (calculated !== expectedHash) {
+        throw new DownloadHashVerificationError(
+          `Download error: hashes do not match(expected:${expectedHash} != calculated:${calculated}) for file ${filename}`
+        )
+      }
+    })
+    .catch((error: unknown) => {
+      if (error instanceof DownloadHashVerificationError) {
+        throw error
+      }
+      throw new DownloadHashVerificationError(error instanceof Error ? error.message : String(error))
+    })
+
+  // If the output side fails before flush() gets to await verification, destroying the side stream can
+  // reject the hasher. Attach a handler immediately so that rejection is never temporarily unhandled.
+  void verification.catch(() => undefined)
+
+  return new Transform({
+    transform(chunk, _encoding, callback) {
+      hashInput.write(chunk, (error) => {
+        if (error) {
+          callback(error)
+        } else {
+          callback(null, chunk)
+        }
+      })
+    },
+    flush(callback) {
+      hashInput.end()
+      verification.then(
+        () => callback(),
+        (error) => callback(error)
+      )
+    },
+    destroy(error, callback) {
+      // The pipeline already owns and reports `error`. Passing it into this private side stream can
+      // emit a second, temporarily listener-less error while the hasher is being torn down.
+      hashInput.destroy()
+      callback(error)
+    }
+  })
+}
+
 function downloadFile(
   originalUrlString: string,
   metricsLabels: ContentServerMetricLabels,
   components: { metrics?: SnapshotsFetcherComponents['metrics'] },
   tmpFileName: string,
-  limits: ResolvedTransferLimits
+  limits: ResolvedTransferLimits,
+  expectedHash?: string
 ) {
   return new Promise<void>((resolve, reject) => {
     // One timer for the whole download instead of one per redirect hop: a hop that redirects never
@@ -941,11 +1065,13 @@ function downloadFile(
             return
           }
 
-          const file = fs.createWriteStream(tmpFileName, {
-            emitClose: true
-          })
+          const file = createPrivateDownloadWriteStream(tmpFileName)
 
-          const pipe = streamPipeline([response, ...createDownloadTransforms(isGzip, limits), file])
+          const transforms = createDownloadTransforms(isGzip, limits)
+          if (expectedHash) {
+            transforms.push(createDownloadHashVerifier(expectedHash, tmpFileName))
+          }
+          const pipe = streamPipeline([response, ...transforms, file])
 
           pipe
             .then(() => {
@@ -954,6 +1080,9 @@ function downloadFile(
             })
             .catch((err) => {
               file.close()
+              if (err instanceof DownloadHashVerificationError) {
+                components.metrics?.increment('dcl_content_download_hash_errors_total', metricsLabels)
+              }
               settleWithError(err)
             })
         }

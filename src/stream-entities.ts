@@ -1,8 +1,9 @@
-import { PointerChangesSyncDeployment } from '@dcl/schemas'
+import { PointerChangesSyncDeployment, SyncDeployment } from '@dcl/schemas'
 import { createHash } from 'crypto'
+import * as fs from 'fs'
 import { fetchPointerChanges } from './client'
-import { downloadFileWithRetries } from './downloader'
-import { processDeploymentsInFile, SnapshotStreamReport } from './file-processor'
+import { downloadFileToTemporaryFileWithRetries, downloadFileWithRetries } from './downloader'
+import { processDeploymentsInFile, processDeploymentsInStream, SnapshotStreamReport } from './file-processor'
 import { assertPointerChangesDeploymentWithinStructuralLimits } from './pointer-changes-limits'
 import {
   PointerChangesDeployedEntityStreamOptions,
@@ -13,6 +14,16 @@ import { contentServerMetricLabels, sleepUnlessStopped } from './utils'
 
 export { metricsDefinitions } from './metrics'
 export { IDeployerComponent, SynchronizerComponent } from './types'
+
+async function closeReadStream(stream: fs.ReadStream | undefined): Promise<void> {
+  if (!stream || stream.closed) {
+    return
+  }
+  await new Promise<void>((resolve) => {
+    stream.once('close', resolve)
+    stream.destroy()
+  })
+}
 
 /**
  * Accepts a fromTimestamp option to filter out previous deployments.
@@ -28,7 +39,8 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
   snapshotHash: string,
   servers: Set<string>,
   shouldStop: () => boolean = () => false,
-  report?: SnapshotStreamReport
+  report?: SnapshotStreamReport,
+  beforeStreaming?: Promise<void>
 ) {
   const genesisTimestamp = options.fromTimestamp || 0
   const logs = components.logs.getLogger('getDeployedEntitiesStreamFromSnapshot')
@@ -36,22 +48,52 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
   // one array allocation per entity in the snapshot.
   const serversList = Array.from(servers)
   logs.info('Snapshot to be processed.', { hash: snapshotHash, contentServers: JSON.stringify(serversList) })
+  let temporaryFile: Awaited<ReturnType<typeof downloadFileToTemporaryFileWithRetries>> | undefined
+  let temporaryReadStream: fs.ReadStream | undefined
+  let usedPersistentStorage = false
   try {
-    // 1. download the snapshot file if needed
-    await downloadFileWithRetries(
-      components,
-      snapshotHash,
-      options.tmpDownloadFolder,
-      serversList,
-      new Map(),
-      options.requestMaxRetries,
-      options.requestRetryWaitTime,
-      shouldStop,
-      options.transferLimits
-    )
+    // The default lifecycle deletes snapshots immediately after parsing. In that mode, bypass the
+    // persistent content store and parse the verified temp file directly. Preserve the old storage
+    // path when the snapshot is already cached or the caller explicitly asked to retain it.
+    if (options.deleteSnapshotAfterUsage !== false && !(await components.storage.exist(snapshotHash))) {
+      temporaryFile = await downloadFileToTemporaryFileWithRetries(
+        components,
+        snapshotHash,
+        options.tmpDownloadFolder,
+        serversList,
+        options.requestMaxRetries,
+        options.requestRetryWaitTime,
+        shouldStop,
+        options.transferLimits
+      )
+    } else {
+      usedPersistentStorage = true
+      await downloadFileWithRetries(
+        components,
+        snapshotHash,
+        options.tmpDownloadFolder,
+        serversList,
+        new Map(),
+        options.requestMaxRetries,
+        options.requestRetryWaitTime,
+        shouldStop,
+        options.transferLimits
+      )
+    }
 
-    // 2. open the snapshot file and process line by line
-    const deploymentsInFile = processDeploymentsInFile(snapshotHash, components, logs, report)
+    // Allows the synchronizer's bounded workers to prefetch and verify snapshots while the deployer
+    // warms up, without exposing a single entity before that prerequisite succeeds.
+    await beforeStreaming
+
+    let deploymentsInFile: AsyncIterable<SyncDeployment>
+    if (temporaryFile) {
+      // Created only after the gate resolves. A rejected warm-up therefore owns no unread file handle.
+      temporaryReadStream = fs.createReadStream(temporaryFile.filename)
+      deploymentsInFile = processDeploymentsInStream(temporaryReadStream, logs, report)
+    } else {
+      deploymentsInFile = processDeploymentsInFile(snapshotHash, components, logs, report)
+    }
+
     for await (const deployment of deploymentsInFile) {
       if (deployment.entityTimestamp >= genesisTimestamp) {
         // Empty remote_server: a snapshot is content-addressed and usually advertised by several
@@ -68,7 +110,11 @@ export async function* getDeployedEntitiesStreamFromSnapshot(
       }
     }
   } finally {
-    if (options.deleteSnapshotAfterUsage !== false) {
+    // processDeploymentsInStream deliberately leaves caller-owned streams open. This path owns its
+    // ReadStream, so close it on full consumption, cancellation, parser failure, and generator return.
+    await closeReadStream(temporaryReadStream)
+    await temporaryFile?.cleanup()
+    if (usedPersistentStorage && options.deleteSnapshotAfterUsage !== false) {
       try {
         await components.storage.delete([snapshotHash])
       } catch (err: any) {

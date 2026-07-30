@@ -39,6 +39,9 @@ test('fetches a stream from snapshots deleting the downloaded file', ({ componen
 
   it('fetches stream', async () => {
     const { storage } = spyComponents
+    await components.storage.delete([downloadedSnapshotFile])
+    storage.delete.mockClear()
+    storage.storeStream.mockClear()
 
     const servers = [await components.getBaseUrl()]
 
@@ -64,8 +67,9 @@ test('fetches a stream from snapshots deleting the downloaded file', ({ componen
       r.push(deployment)
     }
 
-    // the downloaded file must be deleted
-    expect(storage.delete).toHaveBeenCalledTimes(1)
+    // One-shot snapshots stay in the verified temp file instead of being copied into persistent storage.
+    expect(storage.storeStream).not.toHaveBeenCalled()
+    expect(storage.delete).not.toHaveBeenCalled()
 
     expect(r).toEqual([
       { entityType: 'profile', entityId: 'ba000000000000000000000000000000000000000000000000000000001', entityTimestamp: 1, authChain, pointers: ['0x1'], snapshotHash: downloadedSnapshotFile, servers },

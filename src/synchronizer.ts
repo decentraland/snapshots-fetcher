@@ -95,6 +95,14 @@ export async function createSynchronizer(
   )
 
   const logger = components.logs.getLogger('synchronizer')
+  async function measureBootstrapPhase<T>(phase: string, action: () => Promise<T>): Promise<T> {
+    const { end } = components.metrics.startTimer('dcl_bootstrap_phase_duration_seconds', { phase })
+    try {
+      return await action()
+    } finally {
+      end()
+    }
+  }
   const genesisTimestamp = options.fromTimestamp || 0
   const bootstrappingServersFromSnapshots: Set<string> = new Set()
   const bootstrappingServersFromPointerChanges: Set<string> = new Set()
@@ -214,40 +222,42 @@ export async function createSynchronizer(
     const serversWithFailedSnapshots = new Set<string>()
     // Fetch all servers concurrently; getSnapshots already runs through the concurrency-limited
     // downloadQueue. The synchronous map mutations below can't interleave (no await between them).
-    await Promise.all(
-      Array.from(serversToSync).map(async (server) => {
-        try {
-          const { snapshots, discardedEntries } = await getSnapshots(
-            components,
-            server,
-            options.requestMaxRetries,
-            options.transferLimits
-          )
-          if (discardedEntries > 0) {
-            // The surviving subset is not this server's history. Each discarded entry stood for a time
-            // range, so deploying only what parsed and then advancing past the newest of them would skip
-            // whatever lived in the ranges we threw away. Still deploy what we can read — that work is
-            // real — but keep the server in snapshot bootstrap so the list is fetched again.
-            logger.warn('Snapshot list was not fully readable; keeping the server in snapshot bootstrap.', {
+    await measureBootstrapPhase('snapshot_discovery', async () =>
+      Promise.all(
+        Array.from(serversToSync).map(async (server) => {
+          try {
+            const { snapshots, discardedEntries } = await getSnapshots(
+              components,
               server,
-              discardedEntries: String(discardedEntries)
-            })
-            serversWithFailedSnapshots.add(server)
+              options.requestMaxRetries,
+              options.transferLimits
+            )
+            if (discardedEntries > 0) {
+              // The surviving subset is not this server's history. Each discarded entry stood for a time
+              // range, so deploying only what parsed and then advancing past the newest of them would skip
+              // whatever lived in the ranges we threw away. Still deploy what we can read — that work is
+              // real — but keep the server in snapshot bootstrap so the list is fetched again.
+              logger.warn('Snapshot list was not fully readable; keeping the server in snapshot bootstrap.', {
+                server,
+                discardedEntries: String(discardedEntries)
+              })
+              serversWithFailedSnapshots.add(server)
+            }
+            // A server may legitimately have no snapshots yet (e.g. brand new). Math.max() of an empty
+            // list is -Infinity, so fall back to the genesis timestamp to keep a sane starting point.
+            const lastTimestamp =
+              snapshots.length > 0 ? Math.max(...snapshots.map((s) => s.timeRange.endTimestamp)) : genesisTimestamp
+            snapshotLastTimestampByServer.set(server, lastTimestamp)
+            for (const snapshot of snapshots) {
+              const snapshotMetadatas = snapshotsByHash.get(snapshot.hash) ?? []
+              snapshotMetadatas.push({ ...snapshot, server })
+              snapshotsByHash.set(snapshot.hash, snapshotMetadatas)
+            }
+          } catch (error) {
+            logger.info(`Error getting snapshots from ${server}.`)
           }
-          // A server may legitimately have no snapshots yet (e.g. brand new). Math.max() of an empty
-          // list is -Infinity, so fall back to the genesis timestamp to keep a sane starting point.
-          const lastTimestamp =
-            snapshots.length > 0 ? Math.max(...snapshots.map((s) => s.timeRange.endTimestamp)) : genesisTimestamp
-          snapshotLastTimestampByServer.set(server, lastTimestamp)
-          for (const snapshot of snapshots) {
-            const snapshotMetadatas = snapshotsByHash.get(snapshot.hash) ?? []
-            snapshotMetadatas.push({ ...snapshot, server })
-            snapshotsByHash.set(snapshot.hash, snapshotMetadatas)
-          }
-        } catch (error) {
-          logger.info(`Error getting snapshots from ${server}.`)
-        }
-      })
+        })
+      )
     )
 
     const deploymentsProcessorsQueue = new PQueue({
@@ -322,6 +332,10 @@ export async function createSynchronizer(
     // Which servers advertised each snapshot we are about to deploy, so the marker re-check after the
     // deployer drains can attribute an unfinished snapshot back to them.
     const serversBySnapshotDeployed = new Map<string, Set<string>>()
+    const deployerReady = future<void>()
+    // Workers attach their await only after downloading a snapshot. Handle a warm-up rejection from
+    // creation time as well, so a fast failure cannot become temporarily unhandled while downloads run.
+    void deployerReady.catch(() => undefined)
     for (const [snapshotHash, snapshots] of snapshotsToDeploy) {
       const servers = new Set(snapshots.map((s) => s.server))
       serversBySnapshotDeployed.set(snapshotHash, servers)
@@ -343,7 +357,8 @@ export async function createSynchronizer(
               options,
               snapshotHash,
               servers,
-              () => isStopped || !Array.from(servers).some((server) => desiredServers.has(server))
+              () => isStopped || !Array.from(servers).some((server) => desiredServers.has(server)),
+              deployerReady
             )
           } catch (err: any) {
             // Recorded inside the job (not in a .catch on the add() promise) so the set is
@@ -366,18 +381,44 @@ export async function createSynchronizer(
       return new Set()
     }
 
-    logger.info('Warming up deployer.')
-    await components.deployer.prepareForDeploymentsIn(timeRangesOfEntitiesToDeploy)
-
-    logger.info('Starting to deploy entities from snapshots.')
+    // Start the bounded workers before warm-up. Each worker may download and verify one snapshot but
+    // waits on deployerReady before parsing, so network/disk I/O overlaps the database scan without
+    // scheduling an entity too early or prefetching more than snapshotDeploymentsConcurrency files.
+    const { end: endSnapshotPipelineTimer } = components.metrics.startTimer('dcl_bootstrap_phase_duration_seconds', {
+      phase: 'snapshot_prefetch_and_stream'
+    })
     deploymentsProcessorsQueue.start()
+    logger.info('Warming up deployer while snapshot workers prefetch.')
+    try {
+      await measureBootstrapPhase('snapshot_deployer_warmup', async () =>
+        components.deployer.prepareForDeploymentsIn(timeRangesOfEntitiesToDeploy)
+      )
+      deployerReady.resolve()
+    } catch (error) {
+      // Do not let workers that have not started yet download snapshots after the prerequisite has
+      // already failed. Running workers are allowed to finish their current transfer and then observe
+      // the rejected gate, which gives their verified temporary files a chance to clean up normally.
+      deploymentsProcessorsQueue.pause()
+      deploymentsProcessorsQueue.clear()
+      deployerReady.reject(error instanceof Error ? error : new Error(String(error)))
+      try {
+        await deploymentsProcessorsQueue.onIdle()
+      } finally {
+        endSnapshotPipelineTimer()
+      }
+      throw error
+    }
 
-    await deploymentsProcessorsQueue.onIdle()
+    try {
+      await deploymentsProcessorsQueue.onIdle()
+    } finally {
+      endSnapshotPipelineTimer()
+    }
     // The queue draining only means every snapshot finished STREAMING. Per IDeployerComponent,
     // scheduleEntityDeployment may resolve before the entity is deployed and onIdle() is the drain
     // signal, so with a batching deployer the entities are still in flight here. Advancing a server's
     // timestamp now would resume its pointer-changes past entities that had only been scheduled.
-    await components.deployer.onIdle()
+    await measureBootstrapPhase('snapshot_deployer_drain', async () => components.deployer.onIdle())
     logger.info('End deploying entities from snapshots.')
 
     // Draining proves the deployer's queue is empty, NOT that every scheduled entity reported back
