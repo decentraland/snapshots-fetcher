@@ -14,6 +14,203 @@ import * as zlib from 'zlib'
 import { ContentServerMetricLabels } from './metrics'
 import { Path, ResolvedTransferLimits, Server, SnapshotsFetcherComponents, TransferLimits } from './types'
 
+// ---------------------------------------------------------------------------
+// Minimal base-encoding helpers used for inline CID construction.
+// These are not exported — only verifyHashFromInlineDigest and createInlineHasher
+// are part of the public (and test-facing) surface.
+// ---------------------------------------------------------------------------
+
+// Bitcoin/IPFS base58btc alphabet.
+const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+
+/**
+ * Encodes `bytes` as a base58btc string (same alphabet as IPFS CIDv0).
+ * Each leading zero byte maps to a '1' prefix, matching the Bitcoin convention that
+ * multiformats and @dcl/hashing follow.
+ */
+function base58Encode(bytes: Uint8Array): string {
+  let leadingOnes = 0
+  for (const b of bytes) {
+    if (b !== 0) break
+    leadingOnes++
+  }
+
+  // Operate on a little-endian digit array; carry each input byte through.
+  const digits = [0]
+  for (const byte of bytes) {
+    let carry = byte
+    for (let i = 0; i < digits.length; i++) {
+      carry += digits[i] << 8
+      digits[i] = carry % 58
+      carry = Math.floor(carry / 58)
+    }
+    while (carry > 0) {
+      digits.push(carry % 58)
+      carry = Math.floor(carry / 58)
+    }
+  }
+
+  return '1'.repeat(leadingOnes) + digits.reverse().map((d) => BASE58_ALPHABET[d]).join('')
+}
+
+// RFC 4648 base32 lowercase alphabet (no padding variant, as IPFS multibase uses).
+const BASE32_ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567'
+
+/**
+ * Encodes `bytes` as a base32 lowercase string without padding.
+ */
+function base32Encode(bytes: Uint8Array): string {
+  let result = ''
+  let bits = 0
+  let value = 0
+  for (const byte of bytes) {
+    value = (value << 8) | byte
+    bits += 8
+    while (bits >= 5) {
+      bits -= 5
+      result += BASE32_ALPHABET[(value >>> bits) & 31]
+    }
+  }
+  if (bits > 0) {
+    result += BASE32_ALPHABET[(value << (5 - bits)) & 31]
+  }
+  return result
+}
+
+/**
+ * Decodes a base32 lowercase string (no padding) to raw bytes.
+ * Throws on any character outside the RFC 4648 lowercase alphabet.
+ */
+function base32Decode(s: string): Uint8Array {
+  const lower = s.toLowerCase()
+  let bits = 0
+  let value = 0
+  const bytes: number[] = []
+  for (const char of lower) {
+    const idx = BASE32_ALPHABET.indexOf(char)
+    if (idx < 0) throw new Error(`Invalid base32 character: ${JSON.stringify(char)}`)
+    value = (value << 5) | idx
+    bits += 5
+    if (bits >= 8) {
+      bits -= 8
+      bytes.push((value >>> bits) & 0xff)
+    }
+  }
+  return new Uint8Array(bytes)
+}
+
+// SHA-256 multihash prefix bytes: [code=0x12 (sha2-256), length=0x20 (32)].
+// Both are single-byte varints because 0x12 < 128 and 0x20 = 32 < 128.
+const SHA256_MH_PREFIX = new Uint8Array([0x12, 0x20])
+
+/**
+ * Builds a CIDv0 string from a raw 32-byte SHA-256 digest.
+ * Equivalent to what `hashV0()` from @dcl/hashing produces.
+ */
+function cidV0FromSha256(digest: Buffer): string {
+  // CIDv0 = base58btc(multihash)  where  multihash = [0x12, 0x20, ...digest]
+  const mh = new Uint8Array(2 + 32)
+  mh.set(SHA256_MH_PREFIX)
+  mh.set(digest, 2)
+  return base58Encode(mh)
+}
+
+/**
+ * Builds a CIDv1 raw-codec string from a raw 32-byte SHA-256 digest.
+ * Equivalent to what `hashV1()` from @dcl/hashing produces for files that fit in a
+ * single IPFS chunk (< 262 144 bytes), which use a raw leaf (codec 0x55).
+ *
+ * Larger files are DAG-PB roots whose hash is NOT the raw SHA-256 of the content; for
+ * those, this function returns a string that will not match the expected hash and the
+ * caller must fall back to {@link assertHash}.
+ */
+function cidV1RawFromSha256(digest: Buffer): string {
+  // CIDv1 bytes: [version=0x01, codec=0x55 (raw), 0x12 (sha2-256), 0x20 (32), ...digest]
+  const cidBytes = new Uint8Array(4 + 32)
+  cidBytes[0] = 0x01 // CIDv1
+  cidBytes[1] = 0x55 // raw codec
+  cidBytes[2] = 0x12 // sha2-256 function code
+  cidBytes[3] = 0x20 // digest length = 32
+  cidBytes.set(digest, 4)
+  return 'b' + base32Encode(cidBytes)
+}
+
+/**
+ * Attempts to verify `expectedHash` against an inline-computed SHA-256 digest, without
+ * re-reading the temp file that was just written.
+ *
+ * Returns:
+ *  - `true`  — hash matches the inline digest; the caller can skip {@link assertHash}.
+ *  - `false` — hash definitively does not match; the content is corrupt.
+ *  - `null`  — cannot determine from SHA-256 alone (DAG-PB CIDv1, or an unknown format);
+ *               the caller must fall back to {@link assertHash}.
+ *
+ * The Qm (CIDv0) path is always authoritative — `hashV0` is a plain SHA-256 multihash.
+ * The ba (CIDv1) path is authoritative only when the CID codec byte is 0x55 (raw), meaning
+ * the content is a single IPFS raw leaf.  DAG-PB roots (codec 0x70, typical for files
+ * larger than the 256 KiB IPFS chunk size) cannot be verified from SHA-256 alone.
+ */
+export function verifyHashFromInlineDigest(sha256Digest: Buffer, expectedHash: string): boolean | null {
+  if (expectedHash.startsWith('Qm')) {
+    // CIDv0 is always a raw SHA-256 multihash — always inline-verifiable.
+    return cidV0FromSha256(sha256Digest) === expectedHash
+  }
+  if (expectedHash.startsWith('ba')) {
+    // ba = 'b' (multibase base32) + 'a' (first base32 char of CIDv1 version byte 0x01).
+    // Decode to inspect the codec byte before deciding whether the inline digest is sufficient.
+    try {
+      const cidBytes = base32Decode(expectedHash.slice(1)) // strip the 'b' multibase prefix
+      // cidBytes[0] = version (0x01 for CIDv1), cidBytes[1] = codec
+      if (cidBytes.length >= 2 && cidBytes[0] === 0x01 && cidBytes[1] === 0x55) {
+        // Raw-codec CIDv1 → hash is raw SHA-256 → inline-verifiable.
+        return cidV1RawFromSha256(sha256Digest) === expectedHash
+      }
+      // Other codec (e.g. 0x70 DAG-PB): cannot determine from SHA-256 alone.
+    } catch {
+      // Malformed base32 — cannot determine; fall back.
+    }
+    return null
+  }
+  // Unknown prefix — cannot determine.
+  return null
+}
+
+/**
+ * A pass-through Transform that computes the SHA-256 digest of all bytes that flow
+ * through it.  Every chunk is passed downstream unchanged; call {@link getSha256Digest}
+ * after the stream has ended to retrieve the digest.
+ */
+export type InlineHasher = Transform & { getSha256Digest(): Buffer }
+
+/**
+ * Creates a fresh {@link InlineHasher} instance.
+ *
+ * Place it as the last Transform in the download pipeline (just before the file write)
+ * so it hashes exactly the bytes that will be stored on disk.
+ */
+export function createInlineHasher(): InlineHasher {
+  const hasher = crypto.createHash('sha256')
+  let digest: Buffer | undefined
+
+  const transform = new Transform({
+    transform(chunk: Buffer, _encoding: BufferEncoding, callback: (err: Error | null, data?: Buffer) => void) {
+      hasher.update(chunk)
+      callback(null, chunk)
+    },
+    flush(callback: (err?: Error | null) => void) {
+      digest = hasher.digest()
+      callback()
+    }
+  }) as InlineHasher
+
+  transform.getSha256Digest = (): Buffer => {
+    if (!digest) throw new Error('getSha256Digest() called before the stream ended')
+    return digest
+  }
+
+  return transform
+}
+
 // Bounds buffered JSON responses so a malicious server can't OOM the process via response.json().
 const MAX_JSON_RESPONSE_SIZE_IN_BYTES = 50 * 1024 * 1024 // 50 MiB
 
@@ -426,21 +623,55 @@ export async function saveContentFileToDisk(
     remote_server: ''
   }
 
+  // Create an inline hasher only when hash verification is needed. It captures the SHA-256
+  // digest of the bytes as they are written to the temp file, so we can verify the hash
+  // without a second disk read. For hashes that cannot be verified from raw SHA-256 alone
+  // (DAG-PB CIDv1 used by large files) we fall back to assertHash after the download.
+  const inlineHasher = checkHash && isVerifiableContentHash(hash) ? createInlineHasher() : undefined
+
   try {
-    await downloadFile(originalUrlString, metricsLabels, components, tmpFileName, limits)
+    await downloadFile(originalUrlString, metricsLabels, components, tmpFileName, limits, inlineHasher)
 
     // make files not executable
     await fs.promises.chmod(tmpFileName, 0o644)
 
     // check hash if present. delete file and fail in case of mismatch
     if (checkHash) {
-      try {
-        await assertHash(tmpFileName, hash)
-      } catch (e) {
-        components.metrics?.increment('dcl_content_download_hash_errors_total', metricsLabels)
-        // delete the downloaded file if failed
-        await deleteFileIfPresent(tmpFileName)
-        throw e
+      if (inlineHasher) {
+        // Fast path: verify from the inline SHA-256 digest — no second disk read.
+        const sha256Digest = inlineHasher.getSha256Digest()
+        const inlineResult = verifyHashFromInlineDigest(sha256Digest, hash)
+        if (inlineResult === false) {
+          // Definitely corrupt — the inline SHA-256 proves the expected CID cannot match.
+          components.metrics?.increment('dcl_content_download_hash_errors_total', metricsLabels)
+          // The outer finally removes the temp file; just throw here.
+          const computed = hash.startsWith('Qm') ? cidV0FromSha256(sha256Digest) : cidV1RawFromSha256(sha256Digest)
+          throw new Error(
+            `Download error: hashes do not match(expected:${hash} != calculated:${computed})`
+          )
+        }
+        if (inlineResult === null) {
+          // Cannot determine from SHA-256 alone (DAG-PB CIDv1 or unknown format).
+          // Fall back to the traditional re-read path.
+          try {
+            await assertHash(tmpFileName, hash)
+          } catch (e) {
+            components.metrics?.increment('dcl_content_download_hash_errors_total', metricsLabels)
+            await deleteFileIfPresent(tmpFileName)
+            throw e
+          }
+        }
+        // inlineResult === true: verified without re-reading — nothing more to do.
+      } else {
+        // Slow path: re-read the temp file to compute the hash (fallback for unverifiable hashes).
+        try {
+          await assertHash(tmpFileName, hash)
+        } catch (e) {
+          components.metrics?.increment('dcl_content_download_hash_errors_total', metricsLabels)
+          // delete the downloaded file if failed
+          await deleteFileIfPresent(tmpFileName)
+          throw e
+        }
       }
     }
 
@@ -798,7 +1029,9 @@ function downloadFile(
   metricsLabels: ContentServerMetricLabels,
   components: { metrics?: SnapshotsFetcherComponents['metrics'] },
   tmpFileName: string,
-  limits: ResolvedTransferLimits
+  limits: ResolvedTransferLimits,
+  /** Optional Transform inserted just before the file write to capture bytes inline. */
+  inlineHasher?: InlineHasher
 ) {
   return new Promise<void>((resolve, reject) => {
     // One timer for the whole download instead of one per redirect hop: a hop that redirects never
@@ -945,7 +1178,17 @@ function downloadFile(
             emitClose: true
           })
 
-          const pipe = streamPipeline([response, ...createDownloadTransforms(isGzip, limits), file])
+          // Build the pipeline: response → rate/size guards [→ decompress] → [inline hasher] → file.
+          // The inline hasher, when present, sits after all transforms so it hashes the exact bytes
+          // written to disk — not the compressed bytes, and not bytes that exceeded the size cap.
+          const downloadTransforms = createDownloadTransforms(isGzip, limits)
+          // The stream/promises pipeline type is hard to satisfy with a conditional array;
+          // the cast is safe because all elements are valid pipeline stages.
+          const pipelineStages = inlineHasher
+            ? ([response, ...downloadTransforms, inlineHasher, file] as any[])
+            : ([response, ...downloadTransforms, file] as any[])
+
+          const pipe = streamPipeline(pipelineStages as any)
 
           pipe
             .then(() => {

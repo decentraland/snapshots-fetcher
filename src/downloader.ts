@@ -9,6 +9,47 @@ import {
   truncateForLog
 } from './utils'
 
+// ---------------------------------------------------------------------------
+// Circuit breaker per peer
+//
+// Tracks consecutive download failures per peer URL, across all in-flight and
+// completed download jobs.  After CIRCUIT_BREAKER_THRESHOLD consecutive
+// failures from the same peer the peer is excluded from the candidate list for
+// CIRCUIT_BREAKER_COOLDOWN_MS, then automatically re-admitted for a probe.  A
+// single successful download resets the counter.
+//
+// If every candidate peer is simultaneously tripped the guard falls back to
+// trying all of them anyway, to avoid a total stall.
+// ---------------------------------------------------------------------------
+
+/** How many consecutive failures from one peer before its circuit trips. */
+export const CIRCUIT_BREAKER_THRESHOLD = 5
+
+/** How long (ms) a tripped peer is excluded from the candidate list. */
+export const CIRCUIT_BREAKER_COOLDOWN_MS = 10 * 60 * 1000 // 10 minutes
+
+type PeerCircuitState = {
+  consecutiveFailures: number
+  /** Epoch ms at or after which the peer may be probed again. 0 means the peer is healthy. */
+  cooledUntil: number
+}
+
+/**
+ * Module-level circuit state, keyed by server URL.
+ *
+ * Exported for testing only — production code must not mutate this map directly.
+ * Use `clearPeerCircuitBreaker()` in tests to reset state between cases.
+ */
+export const peerCircuitBreaker = new Map<string, PeerCircuitState>()
+
+/**
+ * Resets all circuit-breaker state.
+ * Call this in `afterEach` / `beforeEach` in tests that exercise circuit-breaker behaviour.
+ */
+export function clearPeerCircuitBreaker(): void {
+  peerCircuitBreaker.clear()
+}
+
 // In-flight downloads, per storage component and then per content hash.
 //
 // Keyed by hash rather than by the resolved temp path because storage is content-addressed: two
@@ -32,7 +73,10 @@ function inflightJobsFor(storage: object): Map<string, ReturnType<typeof downloa
 }
 
 async function downloadJob(
-  components: Pick<SnapshotsFetcherComponents, 'storage'> & { metrics?: SnapshotsFetcherComponents['metrics'] },
+  components: Pick<SnapshotsFetcherComponents, 'storage'> & {
+    metrics?: SnapshotsFetcherComponents['metrics']
+    logs?: SnapshotsFetcherComponents['logs']
+  },
   hashToDownload: string,
   finalFileName: string,
   presentInServers: string[],
@@ -82,10 +126,25 @@ async function downloadJob(
       return
     }
 
-    const serverToUse = pickRandomServer(serversToPickFrom)
+    // --- Circuit-breaker gate -------------------------------------------
+    // Filter out peers whose circuits are currently tripped.  If the filter
+    // leaves no candidates all tripped peers are tried anyway (fallback) to
+    // avoid a total stall.  The filter is re-evaluated on every attempt so
+    // a cooldown that expires mid-job lets the peer back in immediately.
+    const now = Date.now()
+    const openPeers = serversToPickFrom.filter((s) => {
+      const state = peerCircuitBreaker.get(s)
+      return !state || state.cooledUntil <= now
+    })
+    const candidates = openPeers.length > 0 ? openPeers : serversToPickFrom
+
+    const serverToUse = pickRandomServer(candidates)
     try {
       await saveContentFileToDisk(components, serverToUse, hashToDownload, finalFileName, transferLimits)
       components.metrics?.observe('dcl_content_download_job_succeed_retries', {}, retries)
+
+      // A successful download proves this peer is healthy — reset its counter.
+      peerCircuitBreaker.delete(serverToUse)
 
       return
     } catch (e: any) {
@@ -95,6 +154,23 @@ async function downloadJob(
       if (shouldStop?.()) {
         throw e
       }
+
+      // --- Record the failure in the circuit breaker ----------------------
+      // Done before the retry/give-up decision so every failure — including
+      // the last one — counts toward the threshold.
+      const state = peerCircuitBreaker.get(serverToUse) ?? { consecutiveFailures: 0, cooledUntil: 0 }
+      state.consecutiveFailures++
+      if (state.consecutiveFailures >= CIRCUIT_BREAKER_THRESHOLD) {
+        state.cooledUntil = Date.now() + CIRCUIT_BREAKER_COOLDOWN_MS
+        state.consecutiveFailures = 0
+        components.logs?.getLogger('downloader').warn(
+          `Peer ${serverToUse} tripped the circuit breaker after ${CIRCUIT_BREAKER_THRESHOLD} consecutive ` +
+            `failures. It will be excluded from downloads for ${CIRCUIT_BREAKER_COOLDOWN_MS / 60_000} min.`
+        )
+      }
+      peerCircuitBreaker.set(serverToUse, state)
+      // --------------------------------------------------------------------
+
       if (retries < maxRetries) {
         serversToPickFrom =
           serversToPickFrom.length > 1
@@ -120,7 +196,10 @@ async function downloadJob(
  * being downloaded
  */
 export async function downloadFileWithRetries(
-  components: Pick<SnapshotsFetcherComponents, 'storage'> & { metrics?: SnapshotsFetcherComponents['metrics'] },
+  components: Pick<SnapshotsFetcherComponents, 'storage'> & {
+    metrics?: SnapshotsFetcherComponents['metrics']
+    logs?: SnapshotsFetcherComponents['logs']
+  },
   hashToDownload: string,
   targetTempFolder: string,
   presentInServers: string[],
